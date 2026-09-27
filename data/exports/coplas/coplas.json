@@ -270,12 +270,12 @@
     "territory_state": "assigned",
     "is_volta": false,
     "created_at": "2026-09-27 18:28:44",
-    "updated_at": "2026-09-27 19:03:07",
+    "updated_at": "2026-09-27 21:02:31",
     "territories": [
       {
-        "id": "prov:36",
-        "nome": "Pontevedra",
-        "tipo": "prov",
+        "id": "par:3601902",
+        "nome": "As Estacas (Santa María)",
+        "tipo": "par",
         "relation_type": "direct",
         "is_direct": 1
       }

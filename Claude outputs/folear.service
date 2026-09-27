@@ -1,0 +1,21 @@
+[Unit]
+Description=Fol e ar - servidor local (API + estaticos)
+After=network.target
+
+[Service]
+Type=simple
+# Axusta estas dúas rutas ao usuario e cartafol reais no VPS:
+User=folear
+WorkingDirectory=/home/folear/app
+ExecStart=/usr/bin/python3 /home/folear/app/tools/local_server.py 8765
+Restart=always
+RestartSec=3
+# Evita que un fallo puntual tire o servizo para sempre:
+StartLimitIntervalSec=0
+
+# Un pouco de illamento básico, sen estorbar o acceso ao propio cartafol da app:
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -526,6 +526,31 @@ def validate_media_payload(conn: sqlite3.Connection, payload) -> list[str]:
     return errors
 
 
+def delete_coplas(conn: sqlite3.Connection, copla_ids) -> list[int]:
+    if not isinstance(copla_ids, list) or not copla_ids:
+        raise ValueError("Cómpre indicar polo menos un ID de copla para borrar.")
+
+    ids: list[int] = []
+    for raw_id in copla_ids:
+        if not isinstance(raw_id, int):
+            raise ValueError(f"ID de copla non válido: {raw_id!r}.")
+        ids.append(raw_id)
+
+    known_copla_ids = load_known_coplas(conn)
+    missing = [copla_id for copla_id in ids if copla_id not in known_copla_ids]
+    if missing:
+        raise ValueError(f"Non existe ningunha copla con estes IDs: {missing}.")
+
+    for copla_id in ids:
+        conn.execute(
+            "DELETE FROM media_links WHERE entity_type = 'copla' AND entity_id = ?",
+            (str(copla_id),),
+        )
+        conn.execute("DELETE FROM coplas WHERE id = ?", (copla_id,))
+
+    return ids
+
+
 def import_media(conn: sqlite3.Connection, payload) -> list[int]:
     errors = validate_media_payload(conn, payload)
     if errors:

@@ -1,0 +1,9 @@
+folear.gal {
+	# Caddy xestiona o certificado HTTPS automaticamente (Let's Encrypt)
+	# en canto o dominio apunte a este servidor.
+	reverse_proxy localhost:8765
+}
+
+www.folear.gal {
+	redir https://folear.gal{uri} permanent
+}

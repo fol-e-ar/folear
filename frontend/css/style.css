@@ -539,6 +539,27 @@ a {
   border-color: var(--accent);
 }
 
+.btn.danger {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.btn.danger:hover {
+  color: #ffffff;
+  background: var(--red);
+}
+
+.delete-confirm-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  list-style: disc;
+  background: #F7FBFE;
+  border-radius: var(--radius);
+}
+
 .page {
   max-width: 1450px;
   padding: 28px 32px 60px;

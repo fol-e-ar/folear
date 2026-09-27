@@ -15,6 +15,7 @@ from backend.services.db import connect, migrate
 from backend.services.db_paths import DB_PATH
 from backend.services.exporters import export_web
 from backend.services.importers import (
+    delete_coplas,
     import_coplas,
     import_media,
     import_pieces,
@@ -118,6 +119,27 @@ class LocalHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             self._send_json(400, {"ok": False, "error": str(exc)})
 
+    def do_DELETE(self) -> None:
+        if self.path != "/api/coplas":
+            self._send_json(404, {"error": "Endpoint non atopado."})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            ids = payload.get("ids")
+            migrate(DB_PATH)
+            conn = connect(DB_PATH)
+            try:
+                deleted = delete_coplas(conn, ids)
+                conn.commit()
+                counts = export_web(conn)
+            finally:
+                conn.close()
+            self._send_json(200, {"ok": True, "ids": deleted, "counts": counts})
+        except Exception as exc:
+            self._send_json(400, {"ok": False, "error": str(exc)})
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
@@ -199,6 +221,7 @@ def main() -> int:
     print("Fol e ar")
     print(f"Servidor local: http://localhost:{port}/frontend/index.html")
     print("API local: POST /api/coplas")
+    print("API local: DELETE /api/coplas")
     print("API local: POST /api/media")
     print("API local: POST /api/pieces")
     print("API local: POST /api/territory-traits")

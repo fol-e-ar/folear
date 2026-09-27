@@ -59,6 +59,9 @@ const state = {
   coplaSelectedIds: [],
   batchTerritoryIds: [],
   batchAssignModalOpen: false,
+  deleteConfirmIds: [],
+  deleteConfirmOpen: false,
+  deleteConfirmBusy: false,
   territoryQuery: "",
   territoryCoplaQuery: "",
   pieceLibraryQuery: "",
@@ -750,6 +753,7 @@ function coplaBatchBarMarkup(items) {
       <button class="btn" type="button" id="batchSelectAllVisible">Seleccionar as ${items.length} visíbeis</button>
       <button class="btn" type="button" id="batchClearSelection" ${count ? "" : "disabled"}>Baleirar selección</button>
       <button class="btn primary" type="button" id="openBatchAssign" ${count ? "" : "disabled"}>Asignar territorio...</button>
+      <button class="btn danger" type="button" id="openBatchDelete" ${count ? "" : "disabled"}>Borrar seleccionadas</button>
     </div>
   `;
 }
@@ -769,6 +773,10 @@ function bindCoplaBatchBar(root = $("#view-coplas")) {
     state.batchAssignModalOpen = true;
     state.batchTerritoryIds = [];
     renderCoplasView();
+  });
+  $("#openBatchDelete", root)?.addEventListener("click", () => {
+    if (!state.coplaSelectedIds.length) return;
+    openDeleteConfirm([...state.coplaSelectedIds]);
   });
 }
 
@@ -926,12 +934,14 @@ function openCoplaDrawer(coplaId) {
       <div class="meta">${(copla.tags || []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
       <div class="drawer-actions">
         <button class="btn" type="button" data-edit-copla="${copla.id}">Editar copla</button>
+        <button class="btn danger" type="button" data-delete-copla="${copla.id}">Borrar copla</button>
         <button class="btn primary drawer-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir á peza">+</button>
       </div>
     </aside>
   `;
   all("[data-close-drawer]", drawer).forEach(item => item.addEventListener("click", closeCoplaDrawer));
   $("[data-edit-copla]", drawer)?.addEventListener("click", () => startEditCopla(copla.id));
+  $("[data-delete-copla]", drawer)?.addEventListener("click", () => openDeleteConfirm([copla.id]));
   bindResultButtons(drawer);
   bindCoplaActions(drawer);
 }
@@ -1073,6 +1083,93 @@ async function applyBatchTerritoryAssignment() {
   } catch (error) {
     if (feedback) feedback.textContent = error.message || "Non se puido aplicar a asignación.";
     if (button) button.disabled = false;
+  }
+}
+
+function deleteConfirmModalMarkup() {
+  const count = state.deleteConfirmIds.length;
+  const names = state.deleteConfirmIds
+    .map(id => state.coplas.find(item => Number(item.id) === Number(id)))
+    .filter(Boolean)
+    .map(copla => coplaTitle(copla));
+  return `
+    <div class="media-modal delete-confirm-modal" role="dialog" aria-modal="true" aria-label="Confirmar borrado">
+      <div class="media-modal-backdrop" data-close-delete-confirm></div>
+      <div class="media-modal-panel">
+        <div class="media-modal-head">
+          <div><div class="eyebrow">Acción irreversible</div><h2>Borrar ${count} copla${count === 1 ? "" : "s"}?</h2></div>
+          <button class="card-close" type="button" data-close-delete-confirm aria-label="Pechar">×</button>
+        </div>
+        <div class="formgrid">
+          <p class="field full">Esta acción borra definitivamente ${count === 1 ? "esta copla" : "estas coplas"} do arquivo, xunto coas súas variantes, etiquetas, adscricións territoriais e vínculos con pezas e recursos multimedia. Non se pode desfacer.</p>
+          ${names.length ? `<ul class="field full delete-confirm-list">${names.map(name => `<li>${escapeHtml(name)}</li>`).join("")}</ul>` : ""}
+          <p id="deleteConfirmFeedback" class="muted field full"></p>
+          <div class="drawer-actions field full">
+            <button class="btn" type="button" data-close-delete-confirm ${state.deleteConfirmBusy ? "disabled" : ""}>Cancelar</button>
+            <button class="btn danger" type="button" id="confirmDeleteCoplas" ${state.deleteConfirmBusy ? "disabled" : ""}>${state.deleteConfirmBusy ? "Borrando..." : `Borrar definitivamente`}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDeleteConfirmModal() {
+  const container = $("#deleteConfirmModal");
+  if (!container) return;
+  container.hidden = !state.deleteConfirmOpen;
+  container.innerHTML = state.deleteConfirmOpen ? deleteConfirmModalMarkup() : "";
+  if (!state.deleteConfirmOpen) return;
+  all("[data-close-delete-confirm]", container).forEach(el => el.addEventListener("click", () => {
+    if (state.deleteConfirmBusy) return;
+    closeDeleteConfirm();
+  }));
+  $("#confirmDeleteCoplas", container)?.addEventListener("click", confirmDeleteCoplas);
+}
+
+function openDeleteConfirm(ids) {
+  const uniqueIds = Array.from(new Set(ids.map(Number)));
+  if (!uniqueIds.length) return;
+  state.deleteConfirmIds = uniqueIds;
+  state.deleteConfirmOpen = true;
+  state.deleteConfirmBusy = false;
+  renderDeleteConfirmModal();
+}
+
+function closeDeleteConfirm() {
+  state.deleteConfirmOpen = false;
+  state.deleteConfirmIds = [];
+  state.deleteConfirmBusy = false;
+  renderDeleteConfirmModal();
+}
+
+async function confirmDeleteCoplas() {
+  const ids = state.deleteConfirmIds;
+  if (!ids.length || state.deleteConfirmBusy) return;
+  state.deleteConfirmBusy = true;
+  renderDeleteConfirmModal();
+  try {
+    const response = await fetch("../api/coplas", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Non se puido borrar.");
+    clearApiCache();
+    state.coplas = await getCoplas();
+    state.coplaSelectedIds = state.coplaSelectedIds.filter(id => !ids.includes(Number(id)));
+    if (ids.includes(Number(state.selectedCoplaId))) {
+      state.selectedCoplaId = null;
+      closeCoplaDrawer();
+    }
+    closeDeleteConfirm();
+    renderView();
+  } catch (error) {
+    state.deleteConfirmBusy = false;
+    renderDeleteConfirmModal();
+    const feedback = $("#deleteConfirmFeedback");
+    if (feedback) feedback.textContent = error.message || "Non se puido borrar.";
   }
 }
 
