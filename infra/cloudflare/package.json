@@ -1,0 +1,16 @@
+{
+  "name": "fol-e-ar-cloudflare",
+  "private": true,
+  "description": "Ferramentas e Worker de Cloudflare para Fol e ar. Illado do resto do repo: non toca frontend/package-lock.json nin package-lock.json da raíz.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "d1:migrate:local": "wrangler d1 migrations apply fol-e-ar-db --local",
+    "d1:migrate:preview": "wrangler d1 migrations apply fol-e-ar-db --env preview --remote",
+    "d1:migrate:prod": "wrangler d1 migrations apply fol-e-ar-db --remote",
+    "deploy:preview": "wrangler deploy --env preview",
+    "deploy:prod": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

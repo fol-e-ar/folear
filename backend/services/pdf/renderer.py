@@ -60,17 +60,12 @@ def render_meta(document: dict[str, Any]) -> str:
 
 def render_copla(copla: dict[str, Any]) -> str:
     role = "retrouso" if copla.get("role") == "retrouso" else "copla"
-    territories = copla.get("territories") or []
-    places = ""
-    if territories:
-        places = f"<div class=\"copla-meta\">{html_escape(' · '.join(territories))}</div>"
     notes = ""
     if copla.get("notes"):
         notes = f"<div class=\"copla-notes\">{html_escape(copla['notes'])}</div>"
     return f"""
       <article class="copla {role}">
         <div class="copla-text">{nl2br(copla.get("text"))}</div>
-        {places}
         {notes}
       </article>
     """

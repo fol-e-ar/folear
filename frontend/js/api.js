@@ -79,9 +79,28 @@ export async function getTerritorios() {
   return fetchJson(paths.territorios);
 }
 
+function firstTextLine(text = "") {
+  const lines = String(text || "").split(/\r?\n/);
+  const found = lines.find(line => line.trim());
+  return found ? found.trim() : "";
+}
+
+function coplaSortKey(copla) {
+  const line = firstTextLine(copla.text) || copla.incipit || "";
+  return line
+    .replace(/^[¿¡\s]+/, "")
+    .replace(/[¿¡!?.,;:"'«»“”()]/g, "")
+    .trim();
+}
+
+function sortCoplas(list) {
+  return [...list].sort((a, b) => coplaSortKey(a).localeCompare(coplaSortKey(b), "gl", { sensitivity: "base", numeric: true }));
+}
+
 export async function getCoplas() {
   const paths = buildPaths();
-  return fetchJson(paths.coplas);
+  const data = await fetchJson(paths.coplas);
+  return sortCoplas(Array.isArray(data) ? data : []);
 }
 
 export async function getGeoLayer(tipo) {

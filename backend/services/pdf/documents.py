@@ -150,9 +150,16 @@ def fetch_copla(conn: sqlite3.Connection, copla_id: int) -> dict[str, Any]:
 def fetch_piece_sections(conn: sqlite3.Connection, piece_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT pc.position, pc.section_label, pc.notes, c.id AS copla_id, c.text, c.incipit
+        SELECT
+          pc.position,
+          pc.section_label,
+          pc.notes,
+          pc.role,
+          c.id AS copla_id,
+          COALESCE(NULLIF(pc.inline_text, ''), c.text) AS text,
+          COALESCE(c.incipit, '') AS incipit
         FROM piece_coplas pc
-        JOIN coplas c ON c.id = pc.copla_id
+        LEFT JOIN coplas c ON c.id = pc.copla_id
         WHERE pc.piece_id = ?
         ORDER BY pc.position ASC
         """,
@@ -162,13 +169,19 @@ def fetch_piece_sections(conn: sqlite3.Connection, piece_id: int) -> list[dict[s
     for row in rows:
         label = row["section_label"] or "Parte"
         sections.setdefault(label, [])
-        copla = fetch_copla(conn, row["copla_id"])
+        copla = fetch_copla(conn, row["copla_id"]) if row["copla_id"] else {
+            "id": None,
+            "text": row["text"],
+            "incipit": first_line(row["text"]),
+            "notes": None,
+            "territories": [],
+        }
         copla.update(
             {
                 "position": row["position"],
                 "text": row["text"],
                 "incipit": row["incipit"] or first_line(row["text"]),
-                "role": "copla",
+                "role": row["role"] or "copla",
                 "occurrence_notes": row["notes"],
             }
         )

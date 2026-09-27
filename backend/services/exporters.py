@@ -38,7 +38,31 @@ def export_territories(conn: sqlite3.Connection) -> list[dict]:
         ORDER BY tipo, nome
         """
     ).fetchall()
-    return [dict(row) for row in rows]
+
+    trait_rows = conn.execute(
+        """
+        SELECT id, territory_id, trait, category, notes
+        FROM territory_traits
+        ORDER BY territory_id, category, trait
+        """
+    ).fetchall()
+    traits_by_territory: dict[str, list[dict]] = {}
+    for trait in trait_rows:
+        traits_by_territory.setdefault(trait["territory_id"], []).append(
+            {
+                "id": trait["id"],
+                "trait": trait["trait"],
+                "category": trait["category"],
+                "notes": trait["notes"],
+            }
+        )
+
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["traits"] = traits_by_territory.get(row["id"], [])
+        result.append(item)
+    return result
 
 
 def export_coplas(conn: sqlite3.Connection) -> list[dict]:
@@ -52,6 +76,7 @@ def export_coplas(conn: sqlite3.Connection) -> list[dict]:
           c.notes,
           c.status,
           c.territory_state,
+          c.is_volta,
           c.created_at,
           c.updated_at
         FROM coplas c
@@ -81,7 +106,7 @@ def export_coplas(conn: sqlite3.Connection) -> list[dict]:
             """,
             (copla["id"],),
         ).fetchall()
-        versions = conn.execute(
+        version_rows = conn.execute(
             """
             SELECT id, label, text, normalized_text, incipit, notes, position, created_at, updated_at
             FROM copla_versions
@@ -90,6 +115,22 @@ def export_coplas(conn: sqlite3.Connection) -> list[dict]:
             """,
             (copla["id"],),
         ).fetchall()
+        versions = []
+        for version in version_rows:
+            version_territories = conn.execute(
+                """
+                SELECT t.id, t.nome, t.tipo
+                FROM copla_version_territories cvt
+                JOIN territories t ON t.id = cvt.territory_id
+                WHERE cvt.version_id = ?
+                ORDER BY t.tipo, t.nome
+                """,
+                (version["id"],),
+            ).fetchall()
+            version_data = dict(version)
+            version_data["territory_mode"] = "custom" if version_territories else "inherit"
+            version_data["territories"] = [dict(item) for item in version_territories]
+            versions.append(version_data)
 
         result.append(
             {
@@ -100,11 +141,12 @@ def export_coplas(conn: sqlite3.Connection) -> list[dict]:
                 "notes": copla["notes"],
                 "status": copla["status"],
                 "territory_state": copla["territory_state"],
+                "is_volta": bool(copla["is_volta"]),
                 "created_at": copla["created_at"],
                 "updated_at": copla["updated_at"],
                 "territories": [dict(item) for item in territories],
                 "tags": [item["name"] for item in tags],
-                "versions": [dict(item) for item in versions],
+                "versions": versions,
             }
         )
 
@@ -141,11 +183,12 @@ def export_pieces(conn: sqlite3.Connection) -> list[dict]:
               pc.position,
               pc.section_label,
               pc.notes,
+              pc.role,
               c.id,
-              c.incipit,
-              c.text
+              COALESCE(c.incipit, '') AS incipit,
+              COALESCE(NULLIF(pc.inline_text, ''), c.text) AS text
             FROM piece_coplas pc
-            JOIN coplas c ON c.id = pc.copla_id
+            LEFT JOIN coplas c ON c.id = pc.copla_id
             WHERE pc.piece_id = ?
             ORDER BY pc.position ASC
             """,

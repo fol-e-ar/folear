@@ -4,3 +4,9 @@ __pycache__/
 .venv/
 venv/
 env/
+
+# Cloudflare (infra/cloudflare)
+infra/cloudflare/node_modules/
+infra/cloudflare/.wrangler/
+infra/cloudflare/.dev.vars
+infra/cloudflare/wrangler.toml

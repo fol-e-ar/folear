@@ -8,6 +8,9 @@ MIGRATION_001 = "001_init.sql"
 MIGRATION_002 = "002_curation"
 MIGRATION_003 = "003_territory_state"
 MIGRATION_004 = "004_copla_versions"
+MIGRATION_005 = "005_copla_version_territories"
+MIGRATION_006 = "006_piece_inline_text"
+MIGRATION_007 = "007_copla_volta_and_traits"
 
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -348,6 +351,23 @@ def apply_004_copla_versions(conn: sqlite3.Connection) -> None:
     execute_sql_file(conn, SCHEMA_DIR / "004_copla_versions.sql")
 
 
+def apply_005_copla_version_territories(conn: sqlite3.Connection) -> None:
+    execute_sql_file(conn, SCHEMA_DIR / "005_copla_version_territories.sql")
+
+
+def apply_006_piece_inline_text(conn: sqlite3.Connection) -> None:
+    execute_sql_file(conn, SCHEMA_DIR / "006_piece_inline_text.sql")
+
+
+def apply_007_copla_volta_and_traits(conn: sqlite3.Connection) -> None:
+    copla_columns = table_columns(conn, "coplas")
+    if "is_volta" not in copla_columns:
+        conn.execute(
+            "ALTER TABLE coplas ADD COLUMN is_volta INTEGER NOT NULL DEFAULT 0"
+        )
+    execute_sql_file(conn, SCHEMA_DIR / "007_copla_volta_and_traits.sql")
+
+
 def migrate(db_path: Path = DB_PATH) -> list[str]:
     ensure_parent_dir(db_path)
 
@@ -375,6 +395,21 @@ def migrate(db_path: Path = DB_PATH) -> list[str]:
             apply_004_copla_versions(conn)
             mark_migration(conn, MIGRATION_004)
             applied_now.append(MIGRATION_004)
+
+        if MIGRATION_005 not in applied:
+            apply_005_copla_version_territories(conn)
+            mark_migration(conn, MIGRATION_005)
+            applied_now.append(MIGRATION_005)
+
+        if MIGRATION_006 not in applied:
+            apply_006_piece_inline_text(conn)
+            mark_migration(conn, MIGRATION_006)
+            applied_now.append(MIGRATION_006)
+
+        if MIGRATION_007 not in applied:
+            apply_007_copla_volta_and_traits(conn)
+            mark_migration(conn, MIGRATION_007)
+            applied_now.append(MIGRATION_007)
 
         conn.commit()
     finally:

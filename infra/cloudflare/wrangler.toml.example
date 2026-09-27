@@ -1,0 +1,66 @@
+# Fol e ar · exemplo de configuración de Wrangler (Cloudflare Workers)
+#
+# Copia este ficheiro a `wrangler.toml` dentro de infra/cloudflare/ cando
+# haxa unha conta de Cloudflare dispoñible, e axusta os IDs reais (database_id,
+# bucket_name, account_id, etc). NON subas wrangler.toml con IDs reais nin
+# secrets a un repositorio público sen revisalo antes; os IDs de D1/R2 non son
+# segredos críticos pero os tokens de API si.
+#
+# Hipótese validada nesta auditoría (ver docs/arquitectura-cloudflare.md):
+#   - frontend estático + API en Workers (Static Assets, non Pages)
+#   - datos relacionais en D1
+#   - ficheiros propios futuros en R2 (aínda sen uso real, ver seccion 8)
+#   - sen KV nin Durable Objects nesta fase (non hai caso de uso que os xustifique)
+
+name = "fol-e-ar-api"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+# Frontend estático servido polo mesmo Worker (Static Assets).
+# En produción, `frontend/` despregaríase practicamente igual que agora en
+# GitHub Pages, pero servido por Cloudflare para poder compartir dominio
+# coa API sen CORS.
+[assets]
+directory = "../../frontend"
+binding = "ASSETS"
+
+# Base de datos relacional (espello de data/db/coplas.sqlite unha vez migrado).
+[[d1_databases]]
+binding = "DB"
+database_name = "fol-e-ar-db"
+database_id = "REPLACE_WITH_REAL_D1_DATABASE_ID"
+
+# R2 para ficheiros propios (audio/imaxe subidos polo equipo editorial).
+# Sen uso aínda: déixase preparado para cando existan gravacións propias
+# (ver docs/arquitectura-cloudflare.md secc. "Media").
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "fol-e-ar-media"
+
+[vars]
+ALLOWED_ORIGIN = "https://folear.gal"
+ENVIRONMENT = "production"
+
+# --- Contorno de preview (rama/PR) ---
+[env.preview]
+name = "fol-e-ar-api-preview"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "fol-e-ar-db-preview"
+database_id = "REPLACE_WITH_PREVIEW_D1_DATABASE_ID"
+
+[[env.preview.r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "fol-e-ar-media-preview"
+
+[env.preview.vars]
+ALLOWED_ORIGIN = "*"
+ENVIRONMENT = "preview"
+
+# Secrets (NUNCA aquí): configúranse con `wrangler secret put NOME`, tanto en
+# produción coma en --env preview. Nesta primeira fase o único secret
+# previsto é o token de administración (ver README.md e
+# docs/arquitectura-cloudflare.md secc. "API e seguridade"):
+#   - ADMIN_TOKEN
+#   - TURNSTILE_SECRET_KEY (cando se active Turnstile no formulario público)

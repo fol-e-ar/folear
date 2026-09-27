@@ -1,5 +1,1357 @@
 [
   {
+    "id": 64,
+    "text": "Nesta rúa non hai mozos,\nnesta rúa non hai mozos;\naqueles poucos que hai\nchámanlles liscacarozos.",
+    "normalized_text": "nesta rua non hai mozos, nesta rua non hai mozos; aqueles poucos que hai chamanlles liscacarozos.",
+    "incipit": "Nesta rúa non hai mozos, nesta",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 13:24:47",
+    "updated_at": "2026-09-27 13:24:47",
+    "territories": [
+      {
+        "id": "par:3601505",
+        "nome": "Estacas (San Fiz)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 63,
+    "text": "E baila, Manueliño e baila, meu amor;\ne baila, Manueliño, dá voltas d’arredor.\nDá voltas d’arredor, que ben as sabes dar;\ne baila, Manueliño e vólveme a bailar.",
+    "normalized_text": "e baila, manuelino e baila, meu amor; e baila, manuelino, da voltas d’arredor. da voltas d’arredor, que ben as sabes dar; e baila, manuelino e volveme a bailar.",
+    "incipit": "E baila, Manueliño e baila, meu",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": true,
+    "created_at": "2026-09-27 13:24:47",
+    "updated_at": "2026-09-27 13:24:47",
+    "territories": [
+      {
+        "id": "par:3601505",
+        "nome": "Estacas (San Fiz)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 62,
+    "text": "Ao tocar a pandeireta\ne máis a pandeiretiña;\ngañei unha saia nova\nque ma deu miña madriña.",
+    "normalized_text": "ao tocar a pandeireta e mais a pandeiretina; ganei unha saia nova que ma deu mina madrina.",
+    "incipit": "Ao tocar a pandeireta e máis",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 13:24:47",
+    "updated_at": "2026-09-27 13:24:47",
+    "territories": [
+      {
+        "id": "par:3601505",
+        "nome": "Estacas (San Fiz)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 61,
+    "text": "Heime de pór a cantare\nno alto da miña eira;\npara darlle que falar,\ná xente murmuradeira.",
+    "normalized_text": "heime de por a cantare no alto da mina eira; para darlle que falar, a xente murmuradeira.",
+    "incipit": "Heime de pór a cantare no",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 13:24:47",
+    "updated_at": "2026-09-27 13:24:47",
+    "territories": [
+      {
+        "id": "par:3601505",
+        "nome": "Estacas (San Fiz)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 59,
+    "text": "Adiós, Gargamala hermosa,\nla espalda te voy virando;\nla despedida es buena,\nla vuelta sabe Dios cuándo.",
+    "normalized_text": "adios, gargamala hermosa, la espalda te voy virando; la despedida es buena, la vuelta sabe dios cuando.",
+    "incipit": "Adiós, Gargamala hermosa, la espalda te",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 58,
+    "text": "Teño d’ir alá p’ra arriba,\nteño d’ir esta mañana;\nteño de levar comigo\nunha rosa rebeirana.",
+    "normalized_text": "teno d’ir ala p’ra arriba, teno d’ir esta manana; teno de levar comigo unha rosa rebeirana.",
+    "incipit": "Teño d’ir alá p’ra arriba, teño",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 57,
+    "text": "Aquí canto, aquí canto,\naquí teño de cantar;\naquí perdín os amores,\naquí os hei de buscar.",
+    "normalized_text": "aqui canto, aqui canto, aqui teno de cantar; aqui perdin os amores, aqui os hei de buscar.",
+    "incipit": "Aquí canto, aquí canto, aquí teño",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 56,
+    "text": "Agora é tempo santo,\nnon é tempo de cantar;\nestán os santiños de loito,\nde xeonllos no altar.",
+    "normalized_text": "agora e tempo santo, non e tempo de cantar; estan os santinos de loito, de xeonllos no altar.",
+    "incipit": "Agora é tempo santo, non é",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": [
+      {
+        "id": 3,
+        "label": "variante: de luto",
+        "text": "Agora é tempo santo,\nnon é tempo de cantar;\nestán os santiños de luto,\nde xeonllos no altar.",
+        "normalized_text": "agora e tempo santo, non e tempo de cantar; estan os santinos de luto, de xeonllos no altar.",
+        "incipit": "Agora é tempo santo, non é",
+        "notes": null,
+        "position": 1,
+        "created_at": "2026-09-26 18:39:10",
+        "updated_at": "2026-09-26 18:39:10",
+        "territory_mode": "inherit",
+        "territories": []
+      }
+    ]
+  },
+  {
+    "id": 55,
+    "text": "Arriba, arriba, arriba,\narriba qu’eu quero ir,\na coller a flor de maio\ne a de abril deixala ir.",
+    "normalized_text": "arriba, arriba, arriba, arriba qu’eu quero ir, a coller a flor de maio e a de abril deixala ir.",
+    "incipit": "Arriba, arriba, arriba, arriba qu’eu quero",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 54,
+    "text": "Aunque me voy, no me voy,\naunque me voy, no te olvido;\naunque me voy con el cuerpo,\nno me voy con el sentido.",
+    "normalized_text": "aunque me voy, no me voy, aunque me voy, no te olvido; aunque me voy con el cuerpo, no me voy con el sentido.",
+    "incipit": "Aunque me voy, no me voy,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 53,
+    "text": "Gargamala ten a sona,\nGargamala a sona ten;\nGargamala ten a sona\nde cantar e bailar ben.",
+    "normalized_text": "gargamala ten a sona, gargamala a sona ten; gargamala ten a sona de cantar e bailar ben.",
+    "incipit": "Gargamala ten a sona, Gargamala a",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 52,
+    "text": "¿Para qué te quiero, niña,\npara qué te quiero yo?\nPara vivir, pasar tiempo,\npara otra cosa no.",
+    "normalized_text": "¿para que te quiero, nina, para que te quiero yo? para vivir, pasar tiempo, para otra cosa no.",
+    "incipit": "¿Para qué te quiero, niña, para",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 51,
+    "text": "Agarraivos, agarraivos,\nXesús, María e Xosé;\nxa me doe o corazón\nde vos ver andar de pé.",
+    "normalized_text": "agarraivos, agarraivos, xesus, maria e xose; xa me doe o corazon de vos ver andar de pe.",
+    "incipit": "Agarraivos, agarraivos, Xesús, María e Xosé;",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 50,
+    "text": "Entrai, mozos, entrai todos,\nentrai todos a bailar;\nse viñera algún de fóra,\nlevádeo a pasear.",
+    "normalized_text": "entrai, mozos, entrai todos, entrai todos a bailar; se vinera algun de fora, levadeo a pasear.",
+    "incipit": "Entrai, mozos, entrai todos, entrai todos",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603002",
+        "nome": "Gargamala (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 49,
+    "text": "Como un cangrexo,\ncomo un cangrexo;\npor andar de parranda,\nmira como veño.",
+    "normalized_text": "como un cangrexo, como un cangrexo; por andar de parranda, mira como veno.",
+    "incipit": "Como un cangrexo, como un cangrexo;",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 48,
+    "text": "Por andar de parranda,\nmira como veño;\ncoas pernas arrastro\ncomo un cangrexo.",
+    "normalized_text": "por andar de parranda, mira como veno; coas pernas arrastro como un cangrexo.",
+    "incipit": "Por andar de parranda, mira como",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-27 15:00:27",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 47,
+    "text": "Seguid la parranda, muchachos, seguid;\nseguid la parranda, dejad de dormir.",
+    "normalized_text": "seguid la parranda, muchachos, seguid; seguid la parranda, dejad de dormir.",
+    "incipit": "Seguid la parranda, muchachos, seguid; seguid",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-27 15:00:34",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 46,
+    "text": "Teniendo amores,\nteniendo amores;\nalfileres con files,\nfiles con flores.",
+    "normalized_text": "teniendo amores, teniendo amores; alfileres con files, files con flores.",
+    "incipit": "Teniendo amores, teniendo amores; alfileres con",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-27 15:00:58",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 45,
+    "text": "Alfileres con files,\nfiles con flores;\nno hai cariño en los padres\nteniendo amores.",
+    "normalized_text": "alfileres con files, files con flores; no hai carino en los padres teniendo amores.",
+    "incipit": "Alfileres con files, files con flores;",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-27 15:00:02",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 44,
+    "text": "Levádeo, levádeo, mozas,\nlevádeo, que ben se leva;\nlevádeo, mozas, levádeo,\no cantar da nosa terra.",
+    "normalized_text": "levadeo, levadeo, mozas, levadeo, que ben se leva; levadeo, mozas, levadeo, o cantar da nosa terra.",
+    "incipit": "Levádeo, levádeo, mozas, levádeo, que ben",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": [
+      {
+        "id": 1,
+        "label": "variante: da miña terra",
+        "text": "Levádeo, levádeo, mozas,\nlevádeo, que ben se leva;\nlevádeo, mozas, levádeo,\no cantar da miña terra.",
+        "normalized_text": "levadeo, levadeo, mozas, levadeo, que ben se leva; levadeo, mozas, levadeo, o cantar da mina terra.",
+        "incipit": "Levádeo, levádeo, mozas, levádeo, que ben",
+        "notes": null,
+        "position": 1,
+        "created_at": "2026-09-26 18:39:10",
+        "updated_at": "2026-09-26 18:39:10",
+        "territory_mode": "inherit",
+        "territories": []
+      },
+      {
+        "id": 2,
+        "label": "variante: da vosa terra",
+        "text": "Levádeo, levádeo, mozas,\nlevádeo, que ben se leva;\nlevádeo, mozas, levádeo,\no cantar da vosa terra.",
+        "normalized_text": "levadeo, levadeo, mozas, levadeo, que ben se leva; levadeo, mozas, levadeo, o cantar da vosa terra.",
+        "incipit": "Levádeo, levádeo, mozas, levádeo, que ben",
+        "notes": null,
+        "position": 2,
+        "created_at": "2026-09-26 18:39:10",
+        "updated_at": "2026-09-26 18:39:10",
+        "territory_mode": "inherit",
+        "territories": []
+      }
+    ]
+  },
+  {
+    "id": 43,
+    "text": "A herba do campo seca\ne volve a enverdecer;\nasí fan amores vellos\ncando se volven a ver.",
+    "normalized_text": "a herba do campo seca e volve a enverdecer; asi fan amores vellos cando se volven a ver.",
+    "incipit": "A herba do campo seca e",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-27 14:59:20",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 42,
+    "text": "Vin á horta apañar berzas,\napañei habilidades;\nse queres falar comigo,\nvai aprender, que non sabes.",
+    "normalized_text": "vin a horta apanar berzas, apanei habilidades; se queres falar comigo, vai aprender, que non sabes.",
+    "incipit": "Vin á horta apañar berzas, apañei",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 41,
+    "text": "Na miña ventana teño\nregalo que ninguén ten;\na todas horas do día\nmiro a quen eu quero ver.",
+    "normalized_text": "na mina ventana teno regalo que ninguen ten; a todas horas do dia miro a quen eu quero ver.",
+    "incipit": "Na miña ventana teño regalo que",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 40,
+    "text": "O amor que xa foi meu\nvolve de novo a quererme;\no carbón que xa foi brasa\ncon pouco lume se acende.",
+    "normalized_text": "o amor que xa foi meu volve de novo a quererme; o carbon que xa foi brasa con pouco lume se acende.",
+    "incipit": "O amor que xa foi meu",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 39,
+    "text": "Fun buscar auga\nna cascada Balantía;\nnin bebín nin trouxen auga,\nnin falei a quen quería.",
+    "normalized_text": "fun buscar auga na cascada balantia; nin bebin nin trouxen auga, nin falei a quen queria.",
+    "incipit": "Fun buscar auga na cascada Balantía;",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 38,
+    "text": "Que queres de min,\nse ata a auga que bebo\npídoche permiso a ti,\ne ando matando e roubando\nsó para manterte a ti?",
+    "normalized_text": "que queres de min, se ata a auga que bebo pidoche permiso a ti, e ando matando e roubando so para manterte a ti?",
+    "incipit": "Que queres de min, se ata",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 37,
+    "text": "Ven ao meu carón,\nmeu ramalliño de menta,\nporque xunto a min respiras,\nque son de pel morena.",
+    "normalized_text": "ven ao meu caron, meu ramallino de menta, porque xunto a min respiras, que son de pel morena.",
+    "incipit": "Ven ao meu carón, meu ramalliño",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 36,
+    "text": "Aldeíña de Moscoso,\ntodo é terriña chan,\nonde hai caraveis e rosas\npostas pola miña man.",
+    "normalized_text": "aldeina de moscoso, todo e terrina chan, onde hai caraveis e rosas postas pola mina man.",
+    "incipit": "Aldeíña de Moscoso, todo é terriña",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 35,
+    "text": "Asómate á xanela,\nse non pola da veciña;\ne se non te deixan elas,\ncabo de min, prenda miña.",
+    "normalized_text": "asomate a xanela, se non pola da vecina; e se non te deixan elas, cabo de min, prenda mina.",
+    "incipit": "Asómate á xanela, se non pola",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 34,
+    "text": "Déixao ir, déixao ir, miña prenda,\ncando non o queira ninguén,\nha de vir á miña beira.",
+    "normalized_text": "deixao ir, deixao ir, mina prenda, cando non o queira ninguen, ha de vir a mina beira.",
+    "incipit": "Déixao ir, déixao ir, miña prenda,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 33,
+    "text": "Déjalo, déjalo, vida mía,\nque cuando nadie lo quiera\nya vendrá a la vera mía.",
+    "normalized_text": "dejalo, dejalo, vida mia, que cuando nadie lo quiera ya vendra a la vera mia.",
+    "incipit": "Déjalo, déjalo, vida mía, que cuando",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 32,
+    "text": "Eres un ramo de flores,\nde flores y claveles,\nque rindes los corazones;\nel mío rendido tienes.",
+    "normalized_text": "eres un ramo de flores, de flores y claveles, que rindes los corazones; el mio rendido tienes.",
+    "incipit": "Eres un ramo de flores, de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 31,
+    "text": "Serranita mía,\nsiéntate a mi lado,\nque te tengo de contar\nla mar de cositas buenas.",
+    "normalized_text": "serranita mia, sientate a mi lado, que te tengo de contar la mar de cositas buenas.",
+    "incipit": "Serranita mía, siéntate a mi lado,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 30,
+    "text": "Eu por aquí non te vin,\neu por alí non pasei;\nti que sabes, eu que sei:\ncala ti, qu’eu calarei.",
+    "normalized_text": "eu por aqui non te vin, eu por ali non pasei; ti que sabes, eu que sei: cala ti, qu’eu calarei.",
+    "incipit": "Eu por aquí non te vin,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 29,
+    "text": "Se pasaras polo adro\no día do meu enterro,\ndille á terra que non coma\na trenza do meu cabelo.",
+    "normalized_text": "se pasaras polo adro o dia do meu enterro, dille a terra que non coma a trenza do meu cabelo.",
+    "incipit": "Se pasaras polo adro o día",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 28,
+    "text": "Los morenos hizo Dios\ny los blancos un platero;\ncomo es cosa que Dios hizo,\npor un moreno me muero.",
+    "normalized_text": "los morenos hizo dios y los blancos un platero; como es cosa que dios hizo, por un moreno me muero.",
+    "incipit": "Los morenos hizo Dios y los",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 27,
+    "text": "Las palabras de los hombres\nson como agua de tronada:\nllueve mucho, poco tiempo,\nno se aprovecha nada.",
+    "normalized_text": "las palabras de los hombres son como agua de tronada: llueve mucho, poco tiempo, no se aprovecha nada.",
+    "incipit": "Las palabras de los hombres son",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 26,
+    "text": "Tres cosas pedí a Dios,\nninguna me quiso dar:\nhermosura, buen cabello,\ndonaire para cantar.",
+    "normalized_text": "tres cosas pedi a dios, ninguna me quiso dar: hermosura, buen cabello, donaire para cantar.",
+    "incipit": "Tres cosas pedí a Dios, ninguna",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 25,
+    "text": "Hei de plantar un piñeiro\nno alto do teu tellado;\ncando o piñeiro dea piñas,\nhei d’andar ao teu mandado.",
+    "normalized_text": "hei de plantar un pineiro no alto do teu tellado; cando o pineiro dea pinas, hei d’andar ao teu mandado.",
+    "incipit": "Hei de plantar un piñeiro no",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 24,
+    "text": "Loureiro verde, loureiro,\nmala rama che secara;\naínda non collín amores,\nxa me traes marmurada.",
+    "normalized_text": "loureiro verde, loureiro, mala rama che secara; ainda non collin amores, xa me traes marmurada.",
+    "incipit": "Loureiro verde, loureiro, mala rama che",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 23,
+    "text": "Hei de facer unha ponte\ntoda da raíz do toxo,\npara pasear de Calvos,\nde Calvos para Moscoso.",
+    "normalized_text": "hei de facer unha ponte toda da raiz do toxo, para pasear de calvos, de calvos para moscoso.",
+    "incipit": "Hei de facer unha ponte toda",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 22,
+    "text": "Moreniña, moreniña,\nmorena como teu pai;\npolo mundo e pola terra\nmoita moreniña hai.",
+    "normalized_text": "morenina, morenina, morena como teu pai; polo mundo e pola terra moita morenina hai.",
+    "incipit": "Moreniña, moreniña, morena como teu pai;",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 21,
+    "text": "Moreniña, moreniña,\ndame da túa morenura;\nvale más de ti el moreno\nque de otras la hermosura.",
+    "normalized_text": "morenina, morenina, dame da tua morenura; vale mas de ti el moreno que de otras la hermosura.",
+    "incipit": "Moreniña, moreniña, dame da túa morenura;",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 20,
+    "text": "Na banda d’alá do río\nouvín cantar unha merla;\nera a filla de meu sogro,\nque andaba segando a herba.",
+    "normalized_text": "na banda d’ala do rio ouvin cantar unha merla; era a filla de meu sogro, que andaba segando a herba.",
+    "incipit": "Na banda d’alá do río ouvín",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 19,
+    "text": "Mañanitas de San Juan,\nlos caballeros madrugan;\nlos muchachos de mi pueblo\ncon agua se desayunan.",
+    "normalized_text": "mananitas de san juan, los caballeros madrugan; los muchachos de mi pueblo con agua se desayunan.",
+    "incipit": "Mañanitas de San Juan, los caballeros",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 18,
+    "text": "Subín ao alto do carro,\nhei botar un asubío;\naínda son quen era onte,\naínda non perdín o brío.",
+    "normalized_text": "subin ao alto do carro, hei botar un asubio; ainda son quen era onte, ainda non perdin o brio.",
+    "incipit": "Subín ao alto do carro, hei",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 17,
+    "text": "Esta noite hai serán,\nnon me deixan ir a el;\ncoitado do meu irmán,\nque ha d’ir bailar con el.",
+    "normalized_text": "esta noite hai seran, non me deixan ir a el; coitado do meu irman, que ha d’ir bailar con el.",
+    "incipit": "Esta noite hai serán, non me",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 16,
+    "text": "Eu hei de subir ao alto,\nque do alto vexo ben,\npara ver os meus amores,\nse se falan con alguén.",
+    "normalized_text": "eu hei de subir ao alto, que do alto vexo ben, para ver os meus amores, se se falan con alguen.",
+    "incipit": "Eu hei de subir ao alto,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 15,
+    "text": "Na entrada de Moscoso\nhai dúas pedras de asento:\nunha é p’ra namorar,\noutra p’ra perder o tempo.",
+    "normalized_text": "na entrada de moscoso hai duas pedras de asento: unha e p’ra namorar, outra p’ra perder o tempo.",
+    "incipit": "Na entrada de Moscoso hai dúas",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 14,
+    "text": "Na aldeíña de Moscoso,\nna primeira casa nova,\nxa non se conta o diñeiro,\nque se pesa por arrobas.",
+    "normalized_text": "na aldeina de moscoso, na primeira casa nova, xa non se conta o dineiro, que se pesa por arrobas.",
+    "incipit": "Na aldeíña de Moscoso, na primeira",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 13,
+    "text": "As augas do río triste\nvan dar ao río alegre;\na auga do noso río\ndeixa a roupa como a neve.",
+    "normalized_text": "as augas do rio triste van dar ao rio alegre; a auga do noso rio deixa a roupa como a neve.",
+    "incipit": "As augas do río triste van",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 12,
+    "text": "Alcipreste non se rega\nporque na lentura nace;\namor firme non se olvida\npor ben traballos que un pase.",
+    "normalized_text": "alcipreste non se rega porque na lentura nace; amor firme non se olvida por ben traballos que un pase.",
+    "incipit": "Alcipreste non se rega porque na",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 11,
+    "text": "Adiós, piedra de Almirante,\nque de brillantes se cubre;\nnon hai ben que non acabe\nnin hai mal que sempre dure.",
+    "normalized_text": "adios, piedra de almirante, que de brillantes se cubre; non hai ben que non acabe nin hai mal que sempre dure.",
+    "incipit": "Adiós, piedra de Almirante, que de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 10,
+    "text": "Olvidáchesme, olvideite,\nboteiche terra nos ollos;\no día que me olvidaches\nxa botei amores novos.",
+    "normalized_text": "olvidachesme, olvideite, boteiche terra nos ollos; o dia que me olvidaches xa botei amores novos.",
+    "incipit": "Olvidáchesme, olvideite, boteiche terra nos ollos;",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 9,
+    "text": "Eu hei d’ir ao río Miño\nbuscar a auga serea,\npara me lavar con ela,\nque me din que son morena.",
+    "normalized_text": "eu hei d’ir ao rio mino buscar a auga serea, para me lavar con ela, que me din que son morena.",
+    "incipit": "Eu hei d’ir ao río Miño",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 8,
+    "text": "Rapaciña de Moscoso,\ncon que lavas o cabelo?\nCunha herba que hai no monte\nque lle chaman tormentelo.",
+    "normalized_text": "rapacina de moscoso, con que lavas o cabelo? cunha herba que hai no monte que lle chaman tormentelo.",
+    "incipit": "Rapaciña de Moscoso, con que lavas",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
+    "id": 7,
+    "text": "Aldeíña de Moscoso,\nde noite parece vila;\nten un caravel na entrada\ne unha rosa na saída.",
+    "normalized_text": "aldeina de moscoso, de noite parece vila; ten un caravel na entrada e unha rosa na saida.",
+    "incipit": "Aldeíña de Moscoso, de noite parece",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-26 18:39:10",
+    "updated_at": "2026-09-26 18:39:10",
+    "territories": [
+      {
+        "id": "par:3603705",
+        "nome": "Moscoso (San Paio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [],
+    "versions": []
+  },
+  {
     "id": 6,
     "text": "Costureiriña bonita,\nOnde tes os teus vestidos?\nTéñoos gardados na hucha\npara poñer os domingos.",
     "normalized_text": "costureirina bonita, onde tes os teus vestidos? tenoos gardados na hucha para poner os domingos.",
@@ -7,6 +1359,7 @@
     "notes": null,
     "status": "published",
     "territory_state": "assigned",
+    "is_volta": false,
     "created_at": "2026-08-25 22:54:36",
     "updated_at": "2026-08-25 22:54:36",
     "territories": [
@@ -31,6 +1384,7 @@
     "notes": null,
     "status": "published",
     "territory_state": "assigned",
+    "is_volta": false,
     "created_at": "2026-08-25 22:49:31",
     "updated_at": "2026-08-25 22:49:31",
     "territories": [
@@ -55,6 +1409,7 @@
     "notes": null,
     "status": "published",
     "territory_state": "assigned",
+    "is_volta": false,
     "created_at": "2026-08-25 03:08:06",
     "updated_at": "2026-08-25 03:08:06",
     "territories": [
@@ -71,14 +1426,15 @@
   },
   {
     "id": 3,
-    "text": "Non chas quero, non chas quero\nnabizas do teu nabal-e\nnon chas quero, non chas quero\nque me poden facer mal-e.",
-    "normalized_text": "non chas quero, non chas quero nabizas do teu nabal-e non chas quero, non chas quero que me poden facer mal-e.",
+    "text": "Non chas quero, non chas quero\nnabizas do teu nabal;\nnon chas quero, non chas quero\nque me poden facer mal.",
+    "normalized_text": "non chas quero, non chas quero nabizas do teu nabal; non chas quero, non chas quero que me poden facer mal.",
     "incipit": "Non chas quero, non chas quero",
     "notes": null,
     "status": "published",
     "territory_state": "assigned",
+    "is_volta": false,
     "created_at": "2026-03-25 21:48:48",
-    "updated_at": "2026-03-25 21:48:48",
+    "updated_at": "2026-09-27 12:43:52",
     "territories": [
       {
         "id": "par:1501711",
@@ -103,6 +1459,7 @@
     "notes": null,
     "status": "published",
     "territory_state": "assigned",
+    "is_volta": false,
     "created_at": "2026-03-25 20:37:25",
     "updated_at": "2026-03-25 20:37:25",
     "territories": [

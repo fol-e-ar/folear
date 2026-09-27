@@ -62,6 +62,33 @@ def run_checks(conn: sqlite3.Connection) -> list[str]:
             f"Relación copla-territorio rota: copla {row['copla_id']} -> {row['territory_id']}"
         )
 
+    missing_version_territories = conn.execute(
+        """
+        SELECT cvt.version_id, cvt.territory_id
+        FROM copla_version_territories cvt
+        LEFT JOIN copla_versions cv ON cv.id = cvt.version_id
+        LEFT JOIN territories t ON t.id = cvt.territory_id
+        WHERE cv.id IS NULL OR t.id IS NULL
+        """
+    ).fetchall()
+    for row in missing_version_territories:
+        issues.append(
+            f"Relación variante-territorio rota: variante {row['version_id']} -> {row['territory_id']}"
+        )
+
+    orphan_traits = conn.execute(
+        """
+        SELECT tt.id, tt.territory_id
+        FROM territory_traits tt
+        LEFT JOIN territories t ON t.id = tt.territory_id
+        WHERE t.id IS NULL
+        """
+    ).fetchall()
+    for row in orphan_traits:
+        issues.append(
+            f"Trazo de territorio {row['id']} referencia territory inexistente: {row['territory_id']}"
+        )
+
     piece_positions = conn.execute(
         """
         SELECT piece_id, position, COUNT(*) AS total
@@ -76,13 +103,17 @@ def run_checks(conn: sqlite3.Connection) -> list[str]:
         )
 
     piece_links = conn.execute(
-        "SELECT piece_id, copla_id FROM piece_coplas"
+        "SELECT piece_id, copla_id, inline_text, role FROM piece_coplas"
     ).fetchall()
     for row in piece_links:
-        if row["copla_id"] not in copla_ids:
+        if row["copla_id"] is not None and row["copla_id"] not in copla_ids:
             issues.append(
                 f"Peza {row['piece_id']} referencia copla inexistente: {row['copla_id']}"
             )
+        if row["copla_id"] is None and not (row["inline_text"] or "").strip():
+            issues.append(f"Peza {row['piece_id']} ten unha aparición sen copla nin texto.")
+        if row["role"] not in {"copla", "retrouso"}:
+            issues.append(f"Peza {row['piece_id']} usa tipo textual non válido: {row['role']}")
 
     piece_contexts = conn.execute(
         "SELECT id, context_territory_id FROM pieces WHERE context_territory_id IS NOT NULL"

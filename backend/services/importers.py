@@ -69,6 +69,9 @@ def validate_coplas_payload(payload, known_territories: set[str]) -> list[str]:
             errors.append(
                 f"Copla #{index}: 'territory_state' debe ser 'assigned', 'unassigned' ou 'general'."
             )
+        is_volta = copla.get("is_volta", False)
+        if not isinstance(is_volta, bool):
+            errors.append(f"Copla #{index}: 'is_volta' debe ser booleano.")
         tags = copla.get("tags", [])
         if not isinstance(tags, list):
             errors.append(f"Copla #{index}: 'tags' debe ser unha lista.")
@@ -92,6 +95,18 @@ def validate_coplas_payload(payload, known_territories: set[str]) -> list[str]:
                     errors.append(
                         f"Copla #{index}, versión #{version_index}: 'notes' debe ser string."
                     )
+                version_territories = version.get("territories", [])
+                if not isinstance(version_territories, list):
+                    errors.append(
+                        f"Copla #{index}, versión #{version_index}: 'territories' debe ser unha lista."
+                    )
+                else:
+                    for territory in version_territories:
+                        territory_id = territory.get("id") if isinstance(territory, dict) else None
+                        if not territory_id or territory_id not in known_territories:
+                            errors.append(
+                                f"Copla #{index}, versión #{version_index}: territorio descoñecido: {territory_id}"
+                            )
         territories = copla.get("territories", [])
         if not isinstance(territories, list):
             errors.append(f"Copla #{index}: 'territories' debe ser unha lista.")
@@ -132,6 +147,7 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
         notes = copla.get("notes") or None
         status = copla.get("status", "published")
         territory_state = copla.get("territory_state", "assigned")
+        is_volta = 1 if copla.get("is_volta") else 0
         copla_id = copla.get("id")
 
         if isinstance(copla_id, int):
@@ -145,10 +161,11 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
                   notes = ?,
                   status = ?,
                   territory_state = ?,
+                  is_volta = ?,
                   updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (text, normalized, incipit, notes, status, territory_state, copla_id),
+                (text, normalized, incipit, notes, status, territory_state, is_volta, copla_id),
             )
             conn.execute("DELETE FROM copla_territories WHERE copla_id = ?", (copla_id,))
             conn.execute("DELETE FROM copla_tags WHERE copla_id = ?", (copla_id,))
@@ -162,11 +179,12 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
                   notes,
                   status,
                   territory_state,
+                  is_volta,
                   updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
-                (text, normalized, incipit, notes, status, territory_state),
+                (text, normalized, incipit, notes, status, territory_state, is_volta),
             )
             copla_id = cur.lastrowid
         imported_ids.append(copla_id)
@@ -174,7 +192,7 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
         conn.execute("DELETE FROM copla_versions WHERE copla_id = ?", (copla_id,))
         for position, version in enumerate(copla.get("versions", []), start=1):
             version_text = version["text"].strip()
-            conn.execute(
+            version_cur = conn.execute(
                 """
                 INSERT INTO copla_versions (
                   copla_id,
@@ -198,6 +216,15 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
                     position,
                 ),
             )
+            version_id = version_cur.lastrowid
+            for territory in version.get("territories", []):
+                conn.execute(
+                    """
+                    INSERT INTO copla_version_territories (version_id, territory_id)
+                    VALUES (?, ?)
+                    """,
+                    (version_id, territory["id"]),
+                )
 
         for territory in copla.get("territories", []):
             conn.execute(
@@ -227,6 +254,80 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
             )
 
     return imported_ids
+
+
+def validate_territory_traits_payload(payload, known_territories: set[str]) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(payload, dict) or not isinstance(payload.get("traits"), list):
+        return ["O JSON debe ser un obxecto con clave 'traits' en forma de lista."]
+
+    for index, trait in enumerate(payload["traits"], start=1):
+        if not isinstance(trait, dict):
+            errors.append(f"Trazo #{index}: debe ser un obxecto.")
+            continue
+        trait_id = trait.get("id")
+        if trait_id is not None and not isinstance(trait_id, int):
+            errors.append(f"Trazo #{index}: 'id' debe ser enteiro cando existe.")
+        if trait.get("_delete"):
+            if trait_id is None:
+                errors.append(f"Trazo #{index}: para borrar cómpre indicar 'id'.")
+            continue
+        territory_id = trait.get("territory_id")
+        if not territory_id or territory_id not in known_territories:
+            errors.append(f"Trazo #{index}: territorio descoñecido: {territory_id}")
+        trait_name = trait.get("trait")
+        if not isinstance(trait_name, str) or not trait_name.strip():
+            errors.append(f"Trazo #{index}: falta 'trait' ou está baleiro.")
+        category = trait.get("category")
+        if category is not None and not isinstance(category, str):
+            errors.append(f"Trazo #{index}: 'category' debe ser string.")
+        notes = trait.get("notes")
+        if notes is not None and not isinstance(notes, str):
+            errors.append(f"Trazo #{index}: 'notes' debe ser string.")
+    return errors
+
+
+def import_territory_traits(conn: sqlite3.Connection, payload) -> list[int]:
+    known_territories = load_known_territories(conn)
+    errors = validate_territory_traits_payload(payload, known_territories)
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    affected_ids: list[int] = []
+    for trait in payload["traits"]:
+        trait_id = trait.get("id")
+
+        if trait.get("_delete"):
+            conn.execute("DELETE FROM territory_traits WHERE id = ?", (trait_id,))
+            affected_ids.append(trait_id)
+            continue
+
+        territory_id = trait["territory_id"]
+        trait_name = trait["trait"].strip()
+        category = (trait.get("category") or "").strip() or None
+        notes = (trait.get("notes") or "").strip() or None
+
+        if isinstance(trait_id, int):
+            conn.execute(
+                """
+                UPDATE territory_traits
+                SET territory_id = ?, trait = ?, category = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (territory_id, trait_name, category, notes, trait_id),
+            )
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO territory_traits (territory_id, trait, category, notes, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (territory_id, trait_name, category, notes),
+            )
+            trait_id = cur.lastrowid
+        affected_ids.append(trait_id)
+
+    return affected_ids
 
 
 def validate_pieces_payload(conn: sqlite3.Connection, payload) -> list[str]:
@@ -267,9 +368,19 @@ def validate_pieces_payload(conn: sqlite3.Connection, payload) -> list[str]:
                 errors.append(f"Peza #{index}: cada elemento de 'coplas' debe ser un obxecto.")
                 continue
             copla_id = item.get("copla_id")
+            inline_text = item.get("text")
             position = item.get("position")
-            if not isinstance(copla_id, int) or copla_id not in known_coplas:
+            has_known_copla = isinstance(copla_id, int) and copla_id in known_coplas
+            has_inline_text = isinstance(inline_text, str) and bool(inline_text.strip())
+            if not has_known_copla and not has_inline_text:
+                errors.append(
+                    f"Peza #{index}: cada aparición precisa unha 'copla_id' coñecida ou texto."
+                )
+            if copla_id is not None and not has_known_copla:
                 errors.append(f"Peza #{index}: copla descoñecida: {copla_id}")
+            role = item.get("role", "copla")
+            if role not in {"copla", "retrouso"}:
+                errors.append(f"Peza #{index}: tipo textual non válido: {role}")
             if not isinstance(position, int) or position < 1:
                 errors.append(f"Peza #{index}: posición non válida: {position}")
             elif position in positions:
@@ -320,17 +431,21 @@ def import_pieces(conn: sqlite3.Connection, payload) -> list[int]:
                 INSERT INTO piece_coplas (
                   piece_id,
                   copla_id,
+                  inline_text,
                   position,
                   section_label,
+                  role,
                   notes
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     piece_id,
-                    item["copla_id"],
+                    item.get("copla_id"),
+                    (item.get("text") or "").strip() or None,
                     item["position"],
                     item.get("section_label"),
+                    item.get("role", "copla"),
                     item.get("notes"),
                 ),
             )
