@@ -166,12 +166,28 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 html = response.read(512_000).decode("utf-8", errors="ignore")
             parser = PreviewParser()
             parser.feed(html)
+            description = (
+                parser.meta.get("og:description")
+                or parser.meta.get("description")
+                or parser.meta.get("twitter:description")
+            )
+            title = parser.meta.get("og:title") or parser.meta.get("twitter:title") or parser.title
+            og_type = parser.meta.get("og:type") or ""
+            author = None
+            if og_type.startswith("music") and description and " · " in description:
+                # As paxinas de faixa de Spotify (e similares) formatan a
+                # descricion coma "Artista · Cancion · Ano": collemos o
+                # primeiro segmento coma autoria se non coincide co titulo.
+                first_segment = description.split(" · ")[0].strip()
+                if first_segment and first_segment.lower() != (title or "").strip().lower():
+                    author = first_segment
             self._send_json(200, {
                 "ok": True,
-                "title": parser.meta.get("og:title") or parser.meta.get("twitter:title") or parser.title,
-                "description": parser.meta.get("og:description") or parser.meta.get("description") or parser.meta.get("twitter:description"),
+                "title": title,
+                "description": description,
                 "thumbnail_url": parser.meta.get("og:image") or parser.meta.get("twitter:image"),
                 "provider": parser.meta.get("og:site_name"),
+                "author_or_source": author,
             })
         except Exception as exc:
             self._send_json(400, {"ok": False, "error": str(exc)})

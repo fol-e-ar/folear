@@ -52,9 +52,13 @@ const state = {
   view: "map",
   territoryTab: "summary",
   coplaViewMode: "gallery",
-  pieceTab: "library",
+  pieceTab: "workshop",
   coplaQuery: "",
   coplaStateFilter: "all",
+  coplaSelectMode: false,
+  coplaSelectedIds: [],
+  batchTerritoryIds: [],
+  batchAssignModalOpen: false,
   territoryQuery: "",
   territoryCoplaQuery: "",
   pieceLibraryQuery: "",
@@ -75,9 +79,13 @@ const state = {
   submitTerritoryIds: [],
   submitEditingId: null,
   submitEditingSnapshot: null,
+  submitReturnView: null,
   submitBatch: [],
   mediaTerritoryIds: [],
   mediaCoplaIds: [],
+  mediaEditingId: null,
+  mediaEditingSnapshot: null,
+  mediaEditingPieceLinks: [],
   pdfUrl: "",
   pdfFilename: "",
   pdfBusy: false,
@@ -340,7 +348,7 @@ function youtubeId(url = "") {
   }
 }
 
-function mediaCard(item) {
+function mediaCard(item, options = {}) {
   const url = mediaUrl(item);
   const kind = mediaKind(item);
   const title = item.title || item.label || item.name || "Recurso sen título";
@@ -368,6 +376,7 @@ function mediaCard(item) {
           ${linkedCoplas.length ? `<span class="tag">${linkedCoplas.length} copla${linkedCoplas.length === 1 ? "" : "s"}</span>` : ""}
         </div>
         ${url ? "" : `<p class="muted">Sen ligazón pública.</p>`}
+        ${options.editable ? `<button class="btn" type="button" data-edit-media="${item.id}">Editar</button>` : ""}
       </div>
     </article>
   `;
@@ -579,15 +588,23 @@ function bindResultButtons(root = document) {
   });
 }
 
+function coplaSelectCheckbox(copla, options) {
+  if (!options.selectMode) return "";
+  return `<label class="select-check" title="Seleccionar"><input type="checkbox" data-select-copla="${copla.id}" ${options.selected ? "checked" : ""}></label>`;
+}
+
 function coplaCard(copla, options = {}) {
   const versionCount = (copla.versions || []).length;
   const versionChip = versionCount ? `<span class="tag">${versionCount} variantes</span>` : "";
   const voltaChip = copla.is_volta ? `<span class="tag is-volta">Volta</span>` : "";
   const placeChip = `<span class="gallery-place${options.dimPlace ? " is-subtle" : ""}">${escapeHtml(coplaPlaceLabel(copla))}</span>`;
+  const selectCheckbox = coplaSelectCheckbox(copla, options);
+  const cardClass = options.selected ? " is-selected" : "";
   if (options.list) {
     return `
-      <article class="gallery-card as-list" tabindex="0" role="button" data-open-copla="${copla.id}">
+      <article class="gallery-card as-list${cardClass}" tabindex="0" role="button" data-open-copla="${copla.id}">
         <div class="gallery-top">
+          ${selectCheckbox}
           <h2 class="gallery-title">${escapeHtml(coplaTitle(copla))}</h2>
           <button class="mini-add icon-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir á peza">+</button>
         </div>
@@ -599,11 +616,10 @@ function coplaCard(copla, options = {}) {
     `;
   }
   return `
-    <article class="gallery-card" tabindex="0" role="button" data-open-copla="${copla.id}">
-      <div>
-        <div class="gallery-top align-end">
-          <button class="mini-add icon-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir á peza">+</button>
-        </div>
+    <article class="gallery-card${cardClass}" tabindex="0" role="button" data-open-copla="${copla.id}">
+      ${selectCheckbox}
+      <button class="mini-add icon-add card-float-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir á peza">+</button>
+      <div class="gallery-card-body">
         <h2 class="gallery-title">${escapeHtml(coplaTitle(copla))}</h2>
         <div class="gallery-text">${nl2br(restOfText(copla.text || ""))}</div>
       </div>
@@ -618,11 +634,17 @@ function coplaCard(copla, options = {}) {
   `;
 }
 
+function coplaMatchesStateFilter(copla, filter) {
+  if (filter === "assigned") return copla.territory_state === "assigned" || copla.territory_state === "general";
+  if (filter === "unassigned") return copla.territory_state === "unassigned";
+  return true;
+}
+
 function filteredCoplas() {
   const scoped = state.selectedTerritory ? placeContext().coplas : state.coplas;
   const q = normalizeText(state.coplaQuery);
   return scoped.filter(copla => {
-    const stateMatches = state.coplaStateFilter === "all" || copla.territory_state === state.coplaStateFilter;
+    const stateMatches = state.coplaStateFilter === "all" || coplaMatchesStateFilter(copla, state.coplaStateFilter);
     return stateMatches && (!q || normalizeText(coplaHaystack(copla)).includes(q));
   });
 }
@@ -646,7 +668,8 @@ function coplaStreamClass() {
 
 function coplaIncipitRow(copla, options = {}) {
   return `
-    <article class="incipit-row" tabindex="0" role="button" data-open-copla="${copla.id}">
+    <article class="incipit-row${options.selected ? " is-selected" : ""}" tabindex="0" role="button" data-open-copla="${copla.id}">
+      ${coplaSelectCheckbox(copla, options)}
       <span class="incipit-text">${escapeHtml(coplaTitle(copla))}</span>
       <span class="incipit-place${options.dimPlace ? " is-subtle" : ""}">${escapeHtml(coplaPlaceLabel(copla))}</span>
     </article>
@@ -655,10 +678,12 @@ function coplaIncipitRow(copla, options = {}) {
 
 function renderCoplaItems(items) {
   const dimPlace = Boolean(state.selectedTerritory);
+  const selectMode = state.coplaSelectMode;
+  const isSelected = copla => state.coplaSelectedIds.includes(copla.id);
   if (state.coplaViewMode === "incipits") {
-    return items.map(copla => coplaIncipitRow(copla, { dimPlace })).join("") || `<p class="muted">Sen coplas para esta consulta.</p>`;
+    return items.map(copla => coplaIncipitRow(copla, { dimPlace, selectMode, selected: isSelected(copla) })).join("") || `<p class="muted">Sen coplas para esta consulta.</p>`;
   }
-  return items.map(copla => coplaCard(copla, { list: state.coplaViewMode === "list", dimPlace })).join("") || `<p class="muted">Sen coplas para esta consulta.</p>`;
+  return items.map(copla => coplaCard(copla, { list: state.coplaViewMode === "list", dimPlace, selectMode, selected: isSelected(copla) })).join("") || `<p class="muted">Sen coplas para esta consulta.</p>`;
 }
 
 function updateCoplasResults(root = $("#view-coplas")) {
@@ -680,6 +705,54 @@ function updateCoplasResults(root = $("#view-coplas")) {
     allChip.textContent = `Todas · ${items.length}`;
     allChip.classList.toggle("active", state.coplaStateFilter === "all");
   }
+  const toggleButton = $("#toggleCoplaSelect", root);
+  if (toggleButton) {
+    toggleButton.textContent = state.coplaSelectMode ? "Saír da selección" : "Seleccionar varias";
+    toggleButton.classList.toggle("active", state.coplaSelectMode);
+  }
+  const batchBar = $("#coplaBatchBar", root);
+  if (batchBar) {
+    batchBar.innerHTML = coplaBatchBarMarkup(items);
+    bindCoplaBatchBar(root);
+  }
+}
+
+function toggleCoplaSelection(coplaId) {
+  const index = state.coplaSelectedIds.indexOf(coplaId);
+  if (index === -1) state.coplaSelectedIds.push(coplaId);
+  else state.coplaSelectedIds.splice(index, 1);
+  updateCoplasResults();
+}
+
+function coplaBatchBarMarkup(items) {
+  if (!state.coplaSelectMode) return "";
+  const count = state.coplaSelectedIds.length;
+  return `
+    <div class="batch-bar" role="toolbar" aria-label="Edición en lote">
+      <span>${count} copla${count === 1 ? "" : "s"} seleccionada${count === 1 ? "" : "s"}</span>
+      <button class="btn" type="button" id="batchSelectAllVisible">Seleccionar as ${items.length} visíbeis</button>
+      <button class="btn" type="button" id="batchClearSelection" ${count ? "" : "disabled"}>Baleirar selección</button>
+      <button class="btn primary" type="button" id="openBatchAssign" ${count ? "" : "disabled"}>Asignar territorio...</button>
+    </div>
+  `;
+}
+
+function bindCoplaBatchBar(root = $("#view-coplas")) {
+  $("#batchSelectAllVisible", root)?.addEventListener("click", () => {
+    const ids = filteredCoplas().map(copla => copla.id);
+    state.coplaSelectedIds = Array.from(new Set([...state.coplaSelectedIds, ...ids]));
+    updateCoplasResults(root);
+  });
+  $("#batchClearSelection", root)?.addEventListener("click", () => {
+    state.coplaSelectedIds = [];
+    updateCoplasResults(root);
+  });
+  $("#openBatchAssign", root)?.addEventListener("click", () => {
+    if (!state.coplaSelectedIds.length) return;
+    state.batchAssignModalOpen = true;
+    state.batchTerritoryIds = [];
+    renderCoplasView();
+  });
 }
 
 function renderCoplasView() {
@@ -702,16 +775,19 @@ function renderCoplasView() {
           <option value="all" ${state.selectedTerritory ? "" : "selected"}>Todo o corpus</option>
         </select>
         ${coplaViewToggleMarkup()}
+        <button class="btn ${state.coplaSelectMode ? "active" : ""}" type="button" id="toggleCoplaSelect">${state.coplaSelectMode ? "Saír da selección" : "Seleccionar varias"}</button>
       </div>
       <div class="chips">
         <button class="chip ${state.coplaStateFilter === "all" ? "active" : ""}" type="button" data-copla-total data-state-filter="all">Todas · ${items.length}</button>
         <button class="chip ${state.coplaStateFilter === "assigned" ? "active" : ""}" type="button" data-state-filter="assigned">Asignadas</button>
-        <button class="chip ${state.coplaStateFilter === "general" ? "active" : ""}" type="button" data-state-filter="general">Galiza xeral</button>
+        <button class="chip ${state.coplaStateFilter === "unassigned" ? "active" : ""}" type="button" data-state-filter="unassigned">Sen asignar</button>
       </div>
+      <div id="coplaBatchBar">${coplaBatchBarMarkup(items)}</div>
       <div class="results-row"><span id="coplaResultCount" class="muted">Mostrando ${items.length} coplas</span><span id="coplaResultScope" class="muted">${state.selectedTerritory ? "inclúe subterritorios" : "arquivo completo"}</span></div>
       <div id="coplaList" class="${coplaStreamClass()}">
         ${renderCoplaItems(items)}
       </div>
+      ${state.batchAssignModalOpen ? batchAssignModalMarkup() : ""}
     </div>
   `;
   $("#coplaSearch")?.addEventListener("input", event => {
@@ -730,7 +806,14 @@ function renderCoplasView() {
     state.coplaStateFilter = button.dataset.stateFilter;
     updateCoplasResults(view);
   }));
+  $("#toggleCoplaSelect")?.addEventListener("click", () => {
+    state.coplaSelectMode = !state.coplaSelectMode;
+    if (!state.coplaSelectMode) state.coplaSelectedIds = [];
+    updateCoplasResults(view);
+  });
+  bindCoplaBatchBar(view);
   bindCoplaActions(view);
+  if (state.batchAssignModalOpen) bindBatchAssignModal(view);
 }
 
 function bindCoplaActions(root = document) {
@@ -738,15 +821,27 @@ function bindCoplaActions(root = document) {
   all("[data-open-copla]", root).forEach(card => {
     card.addEventListener("click", event => {
       if (event.target.closest("button, a, select, input, textarea")) return;
+      if (state.coplaSelectMode) {
+        toggleCoplaSelection(Number(card.dataset.openCopla));
+        return;
+      }
       openCoplaDrawer(Number(card.dataset.openCopla));
     });
     card.addEventListener("keydown", event => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
+        if (state.coplaSelectMode) {
+          toggleCoplaSelection(Number(card.dataset.openCopla));
+          return;
+        }
         openCoplaDrawer(Number(card.dataset.openCopla));
       }
     });
   });
+  all("[data-select-copla]", root).forEach(checkbox => checkbox.addEventListener("click", event => {
+    event.stopPropagation();
+    toggleCoplaSelection(Number(checkbox.dataset.selectCopla));
+  }));
   all("[data-add-copla]", root).forEach(button => button.addEventListener("click", event => {
     event.stopPropagation();
     const copla = state.coplas.find(item => Number(item.id) === Number(button.dataset.addCopla));
@@ -837,6 +932,139 @@ function closeCoplaDrawer() {
   if (!drawer) return;
   drawer.hidden = true;
   drawer.innerHTML = "";
+}
+
+function batchAssignModalMarkup() {
+  const count = state.coplaSelectedIds.length;
+  const selectedTerritories = state.batchTerritoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
+  return `
+    <div class="media-modal batch-assign-modal" role="dialog" aria-modal="true" aria-label="Asignar territorio en lote">
+      <div class="media-modal-backdrop" data-close-batch-assign></div>
+      <div class="media-modal-panel">
+        <div class="media-modal-head">
+          <div><div class="eyebrow">Edición en lote</div><h2>Asignar territorio a ${count} copla${count === 1 ? "" : "s"}</h2></div>
+          <button class="card-close" type="button" data-close-batch-assign aria-label="Pechar">×</button>
+        </div>
+        <div class="batch-assign-body formgrid">
+          <div class="field full">
+            <label>Territorios</label>
+            <input id="batchTerritoryQuery" type="search" placeholder="Buscar parroquia, concello, comarca...">
+            <div id="batchTerritoryResults" class="territory-results compact"></div>
+          </div>
+          <div class="field full"><div id="batchSelectedTerritoryChips" class="selected-chips">${selectedTerritories.map(item => selectedTerritoryChip(item, "batch")).join("") || `<p class="muted">Sen territorio seleccionado.</p>`}</div></div>
+          <p id="batchAssignFeedback" class="muted field full"></p>
+          <div class="drawer-actions field full">
+            <button class="btn" type="button" data-close-batch-assign>Cancelar</button>
+            <button class="btn primary" type="button" id="applyBatchAssign" ${state.batchTerritoryIds.length ? "" : "disabled"}>Aplicar a ${count} copla${count === 1 ? "" : "s"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function refreshBatchTerritoryChips() {
+  const chips = $("#batchSelectedTerritoryChips");
+  if (chips) {
+    const selected = state.batchTerritoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
+    chips.innerHTML = selected.map(item => selectedTerritoryChip(item, "batch")).join("") || `<p class="muted">Sen territorio seleccionado.</p>`;
+    all("[data-remove-batch-territory]", chips).forEach(button => button.addEventListener("click", () => {
+      state.batchTerritoryIds = state.batchTerritoryIds.filter(id => id !== button.dataset.removeBatchTerritory);
+      refreshBatchTerritoryChips();
+    }));
+  }
+  const applyButton = $("#applyBatchAssign");
+  if (applyButton) applyButton.disabled = !state.batchTerritoryIds.length;
+}
+
+function bindBatchAssignModal(root = $("#view-coplas")) {
+  all("[data-close-batch-assign]", root).forEach(el => el.addEventListener("click", () => {
+    state.batchAssignModalOpen = false;
+    renderCoplasView();
+  }));
+  refreshBatchTerritoryChips();
+  const input = $("#batchTerritoryQuery", root);
+  const results = $("#batchTerritoryResults", root);
+  if (input && results) {
+    input.addEventListener("input", () => {
+      const query = input.value.trim();
+      if (!query) {
+        results.innerHTML = "";
+        return;
+      }
+      const matches = searchTerritories(state.territorios, query).slice(0, 12);
+      results.innerHTML = matches.map(item => `
+        <button type="button" data-pick-batch-territory="${item.id}">
+          <strong>${escapeHtml(item.nome)}</strong>
+          <span>${escapeHtml(territorySearchMeta(item))}</span>
+        </button>
+      `).join("") || `<p class="muted">Sen resultados.</p>`;
+      all("[data-pick-batch-territory]", results).forEach(button => button.addEventListener("click", () => {
+        const territory = state.territorios.find(item => item.id === button.dataset.pickBatchTerritory);
+        if (!territory) return;
+        if (!state.batchTerritoryIds.includes(territory.id)) state.batchTerritoryIds.push(territory.id);
+        input.value = "";
+        results.innerHTML = "";
+        refreshBatchTerritoryChips();
+      }));
+    });
+  }
+  $("#applyBatchAssign", root)?.addEventListener("click", applyBatchTerritoryAssignment);
+}
+
+function coplaToEditPayload(copla, overrides = {}) {
+  const territoryState = overrides.territory_state ?? copla.territory_state ?? "assigned";
+  const territories = territoryState === "assigned"
+    ? (overrides.territories ?? (copla.territories || []).map(item => ({ id: item.id })))
+    : [];
+  return {
+    id: copla.id,
+    text: copla.text || "",
+    notes: copla.notes || "",
+    status: copla.status || "published",
+    territory_state: territoryState,
+    territories,
+    tags: copla.tags || [],
+    is_volta: Boolean(copla.is_volta),
+    versions: (copla.versions || []).map(version => ({
+      label: version.label || null,
+      text: version.text || "",
+      notes: version.notes || "",
+      territories: version.territory_mode === "custom" ? (version.territories || []).map(item => ({ id: item.id })) : [],
+    })),
+  };
+}
+
+async function applyBatchTerritoryAssignment() {
+  const feedback = $("#batchAssignFeedback");
+  if (!state.batchTerritoryIds.length || !state.coplaSelectedIds.length) return;
+  const territories = state.batchTerritoryIds.map(id => ({ id }));
+  const payloads = state.coplaSelectedIds
+    .map(id => state.coplas.find(item => Number(item.id) === Number(id)))
+    .filter(Boolean)
+    .map(copla => coplaToEditPayload(copla, { territory_state: "assigned", territories }));
+  if (!payloads.length) return;
+  if (feedback) feedback.textContent = "Aplicando...";
+  const button = $("#applyBatchAssign");
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch("../api/coplas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coplas: payloads }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Non se puido aplicar a asignación.");
+    clearApiCache();
+    state.coplas = await getCoplas();
+    state.coplaSelectedIds = [];
+    state.batchAssignModalOpen = false;
+    state.batchTerritoryIds = [];
+    renderCoplasView();
+  } catch (error) {
+    if (feedback) feedback.textContent = error.message || "Non se puido aplicar a asignación.";
+    if (button) button.disabled = false;
+  }
 }
 
 function openPieceDrawer(pieceId) {
@@ -2407,6 +2635,22 @@ function renderSubmitView() {
                 <div class="field full"><label>Notas</label><textarea id="newNotes" rows="3" placeholder="Fonte, contexto, dúbidas editoriais...">${escapeHtml(editing?.notes || "")}</textarea></div>
               </div>
             </details>
+            ${editing ? `
+            <div class="field full">
+              <label>Media relacionada <span class="muted">(xa gardada na BD)</span></label>
+              <div id="coplaMediaLinks" class="selected-chips">
+                ${coplaMedia(editing).map(item => `
+                  <span class="selected-chip">
+                    ${escapeHtml(item.title || "Recurso sen título")} <small>${escapeHtml(mediaLabel(mediaKind(item)))}</small>
+                    <button type="button" data-unlink-copla-media="${item.id}" aria-label="Retirar ${escapeHtml(item.title || "recurso")}">×</button>
+                  </span>
+                `).join("") || `<p class="muted">Sen recursos multimedia vinculados.</p>`}
+              </div>
+              <input id="coplaMediaQuery" type="search" placeholder="Buscar media xa gardada (título, URL, fonte...)">
+              <div id="coplaMediaResults" class="territory-results compact"></div>
+              <p id="coplaMediaFeedback" class="muted"></p>
+            </div>
+            ` : ""}
         </div>
         <div class="variants-block">
           <div class="section-title"><div><h2>Variantes</h2><p class="muted">Numéranse automaticamente pola orde en que se engaden e parten do texto principal.</p></div><button class="btn" type="button" id="addVersion">+ Engadir variante</button></div>
@@ -2468,6 +2712,100 @@ function renderSubmitView() {
         notes: version.notes,
         territoryIds: (version.territories || []).map(item => item.id),
       });
+    });
+    bindCoplaMediaLinker(editing);
+  }
+}
+
+function mediaFullPayload(media, links) {
+  return {
+    id: media.id,
+    provider: media.provider,
+    media_kind: media.media_kind,
+    title: media.title,
+    url: media.url,
+    description: media.description,
+    author_or_source: media.author_or_source,
+    thumbnail_url: media.thumbnail_url,
+    status: media.status || "published",
+    links,
+  };
+}
+
+async function postMediaUpdate(payload) {
+  const response = await fetch("../api/media", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ media: [payload] }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Non se puido actualizar a media.");
+  clearApiCache();
+  state.media = await getMedia();
+}
+
+async function linkMediaToCopla(mediaId, coplaId) {
+  const media = state.media.find(item => Number(item.id) === Number(mediaId));
+  if (!media) return;
+  const already = (media.links || []).some(link => link.entity_type === "copla" && String(link.entity_id) === String(coplaId));
+  if (already) return;
+  const links = [...(media.links || []), { entity_type: "copla", entity_id: coplaId, relation_type: "documental" }];
+  await postMediaUpdate(mediaFullPayload(media, links));
+}
+
+async function unlinkMediaFromCopla(mediaId, coplaId) {
+  const media = state.media.find(item => Number(item.id) === Number(mediaId));
+  if (!media) return;
+  const links = (media.links || []).filter(link => !(link.entity_type === "copla" && String(link.entity_id) === String(coplaId)));
+  if (!links.length) {
+    throw new Error("Esta media quedaría sen ningunha ligazón. Retíraa dende a vista de Media se queres eliminala.");
+  }
+  await postMediaUpdate(mediaFullPayload(media, links));
+}
+
+function bindCoplaMediaLinker(copla) {
+  const view = $("#view-submit");
+  const feedback = $("#coplaMediaFeedback", view);
+  all("[data-unlink-copla-media]", view).forEach(button => button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await unlinkMediaFromCopla(Number(button.dataset.unlinkCoplaMedia), copla.id);
+      renderSubmitView();
+    } catch (error) {
+      if (feedback) feedback.textContent = error.message || "Non se puido retirar a ligazón.";
+      button.disabled = false;
+    }
+  }));
+  const input = $("#coplaMediaQuery", view);
+  const results = $("#coplaMediaResults", view);
+  if (input && results) {
+    input.addEventListener("input", () => {
+      const query = normalizeText(input.value.trim());
+      if (!query) {
+        results.innerHTML = "";
+        return;
+      }
+      const linkedIds = new Set(coplaMedia(copla).map(item => item.id));
+      const matches = state.media
+        .filter(item => !linkedIds.has(item.id))
+        .filter(item => normalizeText([item.title, item.url, item.author_or_source, item.provider].join(" ")).includes(query))
+        .slice(0, 10);
+      results.innerHTML = matches.map(item => `
+        <button type="button" data-link-copla-media="${item.id}">
+          <strong>${escapeHtml(item.title || "Recurso sen título")}</strong>
+          <span>${escapeHtml(mediaLabel(mediaKind(item)))} · ${escapeHtml(item.url || "")}</span>
+        </button>
+      `).join("") || `<p class="muted">Sen resultados.</p>`;
+      all("[data-link-copla-media]", results).forEach(button => button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await linkMediaToCopla(Number(button.dataset.linkCoplaMedia), copla.id);
+          renderSubmitView();
+        } catch (error) {
+          if (feedback) feedback.textContent = error.message || "Non se puido vincular a media.";
+          button.disabled = false;
+        }
+      }));
     });
   }
 }
@@ -2561,18 +2899,20 @@ function selectedCoplaChip(copla) {
 }
 
 function mediaFormMarkup(selectedMediaTerritories, selectedMediaCoplas) {
-  const defaultRole = state.mediaDefaultRole || (state.territoryTab === "melodies" ? "melody" : "documental");
+  const editing = state.mediaEditingSnapshot;
+  const defaultRole = editing ? mediaRole(editing) : (state.mediaDefaultRole || (state.territoryTab === "melodies" ? "melody" : "documental"));
+  const kind = editing ? mediaKind(editing) : "youtube";
   return `
     <section class="panel submit-media-panel">
-      <div class="section-title"><h2>Novo recurso</h2><span class="muted">Documental, melodía ou ambos</span></div>
+      <div class="section-title"><h2>${editing ? "Editar recurso" : "Novo recurso"}</h2><span class="muted">Documental, melodía ou ambos</span></div>
       <div class="formgrid">
-        <div class="field"><label>Título</label><input id="mediaTitle" type="text" placeholder="Xota 1, Muiñeira de Sequeiros..."></div>
-        <div class="field"><label>Tipo</label><select id="mediaKind"><option value="youtube">YouTube</option><option value="spotify">Spotify</option><option value="soundcloud">SoundCloud</option><option value="audio">Audio</option><option value="video">Vídeo</option><option value="image">Imaxe</option><option value="web">Web</option></select></div>
-        <div class="field"><label>Uso no arquivo</label><select id="mediaRole"><option value="documental" ${defaultRole === "documental" ? "selected" : ""}>Media documental</option><option value="melody" ${defaultRole === "melody" ? "selected" : ""}>Melodía / recurso musical</option><option value="mixed">Ambas cousas</option></select></div>
-        <div class="field full"><label>URL</label><div class="input-action"><input id="mediaUrl" type="url" placeholder="https://..."><button class="btn" type="button" id="fetchMediaMeta">Obter datos</button></div></div>
-        <div class="field"><label>Fonte ou autoría</label><input id="mediaSource" type="text" placeholder="Canle, intérprete, arquivo..."></div>
-        <div class="field"><label>Miniatura opcional</label><input id="mediaThumb" type="url" placeholder="https://..."></div>
-        <div class="field full"><label>Descrición</label><textarea id="mediaDescription" rows="3" placeholder="Contexto, relación coa melodía, observacións..."></textarea></div>
+        <div class="field"><label>Título</label><input id="mediaTitle" type="text" value="${escapeHtml(editing?.title || "")}" placeholder="Xota 1, Muiñeira de Sequeiros..."></div>
+        <div class="field"><label>Tipo</label><select id="mediaKind">${["youtube", "spotify", "soundcloud", "audio", "video", "image", "web"].map(value => `<option value="${value}" ${kind === value ? "selected" : ""}>${escapeHtml(mediaLabel(value))}</option>`).join("")}</select></div>
+        <div class="field"><label>Uso no arquivo</label><select id="mediaRole"><option value="documental" ${defaultRole === "documental" ? "selected" : ""}>Media documental</option><option value="melody" ${defaultRole === "melody" ? "selected" : ""}>Melodía / recurso musical</option><option value="mixed" ${defaultRole === "mixed" ? "selected" : ""}>Ambas cousas</option></select></div>
+        <div class="field full"><label>URL</label><div class="input-action"><input id="mediaUrl" type="url" value="${escapeHtml(editing?.url || "")}" placeholder="https://..."><button class="btn" type="button" id="fetchMediaMeta">Obter datos</button></div></div>
+        <div class="field"><label>Fonte ou autoría</label><input id="mediaSource" type="text" value="${escapeHtml(editing?.author_or_source || "")}" placeholder="Canle, intérprete, arquivo..."></div>
+        <div class="field"><label>Miniatura opcional</label><input id="mediaThumb" type="url" value="${escapeHtml(editing?.thumbnail_url || "")}" placeholder="https://..."></div>
+        <div class="field full"><label>Descrición</label><textarea id="mediaDescription" rows="3" placeholder="Contexto, relación coa melodía, observacións...">${escapeHtml(editing?.description || "")}</textarea></div>
         <div class="field"><label>Territorios vinculados</label><input id="mediaTerritoryQuery" type="search" placeholder="Buscar e engadir territorios..."></div>
         <div class="field full"><div id="mediaTerritoryResults" class="territory-results compact"></div></div>
         <div class="field full"><div id="selectedMediaTerritoryChips" class="selected-chips">${selectedMediaTerritories.map(item => selectedTerritoryChip(item, "media")).join("") || `<p class="muted">Sen territorio seleccionado.</p>`}</div></div>
@@ -2581,7 +2921,7 @@ function mediaFormMarkup(selectedMediaTerritories, selectedMediaCoplas) {
         <div class="field full"><div id="selectedMediaCoplaChips" class="selected-chips">${selectedMediaCoplas.map(item => selectedCoplaChip(item)).join("") || `<p class="muted">Sen coplas seleccionadas.</p>`}</div></div>
       </div>
       <div class="gallery-actions">
-        <button class="btn primary" type="button" id="saveMediaDirect">Gardar media na base local</button>
+        <button class="btn primary" type="button" id="saveMediaDirect">${editing ? "Gardar cambios" : "Gardar media na base local"}</button>
         <p id="mediaFeedback" class="muted"></p>
       </div>
     </section>
@@ -2590,14 +2930,15 @@ function mediaFormMarkup(selectedMediaTerritories, selectedMediaCoplas) {
 
 function mediaModalMarkup(selectedMediaTerritories, selectedMediaCoplas) {
   if (!state.mediaModalOpen) return "";
+  const editing = state.mediaEditingSnapshot;
   return `
-    <div class="media-modal" id="mediaModal" role="dialog" aria-modal="true" aria-label="Novo recurso">
+    <div class="media-modal" id="mediaModal" role="dialog" aria-modal="true" aria-label="${editing ? "Editar recurso" : "Novo recurso"}">
       <div class="media-modal-backdrop" data-close-media-modal></div>
       <div class="media-modal-panel">
         <div class="media-modal-head">
           <div>
-            <div class="eyebrow">Alta de media</div>
-            <h2>Novo recurso</h2>
+            <div class="eyebrow">${editing ? "Edición de media" : "Alta de media"}</div>
+            <h2>${editing ? "Editar recurso" : "Novo recurso"}</h2>
           </div>
           <button class="card-close" type="button" data-close-media-modal aria-label="Pechar">×</button>
         </div>
@@ -2609,6 +2950,24 @@ function mediaModalMarkup(selectedMediaTerritories, selectedMediaCoplas) {
 
 function openMediaModal(role = "") {
   state.mediaDefaultRole = role || "";
+  state.mediaEditingId = null;
+  state.mediaEditingSnapshot = null;
+  state.mediaEditingPieceLinks = [];
+  state.mediaTerritoryIds = [];
+  state.mediaCoplaIds = [];
+  state.mediaModalOpen = true;
+  renderMediaView();
+}
+
+function startEditMedia(mediaId) {
+  const media = state.media.find(item => Number(item.id) === Number(mediaId));
+  if (!media) return;
+  state.mediaEditingId = media.id;
+  state.mediaEditingSnapshot = media;
+  state.mediaEditingPieceLinks = (media.links || []).filter(link => link.entity_type === "piece");
+  state.mediaTerritoryIds = mediaTerritories(media).map(item => item.id);
+  state.mediaCoplaIds = mediaCoplas(media).map(item => item.id);
+  state.mediaDefaultRole = "";
   state.mediaModalOpen = true;
   renderMediaView();
 }
@@ -2616,6 +2975,11 @@ function openMediaModal(role = "") {
 function closeMediaModal() {
   state.mediaModalOpen = false;
   state.mediaDefaultRole = "";
+  state.mediaEditingId = null;
+  state.mediaEditingSnapshot = null;
+  state.mediaEditingPieceLinks = [];
+  state.mediaTerritoryIds = [];
+  state.mediaCoplaIds = [];
   renderMediaView();
 }
 
@@ -2833,30 +3197,32 @@ function buildMediaPayloadFromForm() {
   const role = $("#mediaRole")?.value || "documental";
   const territoryIds = Array.from(new Set(state.mediaTerritoryIds));
   const coplaIds = Array.from(new Set(state.mediaCoplaIds.map(Number)));
+  const preservedPieceLinks = state.mediaEditingPieceLinks || [];
   if (!title || !url) {
     feedback.textContent = "Indica título e URL.";
     return null;
   }
-  if (!territoryIds.length && !coplaIds.length) {
+  if (!territoryIds.length && !coplaIds.length && !preservedPieceLinks.length) {
     feedback.textContent = "Selecciona polo menos un territorio ou unha copla para vincular este recurso.";
     return null;
   }
-  return {
-    media: [{
-      provider: kind,
-      media_kind: kind,
-      title,
-      url,
-      description: $("#mediaDescription").value.trim() || null,
-      author_or_source: $("#mediaSource").value.trim() || null,
-      thumbnail_url: $("#mediaThumb").value.trim() || null,
-      status: "published",
-      links: [
-        ...territoryIds.map(id => ({ entity_type: "territory", entity_id: id, relation_type: role })),
-        ...coplaIds.map(id => ({ entity_type: "copla", entity_id: id, relation_type: role })),
-      ],
-    }],
+  const entry = {
+    provider: kind,
+    media_kind: kind,
+    title,
+    url,
+    description: $("#mediaDescription").value.trim() || null,
+    author_or_source: $("#mediaSource").value.trim() || null,
+    thumbnail_url: $("#mediaThumb").value.trim() || null,
+    status: "published",
+    links: [
+      ...territoryIds.map(id => ({ entity_type: "territory", entity_id: id, relation_type: role })),
+      ...coplaIds.map(id => ({ entity_type: "copla", entity_id: id, relation_type: role })),
+      ...preservedPieceLinks.map(link => ({ entity_type: "piece", entity_id: link.entity_id, relation_type: link.relation_type || "documental" })),
+    ],
   };
+  if (state.mediaEditingId) entry.id = state.mediaEditingId;
+  return { media: [entry] };
 }
 
 async function saveCoplaDirect() {
@@ -2891,17 +3257,26 @@ async function saveCoplaDirect() {
     feedback.textContent = `Gardado. IDs afectados: ${result.ids.join(", ")}`;
     clearApiCache();
     state.coplas = await getCoplas();
-    const lastPayload = payloads[payloads.length - 1];
-    const firstTerritoryId = lastPayload.territories[0]?.id;
-    state.selectedTerritory = firstTerritoryId ? state.territorios.find(item => item.id === firstTerritoryId) || state.selectedTerritory : state.selectedTerritory;
-    state.coplaQuery = firstLine(lastPayload.text);
-    state.coplaStateFilter = "all";
+    const returnView = state.submitReturnView;
     state.submitBatch = [];
     state.submitEditingId = null;
     state.submitEditingSnapshot = null;
+    state.submitReturnView = null;
     state.submitTerritoryIds = [];
     state.submitTerritoryId = "";
-    setView("coplas");
+    if (returnView) {
+      state.selectedTerritory = returnView.selectedTerritory;
+      state.coplaQuery = returnView.coplaQuery;
+      state.coplaStateFilter = returnView.coplaStateFilter;
+      setView(returnView.view);
+    } else {
+      const lastPayload = payloads[payloads.length - 1];
+      const firstTerritoryId = lastPayload.territories[0]?.id;
+      state.selectedTerritory = firstTerritoryId ? state.territorios.find(item => item.id === firstTerritoryId) || state.selectedTerritory : state.selectedTerritory;
+      state.coplaQuery = firstLine(lastPayload.text);
+      state.coplaStateFilter = "all";
+      setView("coplas");
+    }
   } catch (error) {
     feedback.textContent = `${error.message} Comproba que abriste Fol e ar con ./serve.sh.`;
   }
@@ -3150,6 +3525,12 @@ function queuePasteBlock() {
 function startEditCopla(coplaId) {
   const copla = state.coplas.find(item => Number(item.id) === Number(coplaId));
   if (!copla) return;
+  state.submitReturnView = {
+    view: state.view,
+    selectedTerritory: state.selectedTerritory,
+    coplaQuery: state.coplaQuery,
+    coplaStateFilter: state.coplaStateFilter,
+  };
   state.submitEditingId = copla.id;
   state.submitEditingSnapshot = copla;
   state.submitBatch = [];
@@ -3162,6 +3543,7 @@ function startEditCopla(coplaId) {
 function cancelEditCopla() {
   state.submitEditingId = null;
   state.submitEditingSnapshot = null;
+  state.submitReturnView = null;
   state.submitTerritoryIds = [];
   state.submitTerritoryId = "";
   renderSubmitView();
@@ -3184,7 +3566,8 @@ async function fetchMediaMetadata(options = {}) {
     if (result.title && !$("#mediaTitle").value.trim()) $("#mediaTitle").value = result.title;
     if (result.description && !$("#mediaDescription").value.trim()) $("#mediaDescription").value = result.description;
     if (result.thumbnail_url && !$("#mediaThumb").value.trim()) $("#mediaThumb").value = result.thumbnail_url;
-    if (result.provider && !$("#mediaSource").value.trim()) $("#mediaSource").value = result.provider;
+    if (!$("#mediaSource").value.trim()) $("#mediaSource").value = result.author_or_source || result.provider || "";
+    if (MUSICAL_MEDIA_KINDS.has(kind) && $("#mediaRole")) $("#mediaRole").value = "mixed";
     if (feedback) feedback.textContent = "Metadatos incorporados.";
   } catch (error) {
     if (feedback && !options.silent) feedback.textContent = `${error.message} Podes completar os campos manualmente.`;
@@ -3194,8 +3577,9 @@ async function fetchMediaMetadata(options = {}) {
 async function saveMediaDirect() {
   const payload = buildMediaPayloadFromForm();
   if (!payload) return;
+  const wasEditing = Boolean(state.mediaEditingId);
   const feedback = $("#mediaFeedback");
-  feedback.textContent = "Gardando media na base local...";
+  feedback.textContent = wasEditing ? "Gardando cambios..." : "Gardando media na base local...";
   try {
     const response = await fetch("../api/media", {
       method: "POST",
@@ -3204,13 +3588,20 @@ async function saveMediaDirect() {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Non se puido gardar a media.");
-    feedback.textContent = `Media gardada. IDs afectados: ${result.ids.join(", ")}`;
+    feedback.textContent = wasEditing ? "Cambios gardados." : `Media gardada. IDs afectados: ${result.ids.join(", ")}`;
     clearApiCache();
     state.media = await getMedia();
-    const firstTerritoryId = payload.media[0].links[0]?.entity_id;
-    if (firstTerritoryId) state.selectedTerritory = state.territorios.find(item => item.id === firstTerritoryId) || state.selectedTerritory;
+    if (!wasEditing) {
+      const firstTerritoryId = payload.media[0].links.find(link => link.entity_type === "territory")?.entity_id;
+      if (firstTerritoryId) state.selectedTerritory = state.territorios.find(item => item.id === firstTerritoryId) || state.selectedTerritory;
+    }
     state.mediaModalOpen = false;
     state.mediaDefaultRole = "";
+    state.mediaEditingId = null;
+    state.mediaEditingSnapshot = null;
+    state.mediaEditingPieceLinks = [];
+    state.mediaTerritoryIds = [];
+    state.mediaCoplaIds = [];
     state.mediaQuery = "";
     state.mediaKindFilter = "";
     state.mediaRoleFilter = "";
@@ -3248,12 +3639,16 @@ function renderMediaView() {
         </select>
       </div>
       <div id="mediaList" class="media-grid">
-        ${items.map(mediaCard).join("") || `<article class="panel"><p class="muted">Aínda non hai recursos multimedia para mostrar.</p></article>`}
+        ${items.map(item => mediaCard(item, { editable: true })).join("") || `<article class="panel"><p class="muted">Aínda non hai recursos multimedia para mostrar.</p></article>`}
       </div>
       ${mediaModalMarkup(selectedMediaTerritories, selectedMediaCoplas)}
     </div>
   `;
   $("#openMediaModal")?.addEventListener("click", () => openMediaModal());
+  all("[data-edit-media]", view).forEach(button => button.addEventListener("click", event => {
+    event.stopPropagation();
+    startEditMedia(Number(button.dataset.editMedia));
+  }));
   $("#mediaSearch")?.addEventListener("input", event => {
     state.mediaQuery = event.target.value;
     updateMediaResults(view);
@@ -3307,8 +3702,12 @@ function updateMediaResults(root = $("#view-media")) {
   const list = $("#mediaList", root);
   if (!list) return;
   const items = filteredMediaItems();
-  list.innerHTML = items.map(mediaCard).join("") || `<article class="panel"><p class="muted">Aínda non hai recursos multimedia para mostrar.</p></article>`;
+  list.innerHTML = items.map(item => mediaCard(item, { editable: true })).join("") || `<article class="panel"><p class="muted">Aínda non hai recursos multimedia para mostrar.</p></article>`;
   bindMediaCards(root);
+  all("[data-edit-media]", root).forEach(button => button.addEventListener("click", event => {
+    event.stopPropagation();
+    startEditMedia(Number(button.dataset.editMedia));
+  }));
 }
 
 function renderAboutTerritoryResults(root = $("#view-about")) {

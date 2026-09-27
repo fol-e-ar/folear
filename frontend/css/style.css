@@ -713,6 +713,7 @@ label textarea {
 }
 
 .gallery-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -723,6 +724,38 @@ label textarea {
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   transition: 0.16s;
+}
+
+.gallery-card:not(.as-list) {
+  justify-content: flex-start;
+  gap: 14px;
+  min-height: 150px;
+  padding: 20px 16px 16px;
+}
+
+.gallery-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gallery-card .card-float-add {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+}
+
+.gallery-card:not(.as-list) > .select-check {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+}
+
+.gallery-card:not(.as-list) .gallery-title {
+  margin: 0 0 4px;
+  padding-right: 36px;
 }
 
 .gallery-card:hover {
@@ -1518,14 +1551,13 @@ label {
 }
 
 .builder-sections {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .builder-section {
-  min-height: 220px;
-  padding: 12px;
+  padding: 14px;
   background: #F7FBFE;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -2505,4 +2537,55 @@ label textarea:focus-visible,
 .piece-media-form .muted {
   margin: 0;
   font-size: 12px;
+}
+
+
+/* --- Edición en lote de coplas --- */
+
+.select-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.select-check input {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.gallery-card.is-selected,
+.incipit-row.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(184, 219, 173, 0.5);
+}
+
+.batch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: #F7FBFE;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.batch-bar span {
+  margin-right: auto;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.batch-assign-modal .media-modal-panel {
+  width: min(560px, calc(100vw - 40px));
+}
+
+.batch-assign-body {
+  padding: 18px 20px;
 }

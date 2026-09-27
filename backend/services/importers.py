@@ -463,6 +463,7 @@ def validate_media_payload(conn: sqlite3.Connection, payload) -> list[str]:
     known_territories = load_known_territories(conn)
     known_coplas = load_known_coplas(conn)
     known_pieces = {row["id"] for row in conn.execute("SELECT id FROM pieces").fetchall()}
+    known_media_ids = {row["id"] for row in conn.execute("SELECT id FROM media").fetchall()}
 
     if not isinstance(payload, dict) or not isinstance(payload.get("media"), list):
         return ["O JSON debe ser un obxecto con clave 'media' en forma de lista."]
@@ -471,6 +472,12 @@ def validate_media_payload(conn: sqlite3.Connection, payload) -> list[str]:
         if not isinstance(media, dict):
             errors.append(f"Media #{index}: debe ser un obxecto.")
             continue
+        media_id = media.get("id")
+        if media_id is not None:
+            if not isinstance(media_id, int):
+                errors.append(f"Media #{index}: 'id' debe ser enteiro cando existe.")
+            elif media_id not in known_media_ids:
+                errors.append(f"Media #{index}: non existe unha media co id {media_id}.")
         for field in ("provider", "media_kind", "title", "url"):
             value = media.get(field)
             if not isinstance(value, str) or not value.strip():
@@ -526,33 +533,64 @@ def import_media(conn: sqlite3.Connection, payload) -> list[int]:
 
     imported_ids: list[int] = []
     for media in payload["media"]:
-        cur = conn.execute(
-            """
-            INSERT INTO media (
-              provider,
-              media_kind,
-              title,
-              url,
-              description,
-              author_or_source,
-              thumbnail_url,
-              status,
-              updated_at
+        media_id = media.get("id")
+        if isinstance(media_id, int):
+            conn.execute(
+                """
+                UPDATE media
+                SET
+                  provider = ?,
+                  media_kind = ?,
+                  title = ?,
+                  url = ?,
+                  description = ?,
+                  author_or_source = ?,
+                  thumbnail_url = ?,
+                  status = ?,
+                  updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    media["provider"].strip(),
+                    media["media_kind"].strip(),
+                    media["title"].strip(),
+                    media["url"].strip(),
+                    media.get("description"),
+                    media.get("author_or_source"),
+                    media.get("thumbnail_url"),
+                    media.get("status", "published"),
+                    media_id,
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                media["provider"].strip(),
-                media["media_kind"].strip(),
-                media["title"].strip(),
-                media["url"].strip(),
-                media.get("description"),
-                media.get("author_or_source"),
-                media.get("thumbnail_url"),
-                media.get("status", "published"),
-            ),
-        )
-        media_id = cur.lastrowid
+            conn.execute("DELETE FROM media_links WHERE media_id = ?", (media_id,))
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO media (
+                  provider,
+                  media_kind,
+                  title,
+                  url,
+                  description,
+                  author_or_source,
+                  thumbnail_url,
+                  status,
+                  updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    media["provider"].strip(),
+                    media["media_kind"].strip(),
+                    media["title"].strip(),
+                    media["url"].strip(),
+                    media.get("description"),
+                    media.get("author_or_source"),
+                    media.get("thumbnail_url"),
+                    media.get("status", "published"),
+                ),
+            )
+            media_id = cur.lastrowid
         imported_ids.append(media_id)
 
         for link in media["links"]:

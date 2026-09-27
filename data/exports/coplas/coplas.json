@@ -1,5 +1,2519 @@
 [
   {
+    "id": 158,
+    "text": "Xa me vou, xa me vou indo,\nvou atraspondo a Portela,\nxa me vou, xa me vou indo\npró lugarciño de Insuela.",
+    "normalized_text": "xa me vou, xa me vou indo, vou atraspondo a portela, xa me vou, xa me vou indo pro lugarcino de insuela.",
+    "incipit": "Xa me vou, xa me vou",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:54:37",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 157,
+    "text": "Vexo Vigo, vexo Cangas,\ntamén vexo Redondela,\nvexo a Ponte Sampaio\ncamiño da miña terra.",
+    "normalized_text": "vexo vigo, vexo cangas, tamen vexo redondela, vexo a ponte sampaio camino da mina terra.",
+    "incipit": "Vexo Vigo, vexo Cangas, tamén vexo",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 156,
+    "text": "Vámonos para a Xesteira,\nmiña cariña de rosa;\nvámonos para a Xesteira\nque esta terra non é nosa.",
+    "normalized_text": "vamonos para a xesteira, mina carina de rosa; vamonos para a xesteira que esta terra non e nosa.",
+    "incipit": "Vámonos para a Xesteira, miña cariña",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 155,
+    "text": "Unha vella moito vella,\nmáis vella que Zaragoza,\nao falarlle do casoiro\nde vella volveuse moza.",
+    "normalized_text": "unha vella moito vella, mais vella que zaragoza, ao falarlle do casoiro de vella volveuse moza.",
+    "incipit": "Unha vella moito vella, máis vella",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 154,
+    "text": "Trouporroutrou ¿pra onde vas vella?\n-Trouporrouprou, para Redondela.\n-Trouporrouprou ¿que vas a buscar?\n-Trouporrouprou, un puñado de sal.",
+    "normalized_text": "trouporroutrou ¿pra onde vas vella? -trouporrouprou, para redondela. -trouporrouprou ¿que vas a buscar? -trouporrouprou, un punado de sal.",
+    "incipit": "Trouporroutrou ¿pra onde vas vella? -Trouporrouprou,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 153,
+    "text": "Teño unha oliveira en Vigo,\nheina de mandar cortar,\ncando vou a Redondela\ntírame a vista do mar.",
+    "normalized_text": "teno unha oliveira en vigo, heina de mandar cortar, cando vou a redondela tirame a vista do mar.",
+    "incipit": "Teño unha oliveira en Vigo, heina",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 152,
+    "text": "Teño unha noiva no Porto,\noutra no Ribeiro de Avia;\nse a do Porto é boa moza\na do Ribeiro lle gana.",
+    "normalized_text": "teno unha noiva no porto, outra no ribeiro de avia; se a do porto e boa moza a do ribeiro lle gana.",
+    "incipit": "Teño unha noiva no Porto, outra",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 151,
+    "text": "Si vas a San Benitiño,\nnon vaias ao de Paredes,\nque hai outro máis milagreiro,\nno conventiño de Lérez.",
+    "normalized_text": "si vas a san benitino, non vaias ao de paredes, que hai outro mais milagreiro, no conventino de lerez.",
+    "incipit": "Si vas a San Benitiño, non",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 150,
+    "text": "Se fores ao san Benito,\nao san Benito de Lérez,\ndaraslle moitas mamorias\na meu irmán se o vedes.",
+    "normalized_text": "se fores ao san benito, ao san benito de lerez, daraslle moitas mamorias a meu irman se o vedes.",
+    "incipit": "Se fores ao san Benito, ao",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 149,
+    "text": "Santiago de Galicia,\nespello de Portugal,\naxudádeme a gañar\nesta batalla campal.",
+    "normalized_text": "santiago de galicia, espello de portugal, axudademe a ganar esta batalla campal.",
+    "incipit": "Santiago de Galicia, espello de Portugal,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 148,
+    "text": "Santa Marta das Estacas,\nSan Lorenzo de Fornelos;\nao abade de Forzáns\nxa o poden levar os demos.",
+    "normalized_text": "santa marta das estacas, san lorenzo de fornelos; ao abade de forzans xa o poden levar os demos.",
+    "incipit": "Santa Marta das Estacas, San Lorenzo",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 147,
+    "text": "San Miguel de Carballedo\né moi amigo das uvas,\nsan Martín de Rebordelo\ndas sardiñas cabezudas.",
+    "normalized_text": "san miguel de carballedo e moi amigo das uvas, san martin de rebordelo das sardinas cabezudas.",
+    "incipit": "San Miguel de Carballedo é moi",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:43:51",
+    "territories": [
+      {
+        "id": "par:3690204",
+        "nome": "Carballedo (San Miguel)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 146,
+    "text": "San Lorenzo de Fornelos,\nsanta Marta de Ortigueira,\na muller que come a nata\nnon pode ter a manteiga.",
+    "normalized_text": "san lorenzo de fornelos, santa marta de ortigueira, a muller que come a nata non pode ter a manteiga.",
+    "incipit": "San Lorenzo de Fornelos, santa Marta",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 145,
+    "text": "San Lorenzo de Almofrei,\nsempre tes sorte cos curas:\nantes tiñas Don Manuel,\nagora tes Don Ventura.",
+    "normalized_text": "san lorenzo de almofrei, sempre tes sorte cos curas: antes tinas don manuel, agora tes don ventura.",
+    "incipit": "San Lorenzo de Almofrei, sempre tes",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:31:22",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 144,
+    "text": "San Benitiño do ollo redondo,\nhei de ir alá, miña nai, se non morro,\nhei de levar unha bota de viño\ne un molete de pan do Porriño.",
+    "normalized_text": "san benitino do ollo redondo, hei de ir ala, mina nai, se non morro, hei de levar unha bota de vino e un molete de pan do porrino.",
+    "incipit": "San Benitiño do ollo redondo, hei",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 143,
+    "text": "San Antonio de Maside,\nonde se arrea bandeira;\nvamos eu e ti, meniña,\ncomencemos a primeira.",
+    "normalized_text": "san antonio de maside, onde se arrea bandeira; vamos eu e ti, menina, comencemos a primeira.",
+    "incipit": "San Antonio de Maside, onde se",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 142,
+    "text": "San Antonio de Aguasantas,\ncasamenteiro das vellas,\npor que non casas as novas?,\nque mal che fixeron elas?",
+    "normalized_text": "san antonio de aguasantas, casamenteiro das vellas, por que non casas as novas?, que mal che fixeron elas?",
+    "incipit": "San Antonio de Aguasantas, casamenteiro das",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:55:21",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 141,
+    "text": "Rebordelo é boa terra,\nLoureiro por consiguiente,\nnon pode haber boa terra\nque produza mala xente.",
+    "normalized_text": "rebordelo e boa terra, loureiro por consiguiente, non pode haber boa terra que produza mala xente.",
+    "incipit": "Rebordelo é boa terra, Loureiro por",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:42:55",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      },
+      {
+        "id": "par:3690215",
+        "nome": "Rebordelo (San Martiño)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 140,
+    "text": "Quen me dera estar tan alto\ncomo a estrela do norte\npara ver o que se pasa\nen Pontevedra esta noite.",
+    "normalized_text": "quen me dera estar tan alto como a estrela do norte para ver o que se pasa en pontevedra esta noite.",
+    "incipit": "Quen me dera estar tan alto",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 139,
+    "text": "Quen me dera en Caroi\nun pedaciño de terra,\npara ir botar a auga\ne pasearme por ela.",
+    "normalized_text": "quen me dera en caroi un pedacino de terra, para ir botar a auga e pasearme por ela.",
+    "incipit": "Quen me dera en Caroi un",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:44:03",
+    "territories": [
+      {
+        "id": "par:3690205",
+        "nome": "Caroi (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 138,
+    "text": "Portugal, terra querida,\nterra de moita ventura;\nquen fixo o viaxe ao Río\nfoi Coutinhas e Cadura.",
+    "normalized_text": "portugal, terra querida, terra de moita ventura; quen fixo o viaxe ao rio foi coutinhas e cadura.",
+    "incipit": "Portugal, terra querida, terra de moita",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 137,
+    "text": "Pola faldra da camisa\nvinche correr un piollo,\nviña da guerra de Cuba,\ntraía un parche nun ollo.",
+    "normalized_text": "pola faldra da camisa vinche correr un piollo, vina da guerra de cuba, traia un parche nun ollo.",
+    "incipit": "Pola faldra da camisa vinche correr",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "humor-satira",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 136,
+    "text": "Pasei o mar da Marola,\nqueridiña, por te ver;\narrisquei a miña vida\na piques de eu morrer.",
+    "normalized_text": "pasei o mar da marola, queridina, por te ver; arrisquei a mina vida a piques de eu morrer.",
+    "incipit": "Pasei o mar da Marola, queridiña,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 135,
+    "text": "Pasei a Ponte Loureiro\nsin compaña de ninguén,\nvin acender unha luz\nno lugar da Vilaalén.",
+    "normalized_text": "pasei a ponte loureiro sin compana de ninguen, vin acender unha luz no lugar da vilaalen.",
+    "incipit": "Pasei a Ponte Loureiro sin compaña",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:49:49",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 134,
+    "text": "Pasei a Ponte Loureiro,\npaseina nunha carreira,\nboteille un tiro a unha lebre,\nmatei unha costureira.",
+    "normalized_text": "pasei a ponte loureiro, paseina nunha carreira, boteille un tiro a unha lebre, matei unha costureira.",
+    "incipit": "Pasei a Ponte Loureiro, paseina nunha",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:50:13",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 133,
+    "text": "Pasei a Ponte Loureiro,\npaseina de madrugada,\nquen me a min quería ben\ninda quedaba na cama.",
+    "normalized_text": "pasei a ponte loureiro, paseina de madrugada, quen me a min queria ben inda quedaba na cama.",
+    "incipit": "Pasei a Ponte Loureiro, paseina de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:45:07",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 132,
+    "text": "Pasei a Ponte Loureiro,\npaseina pouquiño e pouco;\nchoraba por meu irmán,\nas penas eran por outro.",
+    "normalized_text": "pasei a ponte loureiro, paseina pouquino e pouco; choraba por meu irman, as penas eran por outro.",
+    "incipit": "Pasei a Ponte Loureiro, paseina pouquiño",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:51:28",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 131,
+    "text": "Pasei a Ponte Loureiro\ncorrendo pra Chan do Preiro,\niba pra rondar a moza\nque pasea no Beseiro.",
+    "normalized_text": "pasei a ponte loureiro correndo pra chan do preiro, iba pra rondar a moza que pasea no beseiro.",
+    "incipit": "Pasei a Ponte Loureiro correndo pra",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:01",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 130,
+    "text": "Pasei a Ponte Loureiro\ncara ao rigueiro do Can,\no corazón mo roubara\nunha nena do Batán.",
+    "normalized_text": "pasei a ponte loureiro cara ao rigueiro do can, o corazon mo roubara unha nena do batan.",
+    "incipit": "Pasei a Ponte Loureiro cara ao",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:10",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 129,
+    "text": "Para pan de trigo, Caldas;\npara chocos, Redondela;\npara cadelas, Moaña;\npra caciques, Pontevedra.",
+    "normalized_text": "para pan de trigo, caldas; para chocos, redondela; para cadelas, moana; pra caciques, pontevedra.",
+    "incipit": "Para pan de trigo, Caldas; para",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "humor-satira",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 128,
+    "text": "Para Loureiro cantando,\nprenda do meu corazón,\npara Loureiro cantando,\npara outro lado non.",
+    "normalized_text": "para loureiro cantando, prenda do meu corazon, para loureiro cantando, para outro lado non.",
+    "incipit": "Para Loureiro cantando, prenda do meu",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:49:38",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 127,
+    "text": "Olliños que ben me queren\nna Xesteira non están,\npasan as Pontes de Bora;\nnon sei cando volverán.",
+    "normalized_text": "ollinos que ben me queren na xesteira non estan, pasan as pontes de bora; non sei cando volveran.",
+    "incipit": "Olliños que ben me queren na",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 126,
+    "text": "O señor Paiva Couceiro\né o xefe dos monarcas,\ne no combate de Chaves\ncausáronlle moitas baixas.",
+    "normalized_text": "o senor paiva couceiro e o xefe dos monarcas, e no combate de chaves causaronlle moitas baixas.",
+    "incipit": "O señor Paiva Couceiro é o",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 125,
+    "text": "O san Andrés de Teixido\nestá no cabo do mundo;\nsolo por te ver, meu Santo,\ntres días hai que non durmo.",
+    "normalized_text": "o san andres de teixido esta no cabo do mundo; solo por te ver, meu santo, tres dias hai que non durmo.",
+    "incipit": "O san Andrés de Teixido está",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 124,
+    "text": "O pandeiro toca ben,\nás ferriñas dálle o son,\nas meniñas que o tocan\nelas de Loureiro son.",
+    "normalized_text": "o pandeiro toca ben, as ferrinas dalle o son, as meninas que o tocan elas de loureiro son.",
+    "incipit": "O pandeiro toca ben, ás ferriñas",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:50:01",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "musica-baile",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 123,
+    "text": "O gaiteiro de Soutelo,\nmal raio de Dios o mate,\nnon quere tocar a gaita\nsin tomar o chicolate.",
+    "normalized_text": "o gaiteiro de soutelo, mal raio de dios o mate, non quere tocar a gaita sin tomar o chicolate.",
+    "incipit": "O gaiteiro de Soutelo, mal raio",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "humor-satira",
+      "lingua-galego",
+      "musica-baile",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 122,
+    "text": "O cantar do arrieiro\né un cantar moi baixiño,\ncántano en Ribadavia,\nresona no Carballiño.",
+    "normalized_text": "o cantar do arrieiro e un cantar moi baixino, cantano en ribadavia, resona no carballino.",
+    "incipit": "O cantar do arrieiro é un",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "musica-baile",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 121,
+    "text": "O Abade de Cerdedo\nten unha vena de louco;\nseñor san Xoán de Cerdedo,\nnon o poña par do outro.",
+    "normalized_text": "o abade de cerdedo ten unha vena de louco; senor san xoan de cerdedo, non o pona par do outro.",
+    "incipit": "O Abade de Cerdedo ten unha",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:45:23",
+    "territories": [
+      {
+        "id": "con:36902",
+        "nome": "Cerdedo-Cotobade",
+        "tipo": "con",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "humor-satira",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 120,
+    "text": "O abade de Borela\nten a camisa rabela,\nque lla fixo a costureira\npra que volvese por ela.",
+    "normalized_text": "o abade de borela ten a camisa rabela, que lla fixo a costureira pra que volvese por ela.",
+    "incipit": "O abade de Borela ten a",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 119,
+    "text": "No lugarciño de Insuela\namores hei de tomar:\nou no alto, ou no fondo,\nou no medio do lugar.",
+    "normalized_text": "no lugarcino de insuela amores hei de tomar: ou no alto, ou no fondo, ou no medio do lugar.",
+    "incipit": "No lugarciño de Insuela amores hei",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:54:37",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 118,
+    "text": "O lugarciño de Insuela\nde lonxe parece ben:\nboa mazán, boa pera,\nboas meniñas tamén.",
+    "normalized_text": "o lugarcino de insuela de lonxe parece ben: boa mazan, boa pera, boas meninas tamen.",
+    "incipit": "O lugarciño de Insuela de lonxe",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:54:37",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 117,
+    "text": "Na miña vida tal vin\nna feira do Carballiño:\nvintecinco estudiantes\nbebendo un vaso de viño.",
+    "normalized_text": "na mina vida tal vin na feira do carballino: vintecinco estudiantes bebendo un vaso de vino.",
+    "incipit": "Na miña vida tal vin na",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "feira-festa-romaria",
+      "lingua-galego",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 116,
+    "text": "Na aldea de Almofrei\nhai unha fonte mui fría,\nboa auga debe ser,\n¡que boas rapazas cría!",
+    "normalized_text": "na aldea de almofrei hai unha fonte mui fria, boa auga debe ser, ¡que boas rapazas cria!",
+    "incipit": "Na aldea de Almofrei hai unha",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:31:09",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 115,
+    "text": "Na aldea da Xesteira\nhai unha festa que arrasa,\ncon pandeiro e ferriñas\ne castañetas de plata.",
+    "normalized_text": "na aldea da xesteira hai unha festa que arrasa, con pandeiro e ferrinas e castanetas de plata.",
+    "incipit": "Na aldea da Xesteira hai unha",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "feira-festa-romaria",
+      "lingua-galego",
+      "musica-baile",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 114,
+    "text": "Moitas gracias dou a Dios,\nmoitas máis aos meus veciños,\nde Pontevedra pasei,\nlagarto de Cuspedriños.",
+    "normalized_text": "moitas gracias dou a dios, moitas mais aos meus vecinos, de pontevedra pasei, lagarto de cuspedrinos.",
+    "incipit": "Moitas gracias dou a Dios, moitas",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 113,
+    "text": "Mociñas da Corredoira,\nhei cantar ao voso modo;\no día doce de marzo\né día de san Gregorio.",
+    "normalized_text": "mocinas da corredoira, hei cantar ao voso modo; o dia doce de marzo e dia de san gregorio.",
+    "incipit": "Mociñas da Corredoira, hei cantar ao",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:45:48",
+    "territories": [
+      {
+        "id": "par:3690208",
+        "nome": "Corredoira (San Gregorio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "musica-baile",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 112,
+    "text": "Miña Virxen de Aguasantas\nten unha vidreira nova;\ndentro daquela vidreira\nten un meniño que chora.",
+    "normalized_text": "mina virxen de aguasantas ten unha vidreira nova; dentro daquela vidreira ten un menino que chora.",
+    "incipit": "Miña Virxen de Aguasantas ten unha",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:44",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 111,
+    "text": "Miña Virxen de Aguasantas\nten unha anda de vidro,\nque lla dou un mariñeiro\npor devoción que lle tiña.",
+    "normalized_text": "mina virxen de aguasantas ten unha anda de vidro, que lla dou un marineiro por devocion que lle tina.",
+    "incipit": "Miña Virxen de Aguasantas ten unha",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:44",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 110,
+    "text": "Miña Virxen de Aguasantas\nten un carballo no adro;\nVirxen de tantos milagros,\nfacelle dar un abano.",
+    "normalized_text": "mina virxen de aguasantas ten un carballo no adro; virxen de tantos milagros, facelle dar un abano.",
+    "incipit": "Miña Virxen de Aguasantas ten un",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:44",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 109,
+    "text": "Miña Virxen de Aguasantas\nten os zapatiños blancos\npara pasear con eles\ndomingos e días santos.",
+    "normalized_text": "mina virxen de aguasantas ten os zapatinos blancos para pasear con eles domingos e dias santos.",
+    "incipit": "Miña Virxen de Aguasantas ten os",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:44",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 108,
+    "text": "Miña Virxen de Aguasantas\ntan altiña se foi pór,\ndálle o aire, dálle o vento,\na raia do Sol maior.",
+    "normalized_text": "mina virxen de aguasantas tan altina se foi por, dalle o aire, dalle o vento, a raia do sol maior.",
+    "incipit": "Miña Virxen de Aguasantas tan altiña",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:44",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 107,
+    "text": "Miña Virxen de Aguasantas,\nnon vos veño pedir pan,\nvéñovos pedir un mozo\nque faga tremer o chan.",
+    "normalized_text": "mina virxen de aguasantas, non vos veno pedir pan, venovos pedir un mozo que faga tremer o chan.",
+    "incipit": "Miña Virxen de Aguasantas, non vos",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:44",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "emigracion-viaxe",
+      "lingua-galego",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 106,
+    "text": "Miña Virxen de Aguasantas,\nnon vos veño pedir jito;\nvéñovos pedir un home\nque sea roxo e bonito.",
+    "normalized_text": "mina virxen de aguasantas, non vos veno pedir jito; venovos pedir un home que sea roxo e bonito.",
+    "incipit": "Miña Virxen de Aguasantas, non vos",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:53:44",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 105,
+    "text": "Miña nai casoume en Braga\ncun garoto de Lisboa,\nnon tiña calza, nin vestía\ncamisa nin cousa boa.",
+    "normalized_text": "mina nai casoume en braga cun garoto de lisboa, non tina calza, nin vestia camisa nin cousa boa.",
+    "incipit": "Miña nai casoume en Braga cun",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 104,
+    "text": "Mariana de Soutelo\nquería ser miña dama;\nxa lle tomei a medida;\nnon me cabía na cama.",
+    "normalized_text": "mariana de soutelo queria ser mina dama; xa lle tomei a medida; non me cabia na cama.",
+    "incipit": "Mariana de Soutelo quería ser miña",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 103,
+    "text": "Lévame no carro, leva,\ncarreteiro de Padrón,\nlévame no carro, leva,\nlévame no corazón.",
+    "normalized_text": "levame no carro, leva, carreteiro de padron, levame no carro, leva, levame no corazon.",
+    "incipit": "Lévame no carro, leva, carreteiro de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 102,
+    "text": "Houbo unha festa en Esteiro\ne co neboeiro\nnon se vía o Sol.\nSe cortaras a perrera,\ncochina,\nmarrana,\nfórache millor.\n-A perrera non a quito\nporque non me dá a gana\nmentras os homes non quiten\no pantalón de campana.",
+    "normalized_text": "houbo unha festa en esteiro e co neboeiro non se via o sol. se cortaras a perrera, cochina, marrana, forache millor. -a perrera non a quito porque non me da a gana mentras os homes non quiten o pantalon de campana.",
+    "incipit": "Houbo unha festa en Esteiro e",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "feira-festa-romaria",
+      "humor-satira",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 101,
+    "text": "Heime casar en Caroi\nque é terra de moito pan,\no forno de miña sogra\ncría silvas polo vran.",
+    "normalized_text": "heime casar en caroi que e terra de moito pan, o forno de mina sogra cria silvas polo vran.",
+    "incipit": "Heime casar en Caroi que é",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:00:50",
+    "territories": [
+      {
+        "id": "par:3690205",
+        "nome": "Caroi (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 100,
+    "text": "Hei de ir casar a Caroi,\n¡que demoro pode ser!,\nanque non haxa máis,\npataquiñas ha de haber.",
+    "normalized_text": "hei de ir casar a caroi, ¡que demoro pode ser!, anque non haxa mais, pataquinas ha de haber.",
+    "incipit": "Hei de ir casar a Caroi,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:00:50",
+    "territories": [
+      {
+        "id": "par:3690205",
+        "nome": "Caroi (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 99,
+    "text": "Fun ao serán a Almofrei,\nmirei por riba da porta,\nnon vin a quen eu quería\ne collín e dei a volta.",
+    "normalized_text": "fun ao seran a almofrei, mirei por riba da porta, non vin a quen eu queria e collin e dei a volta.",
+    "incipit": "Fun ao serán a Almofrei, mirei",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:30:58",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "feira-festa-romaria",
+      "lingua-galego",
+      "musica-baile"
+    ],
+    "versions": []
+  },
+  {
+    "id": 98,
+    "text": "Fun á feira de Forzáns,\nmerquei unha vaca mona;\ná que casa con un cego\nnunca lle falta zanfona.",
+    "normalized_text": "fun a feira de forzans, merquei unha vaca mona; a que casa con un cego nunca lle falta zanfona.",
+    "incipit": "Fun á feira de Forzáns, merquei",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "feira-festa-romaria",
+      "lingua-galego",
+      "musica-baile"
+    ],
+    "versions": []
+  },
+  {
+    "id": 97,
+    "text": "Eu hei de ir ao Brasil\nanque non gañe diñeiro,\nporque despois din as mozas:\nvelaí vén un brasileiro.",
+    "normalized_text": "eu hei de ir ao brasil anque non gane dineiro, porque despois din as mozas: velai ven un brasileiro.",
+    "incipit": "Eu hei de ir ao Brasil",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 96,
+    "text": "Eu fun ao serán a Pazos,\nnon topei senón formigas\ne volvín ao da Xesteira\nonde hai lindas raparigas.",
+    "normalized_text": "eu fun ao seran a pazos, non topei senon formigas e volvin ao da xesteira onde hai lindas raparigas.",
+    "incipit": "Eu fun ao serán a Pazos,",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "feira-festa-romaria",
+      "lingua-galego",
+      "musica-baile"
+    ],
+    "versions": []
+  },
+  {
+    "id": 95,
+    "text": "Eu cheguei a Almofrei\ne púxenme a discurrir:\nnon sei se tome criada\nou se me poña a servir.",
+    "normalized_text": "eu cheguei a almofrei e puxenme a discurrir: non sei se tome criada ou se me pona a servir.",
+    "incipit": "Eu cheguei a Almofrei e púxenme",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:30:44",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 94,
+    "text": "En Loureiro teño amores,\nen Caroi non teño nada,\ne na parroquia veciña\nteño unha palabra dada.",
+    "normalized_text": "en loureiro teno amores, en caroi non teno nada, e na parroquia vecina teno unha palabra dada.",
+    "incipit": "En Loureiro teño amores, en Caroi",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:49:29",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 93,
+    "text": "Deprendín a cazador\nnos montes de Villafranca;\nagora xa sei cazar\nlebres da cabeza blanca.",
+    "normalized_text": "deprendin a cazador nos montes de villafranca; agora xa sei cazar lebres da cabeza blanca.",
+    "incipit": "Deprendín a cazador nos montes de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 92,
+    "text": "De onde vés, Sariña?\nVeño de coser,\nveño da Coruña\nde poñer taller.",
+    "normalized_text": "de onde ves, sarina? veno de coser, veno da coruna de poner taller.",
+    "incipit": "De onde vés, Sariña? Veño de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 91,
+    "text": "De Loureiro a Rebordelo\ntodo é camiño chan,\ntodas son rosas e flores\npostas pola miña man.",
+    "normalized_text": "de loureiro a rebordelo todo e camino chan, todas son rosas e flores postas pola mina man.",
+    "incipit": "De Loureiro a Rebordelo todo é",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:49:03",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      },
+      {
+        "id": "par:3690215",
+        "nome": "Rebordelo (San Martiño)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 90,
+    "text": "De Loureiro a Rebordelo\nhai unha legua de monte,\nvivan os mozos solteiros\nque a pasean de noite.",
+    "normalized_text": "de loureiro a rebordelo hai unha legua de monte, vivan os mozos solteiros que a pasean de noite.",
+    "incipit": "De Loureiro a Rebordelo hai unha",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:49:18",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      },
+      {
+        "id": "par:3690215",
+        "nome": "Rebordelo (San Martiño)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 89,
+    "text": "De Lisboa me mandaron\ntres peras nun ramalliño,\nquen che me dera saber\nquen me ten tanto cariño.",
+    "normalized_text": "de lisboa me mandaron tres peras nun ramallino, quen che me dera saber quen me ten tanto carino.",
+    "incipit": "De Lisboa me mandaron tres peras",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 88,
+    "text": "Corredoira é boa terra,\ne ruín porque a fan,\nse lle sementan o trigo\ninda dá o azafrán.",
+    "normalized_text": "corredoira e boa terra, e ruin porque a fan, se lle sementan o trigo inda da o azafran.",
+    "incipit": "Corredoira é boa terra, e ruín",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:46:02",
+    "territories": [
+      {
+        "id": "par:3690208",
+        "nome": "Corredoira (San Gregorio)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 87,
+    "text": "Carretera da Xesteira,\nas silveiras botan flores;\npor aquela carretera\npaséanse os meus amores.",
+    "normalized_text": "carretera da xesteira, as silveiras botan flores; por aquela carretera paseanse os meus amores.",
+    "incipit": "Carretera da Xesteira, as silveiras botan",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 86,
+    "text": "Carballedo é boa terra,\ncadrou naquela baixura,\nboa terra, boa xente,\neso si que non hai duda.",
+    "normalized_text": "carballedo e boa terra, cadrou naquela baixura, boa terra, boa xente, eso si que non hai duda.",
+    "incipit": "Carballedo é boa terra, cadrou naquela",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 85,
+    "text": "Canteiros e carpinteiros,\nda vila de Pontevedra,\naquí falta unha rapaza,\ntendes que dar conta dela.",
+    "normalized_text": "canteiros e carpinteiros, da vila de pontevedra, aqui falta unha rapaza, tendes que dar conta dela.",
+    "incipit": "Canteiros e carpinteiros, da vila de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 84,
+    "text": "Canteiros e carpinteiros\nda vila de Pontevedra:\nbotai polo mundo adiante\nbuscando madeira e pedra.",
+    "normalized_text": "canteiros e carpinteiros da vila de pontevedra: botai polo mundo adiante buscando madeira e pedra.",
+    "incipit": "Canteiros e carpinteiros da vila de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 83,
+    "text": "Cando pases por Loureiro\npola beiriña do adro,\nrézalle unha avemaría\na la Virgen del Rosario.",
+    "normalized_text": "cando pases por loureiro pola beirina do adro, rezalle unha avemaria a la virgen del rosario.",
+    "incipit": "Cando pases por Loureiro pola beiriña",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:48:50",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 82,
+    "text": "As mociñas do Araño,\nmentras os máis van á misa,\nquedan na corte coas vacas\nrillando palla maísa.",
+    "normalized_text": "as mocinas do arano, mentras os mais van a misa, quedan na corte coas vacas rillando palla maisa.",
+    "incipit": "As mociñas do Araño, mentras os",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 81,
+    "text": "As mociñas de Famelga,\nnon é unha que son todas,\ngastan dous pares de medias\npra facer as pernas gordas.",
+    "normalized_text": "as mocinas de famelga, non e unha que son todas, gastan dous pares de medias pra facer as pernas gordas.",
+    "incipit": "As mociñas de Famelga, non é",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:55:56",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 80,
+    "text": "As mociñas de Almofrei\nnon se saben persiñar,\ncando o cura di a misa\nelas suben pró altar.",
+    "normalized_text": "as mocinas de almofrei non se saben persinar, cando o cura di a misa elas suben pro altar.",
+    "incipit": "As mociñas de Almofrei non se",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:30:31",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 79,
+    "text": "As mociñas de Almofrei\nmatan a un de reír,\ncando o cura dixo a misa\nelas empezan a vir.",
+    "normalized_text": "as mocinas de almofrei matan a un de reir, cando o cura dixo a misa elas empezan a vir.",
+    "incipit": "As mociñas de Almofrei matan a",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:29:56",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 78,
+    "text": "Anque che son das Mariñas,\nson mariñán,\no fungueiro, meniña,\nlévoo na man,\npor si á volta da eira\nme bóta-lo can.",
+    "normalized_text": "anque che son das marinas, son marinan, o fungueiro, menina, levoo na man, por si a volta da eira me bota-lo can.",
+    "incipit": "Anque che son das Mariñas, son",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 77,
+    "text": "Aldeíña da Xesteira\né sitio de paseantes,\nas mozas parecen rosas\ne os mozos estudiantes.",
+    "normalized_text": "aldeina da xesteira e sitio de paseantes, as mozas parecen rosas e os mozos estudiantes.",
+    "incipit": "Aldeíña da Xesteira é sitio de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "traballo-oficios"
+    ],
+    "versions": []
+  },
+  {
+    "id": 76,
+    "text": "Aldeíña da Xesteira,\ncando eu a paseaba,\nera de noite e chovía\npero eu non me mollaba.",
+    "normalized_text": "aldeina da xesteira, cando eu a paseaba, era de noite e chovia pero eu non me mollaba.",
+    "incipit": "Aldeíña da Xesteira, cando eu a",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 75,
+    "text": "Ai que piñeiro tan alto!,\nno medio ten mil enredos;\nas meniñas da Xesteira\nnunca ten os ollos quedos.",
+    "normalized_text": "ai que pineiro tan alto!, no medio ten mil enredos; as meninas da xesteira nunca ten os ollos quedos.",
+    "incipit": "Ai que piñeiro tan alto!, no",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 74,
+    "text": "Adiós, feira de Famelga,\nfeira de pasa-lo tempo,\nonde se van pasear\ncatro cabezas de vento.",
+    "normalized_text": "adios, feira de famelga, feira de pasa-lo tempo, onde se van pasear catro cabezas de vento.",
+    "incipit": "Adiós, feira de Famelga, feira de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:55:56",
+    "territories": [
+      {
+        "id": "par:3690201",
+        "nome": "Aguasantas (Santa María)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "feira-festa-romaria",
+      "humor-satira",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 73,
+    "text": "A Xesteira ten a sona,\na Xesteira a sona ten,\na Xesteira ten a sona\nde cantar e bailar ben.",
+    "normalized_text": "a xesteira ten a sona, a xesteira a sona ten, a xesteira ten a sona de cantar e bailar ben.",
+    "incipit": "A Xesteira ten a sona, a",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:56:49",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "musica-baile"
+    ],
+    "versions": []
+  },
+  {
+    "id": 72,
+    "text": "Á Virxen da Peregrina\nfunlle limpar a capela,\nEla díxome dende o alto:\nDios che pague, miña nena.",
+    "normalized_text": "a virxen da peregrina funlle limpar a capela, ela dixome dende o alto: dios che pague, mina nena.",
+    "incipit": "Á Virxen da Peregrina funlle limpar",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:33:06",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 71,
+    "text": "A Virxen da Peregrina\nten un reló de paré,\npor eso, anque sea noite,\nsabe moi ben que hora é.",
+    "normalized_text": "a virxen da peregrina ten un relo de pare, por eso, anque sea noite, sabe moi ben que hora e.",
+    "incipit": "A Virxen da Peregrina ten un",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 70,
+    "text": "A Virxen da Peregrina\ncando vai na procesión\nten un mirar tan mainiño\nque me leva o corazón.",
+    "normalized_text": "a virxen da peregrina cando vai na procesion ten un mirar tan mainino que me leva o corazon.",
+    "incipit": "A Virxen da Peregrina cando vai",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego",
+      "relixion"
+    ],
+    "versions": []
+  },
+  {
+    "id": 69,
+    "text": "A terriña de Almofrei\né unha terra moi chan,\nse a pican menudiña\ninda dá o azafrán.",
+    "normalized_text": "a terrina de almofrei e unha terra moi chan, se a pican menudina inda da o azafran.",
+    "incipit": "A terriña de Almofrei é unha",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:30:15",
+    "territories": [
+      {
+        "id": "par:3690202",
+        "nome": "Almofrei (San Lourenzo)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego",
+      "paisaxe-natureza"
+    ],
+    "versions": []
+  },
+  {
+    "id": 68,
+    "text": "A subila e baixala\na costa do Cacharredo,\na subila e baixala\nperdín a cinta do pelo.",
+    "normalized_text": "a subila e baixala a costa do cacharredo, a subila e baixala perdin a cinta do pelo.",
+    "incipit": "A subila e baixala a costa",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 67,
+    "text": "A parroquia de Loureiro\nheina de fundir a tiros,\nteño un mociño canela,\nlévame os cinco sentidos.",
+    "normalized_text": "a parroquia de loureiro heina de fundir a tiros, teno un mocino canela, levame os cinco sentidos.",
+    "incipit": "A parroquia de Loureiro heina de",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:31:51",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 66,
+    "text": "A parroquia de Loureiro\né moi digna de querer;\nten un loureiro no medio\nque fumega sin arder.",
+    "normalized_text": "a parroquia de loureiro e moi digna de querer; ten un loureiro no medio que fumega sin arder.",
+    "incipit": "A parroquia de Loureiro é moi",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 18:48:39",
+    "territories": [
+      {
+        "id": "par:3690211",
+        "nome": "Loureiro (Santiago)",
+        "tipo": "par",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
+    "id": 65,
+    "text": "A Luna de Portugal\nvén alumbrar a Galicia;\nti xa tes outros amores\nsegún teño por noticia.",
+    "normalized_text": "a luna de portugal ven alumbrar a galicia; ti xa tes outros amores segun teno por noticia.",
+    "incipit": "A Luna de Portugal vén alumbrar",
+    "notes": null,
+    "status": "published",
+    "territory_state": "assigned",
+    "is_volta": false,
+    "created_at": "2026-09-27 18:28:44",
+    "updated_at": "2026-09-27 19:03:07",
+    "territories": [
+      {
+        "id": "prov:36",
+        "nome": "Pontevedra",
+        "tipo": "prov",
+        "relation_type": "direct",
+        "is_direct": 1
+      }
+    ],
+    "tags": [
+      "amor-noivado",
+      "emigracion-viaxe",
+      "lingua-galego"
+    ],
+    "versions": []
+  },
+  {
     "id": 64,
     "text": "Nesta rúa non hai mozos,\nnesta rúa non hai mozos;\naqueles poucos que hai\nchámanlles liscacarozos.",
     "normalized_text": "nesta rua non hai mozos, nesta rua non hai mozos; aqueles poucos que hai chamanlles liscacarozos.",
@@ -366,9 +2880,9 @@
     "notes": null,
     "status": "published",
     "territory_state": "assigned",
-    "is_volta": false,
+    "is_volta": true,
     "created_at": "2026-09-26 18:39:10",
-    "updated_at": "2026-09-27 15:00:27",
+    "updated_at": "2026-09-27 18:07:14",
     "territories": [
       {
         "id": "par:3603705",
