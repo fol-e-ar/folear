@@ -77,6 +77,7 @@ const state = {
   aboutTerritoryId: "",
   submitTerritoryId: "",
   submitTerritoryIds: [],
+  submitGeneral: false,
   submitEditingId: null,
   submitEditingSnapshot: null,
   submitReturnView: null,
@@ -222,6 +223,22 @@ function territorySearchMeta(territory) {
 function territoryDisplayName(territory) {
   const council = parentCouncil(territory);
   return council ? `${territory.nome} · ${council.nome}` : territory.nome;
+}
+
+function coplaPlaceChipsHtml(copla) {
+  const territories = copla.territories || [];
+  if (territories.length) {
+    return territories.map(t => `<span class="level-chip level-${t.tipo}">${escapeHtml(t.nome)}</span>`).join("");
+  }
+  return `<span class="level-chip level-empty">${escapeHtml(coplaPlaceLabel(copla))}</span>`;
+}
+
+function coplaPlaceTextHtml(copla) {
+  const territories = copla.territories || [];
+  if (territories.length) {
+    return territories.map(t => `<span class="level-text level-${t.tipo}">${escapeHtml(t.nome)}</span>`).join(", ");
+  }
+  return escapeHtml(coplaPlaceLabel(copla));
 }
 
 function coplaPlaceLabel(copla) {
@@ -597,7 +614,7 @@ function coplaCard(copla, options = {}) {
   const versionCount = (copla.versions || []).length;
   const versionChip = versionCount ? `<span class="tag">${versionCount} variantes</span>` : "";
   const voltaChip = copla.is_volta ? `<span class="tag is-volta">Volta</span>` : "";
-  const placeChip = `<span class="gallery-place${options.dimPlace ? " is-subtle" : ""}">${escapeHtml(coplaPlaceLabel(copla))}</span>`;
+  const placeChip = `<span class="gallery-place${options.dimPlace ? " is-subtle" : ""}">${coplaPlaceChipsHtml(copla)}</span>`;
   const selectCheckbox = coplaSelectCheckbox(copla, options);
   const cardClass = options.selected ? " is-selected" : "";
   if (options.list) {
@@ -641,7 +658,7 @@ function coplaMatchesStateFilter(copla, filter) {
 }
 
 function filteredCoplas() {
-  const scoped = state.selectedTerritory ? placeContext().coplas : state.coplas;
+  const scoped = state.coplas;
   const q = normalizeText(state.coplaQuery);
   return scoped.filter(copla => {
     const stateMatches = state.coplaStateFilter === "all" || coplaMatchesStateFilter(copla, state.coplaStateFilter);
@@ -671,7 +688,7 @@ function coplaIncipitRow(copla, options = {}) {
     <article class="incipit-row${options.selected ? " is-selected" : ""}" tabindex="0" role="button" data-open-copla="${copla.id}">
       ${coplaSelectCheckbox(copla, options)}
       <span class="incipit-text">${escapeHtml(coplaTitle(copla))}</span>
-      <span class="incipit-place${options.dimPlace ? " is-subtle" : ""}">${escapeHtml(coplaPlaceLabel(copla))}</span>
+      <span class="incipit-place${options.dimPlace ? " is-subtle" : ""}">${coplaPlaceTextHtml(copla)}</span>
     </article>
   `;
 }
@@ -763,17 +780,13 @@ function renderCoplasView() {
       <div class="page-head">
         <div>
           <div class="eyebrow">Corpus</div>
-          <h1>${state.selectedTerritory ? `Coplas de ${escapeHtml(state.selectedTerritory.nome)}` : "Coplas"}</h1>
-          <p>Consulta transversal do repertorio. A lista serve para ler rápido; a galería abre unha lectura máis pausada.</p>
+          <h1>Coplas</h1>
+          <p>Consulta transversal do repertorio, sempre sobre o arquivo completo. A lista serve para ler rápido; a galería abre unha lectura máis pausada.</p>
         </div>
         <button class="btn primary" type="button" data-view="submit">+ Nova copla</button>
       </div>
       <div class="toolbar">
         <div class="searchbox"><span>⌕</span><input id="coplaSearch" type="search" value="${escapeHtml(state.coplaQuery)}" placeholder="Buscar por verso, íncipit, territorio..."></div>
-        <select id="coplaScope">
-          <option value="current" ${state.selectedTerritory ? "selected" : ""}>Ámbito actual</option>
-          <option value="all" ${state.selectedTerritory ? "" : "selected"}>Todo o corpus</option>
-        </select>
         ${coplaViewToggleMarkup()}
         <button class="btn ${state.coplaSelectMode ? "active" : ""}" type="button" id="toggleCoplaSelect">${state.coplaSelectMode ? "Saír da selección" : "Seleccionar varias"}</button>
       </div>
@@ -783,7 +796,7 @@ function renderCoplasView() {
         <button class="chip ${state.coplaStateFilter === "unassigned" ? "active" : ""}" type="button" data-state-filter="unassigned">Sen asignar</button>
       </div>
       <div id="coplaBatchBar">${coplaBatchBarMarkup(items)}</div>
-      <div class="results-row"><span id="coplaResultCount" class="muted">Mostrando ${items.length} coplas</span><span id="coplaResultScope" class="muted">${state.selectedTerritory ? "inclúe subterritorios" : "arquivo completo"}</span></div>
+      <div class="results-row"><span id="coplaResultCount" class="muted">Mostrando ${items.length} coplas</span><span id="coplaResultScope" class="muted">${state.coplaQuery ? "resultados da busca" : "arquivo completo"}</span></div>
       <div id="coplaList" class="${coplaStreamClass()}">
         ${renderCoplaItems(items)}
       </div>
@@ -793,10 +806,6 @@ function renderCoplasView() {
   $("#coplaSearch")?.addEventListener("input", event => {
     state.coplaQuery = event.target.value;
     updateCoplasResults(view);
-  });
-  $("#coplaScope")?.addEventListener("change", event => {
-    if (event.target.value === "all") state.selectedTerritory = null;
-    renderCoplasView();
   });
   all("[data-copla-view]", view).forEach(button => button.addEventListener("click", () => {
     state.coplaViewMode = button.dataset.coplaView;
@@ -2597,7 +2606,6 @@ function renderSubmitView() {
   if (!state.submitEditingId && !state.submitTerritoryIds.length && state.selectedTerritory) state.submitTerritoryIds = [state.selectedTerritory.id];
   const selectedTerritories = state.submitTerritoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
   const editing = state.submitEditingSnapshot;
-  const defaultState = editing ? editing.territory_state : "unassigned";
   view.innerHTML = `
     <div class="page">
       <div class="page-head">
@@ -2616,17 +2624,17 @@ function renderSubmitView() {
               <div id="duplicateSuggestions" class="duplicate-suggestions" hidden></div>
             </div>
             <div class="field checkbox-field"><label><input id="newIsVolta" type="checkbox" ${editing?.is_volta ? "checked" : ""}> Úsase como volta</label></div>
-            <div class="field"><label>Estado territorial</label><select id="newState">
-              <option value="unassigned" ${defaultState === "unassigned" ? "selected" : ""}>Sen asignar</option>
-              <option value="assigned" ${defaultState === "assigned" ? "selected" : ""}>Asignada a lugar</option>
-              <option value="general" ${defaultState === "general" ? "selected" : ""}>Galiza xeral</option>
-            </select></div>
-            <div id="mainTerritoryFields" class="field territory-field-group">
-              <label>Territorios</label>
-              <input id="territoryQuery" type="search" placeholder="Buscar parroquia, concello, comarca...">
+            <div id="mainTerritoryFields" class="field full territory-field-group">
+              <label>Lugar</label>
+              <input id="territoryQuery" type="search" placeholder="Sen asignar. Escribe para buscar parroquia, concello, comarca ou provincia...">
               <div id="territoryPickerResults" class="territory-results compact"></div>
+              <div id="mainTerritoryChips"><div id="selectedTerritoryChips" class="selected-chips">${
+                state.submitGeneral
+                  ? `<span class="selected-chip">Galiza enteira <small>Xeral</small><button type="button" id="clearGeneralTerritory" aria-label="Retirar Galiza enteira">×</button></span>`
+                  : (selectedTerritories.map(item => selectedTerritoryChip(item, "copla")).join("") || `<p class="muted">Sen asignar.</p>`)
+              }</div></div>
+              <button class="link-button" type="button" id="markGeneralTerritory">Marcar coma "Galiza enteira" (sen lugar concreto)</button>
             </div>
-            <div id="mainTerritoryChips" class="field full"><div id="selectedTerritoryChips" class="selected-chips">${selectedTerritories.map(item => selectedTerritoryChip(item, "copla")).join("") || `<p class="muted">Sen territorio seleccionado.</p>`}</div></div>
             <details class="advanced-fields field full">
               <summary>Axustes avanzados</summary>
               <div class="formgrid">
@@ -2686,8 +2694,7 @@ function renderSubmitView() {
   `;
   bindTerritoryPicker();
   bindSelectedTerritoryChips(view);
-  $("#newState")?.addEventListener("change", updateSubmitTerritoryVisibility);
-  updateSubmitTerritoryVisibility();
+  bindGeneralTerritoryToggle();
   $("#addVersion")?.addEventListener("click", () => addVersionRow());
   $("#saveDirect")?.addEventListener("click", saveCoplaDirect);
   $("#queueCopla")?.addEventListener("click", queueCoplaFromForm);
@@ -2815,7 +2822,7 @@ function addVersionRow(options = {}) {
   const inheritedTerritories = Array.from(new Set(state.submitTerritoryIds)).map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
   const inheritedLabel = inheritedTerritories.length
     ? inheritedTerritories.map(item => item.nome).join(", ")
-    : ($("#newState")?.value === "general" ? "Galiza xeral" : "Sen asignar");
+    : (state.submitGeneral ? "Galiza xeral" : "Sen asignar");
   const explicitIds = options.territoryIds || [];
   const territoryValue = explicitIds.length
     ? explicitIds.map(id => state.territorios.find(item => item.id === id)?.nome).filter(Boolean).join(", ")
@@ -2845,12 +2852,6 @@ function renumberVersionRows() {
     const head = $(".version-row-head strong", row);
     if (head) head.textContent = `Variante ${index + 1}`;
   });
-}
-
-function updateSubmitTerritoryVisibility() {
-  const assigned = $("#newState")?.value === "assigned";
-  if ($("#mainTerritoryFields")) $("#mainTerritoryFields").hidden = !assigned;
-  if ($("#mainTerritoryChips")) $("#mainTerritoryChips").hidden = !assigned;
 }
 
 function versionTerritoryIds(row) {
@@ -2883,7 +2884,7 @@ function bindVersionRow(row) {
 function selectedTerritoryChip(territory, kind) {
   return `
     <span class="selected-chip">
-      ${escapeHtml(territory.nome)} <small>${escapeHtml(territoryLabel(territory))}</small>
+      ${escapeHtml(territory.nome)} <small class="level-badge level-${territory.tipo}">${escapeHtml(territoryLabel(territory))}</small>
       <button type="button" data-remove-${kind}-territory="${territory.id}" aria-label="Retirar ${escapeHtml(territory.nome)}">×</button>
     </span>
   `;
@@ -2986,8 +2987,13 @@ function closeMediaModal() {
 function refreshSelectedTerritoryChips() {
   const coplaChips = $("#selectedTerritoryChips");
   if (coplaChips) {
-    const selected = state.submitTerritoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
-    coplaChips.innerHTML = selected.map(item => selectedTerritoryChip(item, "copla")).join("") || `<p class="muted">Sen territorio seleccionado.</p>`;
+    if (state.submitGeneral) {
+      coplaChips.innerHTML = `<span class="selected-chip">Galiza enteira <small>Xeral</small><button type="button" id="clearGeneralTerritory" aria-label="Retirar Galiza enteira">×</button></span>`;
+    } else {
+      const selected = state.submitTerritoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
+      coplaChips.innerHTML = selected.map(item => selectedTerritoryChip(item, "copla")).join("") || `<p class="muted">Sen asignar.</p>`;
+    }
+    bindGeneralTerritoryToggle();
   }
   const mediaChips = $("#selectedMediaTerritoryChips");
   if (mediaChips) {
@@ -3038,12 +3044,26 @@ function bindTerritoryPicker() {
     all("[data-pick-territory]", results).forEach(button => button.addEventListener("click", () => {
       const territory = state.territorios.find(item => item.id === button.dataset.pickTerritory);
       if (!territory) return;
+      state.submitGeneral = false;
       if (!state.submitTerritoryIds.includes(territory.id)) state.submitTerritoryIds.push(territory.id);
       state.submitTerritoryId = state.submitTerritoryIds[0] || "";
       input.value = "";
       results.innerHTML = "";
       refreshSelectedTerritoryChips();
     }));
+  });
+}
+
+function bindGeneralTerritoryToggle(root = document) {
+  $("#markGeneralTerritory", root)?.addEventListener("click", () => {
+    state.submitGeneral = true;
+    state.submitTerritoryIds = [];
+    state.submitTerritoryId = "";
+    refreshSelectedTerritoryChips();
+  });
+  $("#clearGeneralTerritory", root)?.addEventListener("click", () => {
+    state.submitGeneral = false;
+    refreshSelectedTerritoryChips();
   });
 }
 
@@ -3109,12 +3129,8 @@ function buildCoplaPayloadFromForm() {
     feedback.textContent = "Escribe o texto da copla antes de gardar.";
     return null;
   }
-  const territoryState = $("#newState").value;
   const territoryIds = Array.from(new Set(state.submitTerritoryIds));
-  if (territoryState === "assigned" && !territoryIds.length) {
-    feedback.textContent = "Busca e selecciona polo menos un territorio, ou cambia o estado territorial.";
-    return null;
-  }
+  const territoryState = state.submitGeneral ? "general" : (territoryIds.length ? "assigned" : "unassigned");
   const versionRows = all("#versionRows .version-row");
   const versions = versionRows.map((row, index) => ({
     label: `Variante ${index + 1}`,
@@ -3264,6 +3280,7 @@ async function saveCoplaDirect() {
     state.submitReturnView = null;
     state.submitTerritoryIds = [];
     state.submitTerritoryId = "";
+    state.submitGeneral = false;
     if (returnView) {
       state.selectedTerritory = returnView.selectedTerritory;
       state.coplaQuery = returnView.coplaQuery;
@@ -3490,12 +3507,8 @@ function queuePasteBlock() {
     if (feedback) feedback.textContent = "Pega polo menos unha copla antes de repartir.";
     return;
   }
-  const territoryState = $("#newState")?.value || "unassigned";
   const territoryIds = Array.from(new Set(state.submitTerritoryIds));
-  if (territoryState === "assigned" && !territoryIds.length) {
-    if (feedback) feedback.textContent = "Busca e selecciona polo menos un territorio, ou cambia o estado territorial, antes de repartir a lista.";
-    return;
-  }
+  const territoryState = state.submitGeneral ? "general" : (territoryIds.length ? "assigned" : "unassigned");
   const territories = territoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
   stanzas.forEach(({ text, isVolta }) => {
     const payload = {
@@ -3536,6 +3549,7 @@ function startEditCopla(coplaId) {
   state.submitBatch = [];
   state.submitTerritoryIds = (copla.territories || []).map(item => item.id);
   state.submitTerritoryId = state.submitTerritoryIds[0] || "";
+  state.submitGeneral = copla.territory_state === "general";
   closeCoplaDrawer();
   setView("submit");
 }
@@ -3546,6 +3560,7 @@ function cancelEditCopla() {
   state.submitReturnView = null;
   state.submitTerritoryIds = [];
   state.submitTerritoryId = "";
+  state.submitGeneral = false;
   renderSubmitView();
 }
 
@@ -3791,6 +3806,16 @@ function renderAboutView() {
         <article class="panel"><h2>Construír</h2><p>Pezas como carriño editorial: escoller, ordenar, separar por ritmos e exportar para cantar.</p></article>
         <article class="panel"><h2>Contacto</h2><p>Dúbidas, correccións ou coplas para achegar: escríbenos a <a href="mailto:folear3@gmail.com">folear3@gmail.com</a>.</p></article>
       </div>
+      <section class="panel about-manual">
+        <div class="section-title"><h2>Código de cores dos territorios</h2><span class="muted">Manual de uso · iremos actualizándoo</span></div>
+        <p>Cada copla, peza ou recurso pode levar ligado un ou varios territorios, e cada nivel administrativo ten a súa propia cor para sabermos dun golpe de vista, en cada pastilla, se se trata dunha parroquia, un concello, unha comarca ou unha provincia.</p>
+        <ul class="legend-list">
+          <li><span class="level-chip level-par">Parroquia</span><span class="muted">o nivel máis miúdo: unha parroquia concreta.</span></li>
+          <li><span class="level-chip level-con">Concello</span><span class="muted">o municipio enteiro.</span></li>
+          <li><span class="level-chip level-com">Comarca</span><span class="muted">agrupación de varios concellos.</span></li>
+          <li><span class="level-chip level-prov">Provincia</span><span class="muted">A Coruña, Lugo, Ourense ou Pontevedra.</span></li>
+        </ul>
+      </section>
       <section class="panel public-submit">
         <div class="section-title"><h2>Enviar unha copla</h2><span class="muted">Achega para revisión editorial</span></div>
         <form id="publicCoplaForm" class="formgrid">

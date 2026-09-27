@@ -7,16 +7,46 @@ export const TYPE_LABELS = {
   par: "Parroquia",
 };
 
+// Cerdedo-Cotobade (con:36902) fusionouse en 2016 a partir de dous concellos
+// que pertencian a comarcas distintas: Cerdedo (Tabeirós-Terra de Montes,
+// com:52) e Cotobade (Pontevedra, com:51). Na base de datos este concello
+// non ten comarca propia (com_cod=0) porque pertence realmente ás dúas, así
+// que se trata coma un caso especial para que siga sendo explorable dende
+// calquera das dúas comarcas (mapa e pestana Territorios). A partición por
+// parroquia é a mesma que usa tools/build_cerdedo_cotobade_parts.py para
+// debuxar os dous anacos do concello no mapa.
+const CERDEDO_COTOBADE_CONCELLO_COD = 36902;
+const CERDEDO_COTOBADE_COMARCAS = [51, 52];
+const CERDEDO_COTOBADE_PARISH_COMARCAS = {
+  3690206: 52, 3690207: 52, 3690209: 52, 3690210: 52,
+  3690212: 52, 3690213: 52, 3690214: 52, 3690219: 52,
+  3690201: 51, 3690202: 51, 3690203: 51, 3690204: 51, 3690205: 51,
+  3690208: 51, 3690211: 51, 3690215: 51, 3690216: 51, 3690217: 51,
+  3690218: 51, 3690220: 51, 3690221: 51,
+};
+
+function comarcaCodsForTerritory(territorio) {
+  if (territorio.tipo === "con" && territorio.cod === CERDEDO_COTOBADE_CONCELLO_COD) {
+    return CERDEDO_COTOBADE_COMARCAS;
+  }
+  if (territorio.tipo === "par" && CERDEDO_COTOBADE_PARISH_COMARCAS[territorio.cod] != null) {
+    return [CERDEDO_COTOBADE_PARISH_COMARCAS[territorio.cod]];
+  }
+  return territorio.com ? [territorio.com] : [];
+}
+
 export function buildHierarchy(territorio, all) {
   if (!territorio) return [];
 
   const out = [];
   const prov = territorio.prov ? all.find(t => t.tipo === "prov" && t.cod === territorio.prov) : null;
-  const com = territorio.com ? all.find(t => t.tipo === "com" && t.cod === territorio.com) : null;
+  const comarcas = comarcaCodsForTerritory(territorio)
+    .map(cod => all.find(t => t.tipo === "com" && t.cod === cod))
+    .filter(Boolean);
   const con = territorio.con ? all.find(t => t.tipo === "con" && t.cod === territorio.con) : null;
 
   if (prov) out.push(prov);
-  if (com) out.push(com);
+  out.push(...comarcas);
   if (con) out.push(con);
   if (!out.find(x => x.id === territorio.id)) out.push(territorio);
 
@@ -31,7 +61,7 @@ export function getChildren(territorio, all) {
   }
 
   if (territorio.tipo === "com") {
-    return all.filter(t => t.tipo === "con" && t.com === territorio.cod);
+    return all.filter(t => t.tipo === "con" && comarcaCodsForTerritory(t).includes(territorio.cod));
   }
 
   if (territorio.tipo === "con") {
@@ -52,8 +82,8 @@ export function getDescendantIds(territorio, all) {
   }
 
   if (territorio.tipo === "com") {
-    all.filter(t => t.tipo === "con" && t.com === territorio.cod).forEach(t => ids.add(t.id));
-    all.filter(t => t.tipo === "par" && t.com === territorio.cod).forEach(t => ids.add(t.id));
+    all.filter(t => t.tipo === "con" && comarcaCodsForTerritory(t).includes(territorio.cod)).forEach(t => ids.add(t.id));
+    all.filter(t => t.tipo === "par" && comarcaCodsForTerritory(t).includes(territorio.cod)).forEach(t => ids.add(t.id));
   }
 
   if (territorio.tipo === "con") {
