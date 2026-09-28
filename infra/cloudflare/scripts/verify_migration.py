@@ -28,7 +28,7 @@ DB_PATH = ROOT / "data" / "db" / "coplas.sqlite"
 SEED_DIR = Path(__file__).resolve().parents[1] / "seed"
 MANIFEST_PATH = SEED_DIR / "_manifest.json"
 
-INSERT_RE = re.compile(r"^INSERT INTO (\w+)", re.MULTILINE)
+INSERT_RE = re.compile(r"^INSERT (?:OR IGNORE )?INTO (\w+)", re.MULTILINE)
 
 
 def count_inserts(sql_text: str) -> int:

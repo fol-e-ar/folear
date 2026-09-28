@@ -16,6 +16,7 @@ from backend.services.db_paths import DB_PATH
 from backend.services.exporters import export_web
 from backend.services.importers import (
     delete_coplas,
+    delete_media,
     import_coplas,
     import_media,
     import_pieces,
@@ -120,7 +121,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
             self._send_json(400, {"ok": False, "error": str(exc)})
 
     def do_DELETE(self) -> None:
-        if self.path != "/api/coplas":
+        if self.path not in {"/api/coplas", "/api/media"}:
             self._send_json(404, {"error": "Endpoint non atopado."})
             return
 
@@ -131,7 +132,10 @@ class LocalHandler(SimpleHTTPRequestHandler):
             migrate(DB_PATH)
             conn = connect(DB_PATH)
             try:
-                deleted = delete_coplas(conn, ids)
+                if self.path == "/api/coplas":
+                    deleted = delete_coplas(conn, ids)
+                else:
+                    deleted = delete_media(conn, ids)
                 conn.commit()
                 counts = export_web(conn)
             finally:
@@ -222,6 +226,7 @@ def main() -> int:
     print(f"Servidor local: http://localhost:{port}/frontend/index.html")
     print("API local: POST /api/coplas")
     print("API local: DELETE /api/coplas")
+    print("API local: DELETE /api/media")
     print("API local: POST /api/media")
     print("API local: POST /api/pieces")
     print("API local: POST /api/territory-traits")

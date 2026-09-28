@@ -60,6 +60,7 @@ const state = {
   batchTerritoryIds: [],
   batchAssignModalOpen: false,
   deleteConfirmIds: [],
+  deleteConfirmKind: "coplas",
   deleteConfirmOpen: false,
   deleteConfirmBusy: false,
   territoryQuery: "",
@@ -322,6 +323,7 @@ function mediaKind(item) {
   if (explicit.includes("audio") || /\.(mp3|wav|ogg|m4a)(\?|#|$)/.test(url)) return "audio";
   if (explicit.includes("video") || /\.(mp4|mov|webm)(\?|#|$)/.test(url)) return "video";
   if (explicit.includes("imaxe") || explicit.includes("image") || /\.(png|jpe?g|gif|webp|avif)(\?|#|$)/.test(url)) return "image";
+  if (explicit.includes("pdf") || /\.pdf(\?|#|$)/.test(url)) return "pdf";
   return url ? "web" : "media";
 }
 
@@ -351,6 +353,7 @@ function mediaLabel(kind) {
     audio: "Audio",
     video: "Video",
     image: "Imaxe",
+    pdf: "PDF",
     web: "Web",
     media: "Media",
   }[kind] || "Media";
@@ -368,6 +371,23 @@ function youtubeId(url = "") {
   }
 }
 
+const MEDIA_KIND_ICONS = {
+  youtube: '<path d="M21.6 7.2a2.7 2.7 0 0 0-1.9-1.9C18 5 12 5 12 5s-6 0-7.7.3A2.7 2.7 0 0 0 2.4 7.2 28 28 0 0 0 2 12a28 28 0 0 0 .4 4.8 2.7 2.7 0 0 0 1.9 1.9C6 19 12 19 12 19s6 0 7.7-.3a2.7 2.7 0 0 0 1.9-1.9A28 28 0 0 0 22 12a28 28 0 0 0-.4-4.8Z"/><path d="m10 9.7 5 2.3-5 2.3Z"/>',
+  spotify: '<circle cx="12" cy="12" r="9"/><path d="M7.5 10.2c3-.8 6.5-.5 9 1"/><path d="M8 13.3c2.5-.6 5.3-.4 7.5.8"/><path d="M8.5 16.2c2-.5 4.2-.3 6 .6"/>',
+  soundcloud: '<path d="M3 15.5V12"/><path d="M6 16v-6"/><path d="M9 16.3V9"/><path d="M12 16.3V7.5c2-1 4.6-.3 5.6 1.7"/><path d="M12 16.3h7a3 3 0 0 0 0-6 4 4 0 0 0-.4 0"/>',
+  audio: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+  video: '<rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5Z"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="1.75"/><path d="m4 17 5-5 4 4 3-3 4 4"/>',
+  pdf: '<path d="M7 3h7l4 4v14H7Z"/><path d="M14 3v4h4"/><path d="M9.5 13.2h1.2c.7 0 1.3.6 1.3 1.3s-.6 1.3-1.3 1.3H9.5Zm0 0v3.8m4-3.8h1.6c.9 0 1.6.9 1.6 2s-.7 2-1.6 2h-1.6Zm5.2 0v3.8m0-2h1.6"/>',
+  web: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.5 3.6 5.6 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.6-3.6-9S9.6 5.5 12 3Z"/>',
+  media: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m9.5 9 6 3-6 3Z"/>',
+};
+
+function mediaKindIconSvg(kind) {
+  const paths = MEDIA_KIND_ICONS[kind] || MEDIA_KIND_ICONS.media;
+  return `<svg class="media-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+}
+
 function mediaCard(item, options = {}) {
   const url = mediaUrl(item);
   const kind = mediaKind(item);
@@ -377,17 +397,19 @@ function mediaCard(item, options = {}) {
   const territoryLinks = mediaTerritories(item).map(territory => territory.nome);
   const linkedCoplas = mediaCoplas(item);
   const yt = kind === "youtube" ? youtubeId(url) : "";
-  let preview = `<div class="media-preview is-${kind}"><span>${escapeHtml(mediaLabel(kind))}</span></div>`;
-  if (item.thumbnail_url) preview = `<img class="media-preview" src="${escapeHtml(item.thumbnail_url)}" alt="">`;
-  if (kind === "image" && url) preview = `<img class="media-preview" src="${escapeHtml(url)}" alt="">`;
-  if (kind === "youtube" && yt) preview = `<img class="media-preview" src="https://img.youtube.com/vi/${escapeHtml(yt)}/hqdefault.jpg" alt="">`;
-  if (kind === "audio" && url) preview = `<div class="media-preview is-audio"><span>Audio</span><audio controls src="${escapeHtml(url)}"></audio></div>`;
-  if (kind === "video" && url) preview = `<video class="media-preview" controls src="${escapeHtml(url)}"></video>`;
+  let preview = `<div class="media-preview is-${kind}"><span class="media-preview-icon">${mediaKindIconSvg(kind)}</span></div>`;
+  if (item.thumbnail_url) preview = `<img class="media-preview is-photo" src="${escapeHtml(item.thumbnail_url)}" alt="">`;
+  if (kind === "image" && url) preview = `<img class="media-preview is-photo" src="${escapeHtml(url)}" alt="">`;
+  if (kind === "youtube" && yt) preview = `<img class="media-preview is-photo" src="https://img.youtube.com/vi/${escapeHtml(yt)}/hqdefault.jpg" alt="">`;
+  if (kind === "audio" && url) preview = `<div class="media-preview is-audio"><span class="media-preview-icon">${mediaKindIconSvg("audio")}</span><audio controls src="${escapeHtml(url)}"></audio></div>`;
+  if (kind === "video" && url) preview = `<video class="media-preview is-video" controls src="${escapeHtml(url)}"></video>`;
   return `
     <article class="media-card" tabindex="${url ? "0" : "-1"}" role="${url ? "link" : "article"}" data-open-media="${escapeHtml(url)}" aria-label="${escapeHtml(title)}">
-      ${preview}
+      <div class="media-preview-wrap">
+        ${preview}
+        <span class="media-kind-badge">${mediaKindIconSvg(kind)}${escapeHtml(mediaLabel(kind))}</span>
+      </div>
       <div class="media-body">
-        <div class="eyebrow">${escapeHtml(mediaLabel(kind))}</div>
         <h2>${escapeHtml(title)}</h2>
         ${description ? `<p>${escapeHtml(description)}</p>` : ""}
         <div class="meta">
@@ -396,7 +418,7 @@ function mediaCard(item, options = {}) {
           ${linkedCoplas.length ? `<span class="tag">${linkedCoplas.length} copla${linkedCoplas.length === 1 ? "" : "s"}</span>` : ""}
         </div>
         ${url ? "" : `<p class="muted">Sen ligazón pública.</p>`}
-        ${options.editable ? `<button class="btn" type="button" data-edit-media="${item.id}">Editar</button>` : ""}
+        ${options.editable ? `<div class="media-card-actions"><button class="btn" type="button" data-edit-media="${item.id}">Editar</button><button class="btn danger" type="button" data-delete-media="${item.id}">Borrar</button></div>` : ""}
       </div>
     </article>
   `;
@@ -1086,27 +1108,46 @@ async function applyBatchTerritoryAssignment() {
   }
 }
 
-function deleteConfirmModalMarkup() {
-  const count = state.deleteConfirmIds.length;
-  const names = state.deleteConfirmIds
+function deleteConfirmEntityLabel() {
+  return state.deleteConfirmKind === "media" ? "recurso" : "copla";
+}
+
+function deleteConfirmNames() {
+  if (state.deleteConfirmKind === "media") {
+    return state.deleteConfirmIds
+      .map(id => state.media.find(item => Number(item.id) === Number(id)))
+      .filter(Boolean)
+      .map(item => item.title || item.label || item.name || "Recurso sen título");
+  }
+  return state.deleteConfirmIds
     .map(id => state.coplas.find(item => Number(item.id) === Number(id)))
     .filter(Boolean)
     .map(copla => coplaTitle(copla));
+}
+
+function deleteConfirmModalMarkup() {
+  const count = state.deleteConfirmIds.length;
+  const label = deleteConfirmEntityLabel();
+  const labelPlural = state.deleteConfirmKind === "media" ? "recursos" : "coplas";
+  const names = deleteConfirmNames();
+  const consequences = state.deleteConfirmKind === "media"
+    ? `${count === 1 ? "este recurso" : "estes recursos"} da biblioteca de media, xunto cos seus vínculos con coplas, pezas e territorios`
+    : `${count === 1 ? "esta copla" : "estas coplas"} do arquivo, xunto coas súas variantes, etiquetas, adscricións territoriais e vínculos con pezas e recursos multimedia`;
   return `
     <div class="media-modal delete-confirm-modal" role="dialog" aria-modal="true" aria-label="Confirmar borrado">
       <div class="media-modal-backdrop" data-close-delete-confirm></div>
       <div class="media-modal-panel">
         <div class="media-modal-head">
-          <div><div class="eyebrow">Acción irreversible</div><h2>Borrar ${count} copla${count === 1 ? "" : "s"}?</h2></div>
+          <div><div class="eyebrow">Acción irreversible</div><h2>Borrar ${count} ${count === 1 ? label : labelPlural}?</h2></div>
           <button class="card-close" type="button" data-close-delete-confirm aria-label="Pechar">×</button>
         </div>
         <div class="formgrid">
-          <p class="field full">Esta acción borra definitivamente ${count === 1 ? "esta copla" : "estas coplas"} do arquivo, xunto coas súas variantes, etiquetas, adscricións territoriais e vínculos con pezas e recursos multimedia. Non se pode desfacer.</p>
+          <p class="field full">Esta acción borra definitivamente ${consequences}. Non se pode desfacer.</p>
           ${names.length ? `<ul class="field full delete-confirm-list">${names.map(name => `<li>${escapeHtml(name)}</li>`).join("")}</ul>` : ""}
           <p id="deleteConfirmFeedback" class="muted field full"></p>
           <div class="drawer-actions field full">
             <button class="btn" type="button" data-close-delete-confirm ${state.deleteConfirmBusy ? "disabled" : ""}>Cancelar</button>
-            <button class="btn danger" type="button" id="confirmDeleteCoplas" ${state.deleteConfirmBusy ? "disabled" : ""}>${state.deleteConfirmBusy ? "Borrando..." : `Borrar definitivamente`}</button>
+            <button class="btn danger" type="button" id="confirmDeleteAction" ${state.deleteConfirmBusy ? "disabled" : ""}>${state.deleteConfirmBusy ? "Borrando..." : `Borrar definitivamente`}</button>
           </div>
         </div>
       </div>
@@ -1124,13 +1165,14 @@ function renderDeleteConfirmModal() {
     if (state.deleteConfirmBusy) return;
     closeDeleteConfirm();
   }));
-  $("#confirmDeleteCoplas", container)?.addEventListener("click", confirmDeleteCoplas);
+  $("#confirmDeleteAction", container)?.addEventListener("click", confirmDelete);
 }
 
-function openDeleteConfirm(ids) {
+function openDeleteConfirm(ids, kind = "coplas") {
   const uniqueIds = Array.from(new Set(ids.map(Number)));
   if (!uniqueIds.length) return;
   state.deleteConfirmIds = uniqueIds;
+  state.deleteConfirmKind = kind;
   state.deleteConfirmOpen = true;
   state.deleteConfirmBusy = false;
   renderDeleteConfirmModal();
@@ -1143,13 +1185,14 @@ function closeDeleteConfirm() {
   renderDeleteConfirmModal();
 }
 
-async function confirmDeleteCoplas() {
+async function confirmDelete() {
   const ids = state.deleteConfirmIds;
+  const kind = state.deleteConfirmKind;
   if (!ids.length || state.deleteConfirmBusy) return;
   state.deleteConfirmBusy = true;
   renderDeleteConfirmModal();
   try {
-    const response = await fetch("../api/coplas", {
+    const response = await fetch(`../api/${kind}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids }),
@@ -1157,11 +1200,15 @@ async function confirmDeleteCoplas() {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Non se puido borrar.");
     clearApiCache();
-    state.coplas = await getCoplas();
-    state.coplaSelectedIds = state.coplaSelectedIds.filter(id => !ids.includes(Number(id)));
-    if (ids.includes(Number(state.selectedCoplaId))) {
-      state.selectedCoplaId = null;
-      closeCoplaDrawer();
+    if (kind === "media") {
+      state.media = await getMedia();
+    } else {
+      state.coplas = await getCoplas();
+      state.coplaSelectedIds = state.coplaSelectedIds.filter(id => !ids.includes(Number(id)));
+      if (ids.includes(Number(state.selectedCoplaId))) {
+        state.selectedCoplaId = null;
+        closeCoplaDrawer();
+      }
     }
     closeDeleteConfirm();
     renderView();
@@ -3005,7 +3052,7 @@ function mediaFormMarkup(selectedMediaTerritories, selectedMediaCoplas) {
       <div class="section-title"><h2>${editing ? "Editar recurso" : "Novo recurso"}</h2><span class="muted">Documental, melodía ou ambos</span></div>
       <div class="formgrid">
         <div class="field"><label>Título</label><input id="mediaTitle" type="text" value="${escapeHtml(editing?.title || "")}" placeholder="Xota 1, Muiñeira de Sequeiros..."></div>
-        <div class="field"><label>Tipo</label><select id="mediaKind">${["youtube", "spotify", "soundcloud", "audio", "video", "image", "web"].map(value => `<option value="${value}" ${kind === value ? "selected" : ""}>${escapeHtml(mediaLabel(value))}</option>`).join("")}</select></div>
+        <div class="field"><label>Tipo</label><select id="mediaKind">${["youtube", "spotify", "soundcloud", "audio", "video", "image", "pdf", "web"].map(value => `<option value="${value}" ${kind === value ? "selected" : ""}>${escapeHtml(mediaLabel(value))}</option>`).join("")}</select></div>
         <div class="field"><label>Uso no arquivo</label><select id="mediaRole"><option value="documental" ${defaultRole === "documental" ? "selected" : ""}>Media documental</option><option value="melody" ${defaultRole === "melody" ? "selected" : ""}>Melodía / recurso musical</option><option value="mixed" ${defaultRole === "mixed" ? "selected" : ""}>Ambas cousas</option></select></div>
         <div class="field full"><label>URL</label><div class="input-action"><input id="mediaUrl" type="url" value="${escapeHtml(editing?.url || "")}" placeholder="https://..."><button class="btn" type="button" id="fetchMediaMeta">Obter datos</button></div></div>
         <div class="field"><label>Fonte ou autoría</label><input id="mediaSource" type="text" value="${escapeHtml(editing?.author_or_source || "")}" placeholder="Canle, intérprete, arquivo..."></div>
@@ -3761,6 +3808,10 @@ function renderMediaView() {
     event.stopPropagation();
     startEditMedia(Number(button.dataset.editMedia));
   }));
+  all("[data-delete-media]", view).forEach(button => button.addEventListener("click", event => {
+    event.stopPropagation();
+    openDeleteConfirm([Number(button.dataset.deleteMedia)], "media");
+  }));
   $("#mediaSearch")?.addEventListener("input", event => {
     state.mediaQuery = event.target.value;
     updateMediaResults(view);
@@ -3819,6 +3870,10 @@ function updateMediaResults(root = $("#view-media")) {
   all("[data-edit-media]", root).forEach(button => button.addEventListener("click", event => {
     event.stopPropagation();
     startEditMedia(Number(button.dataset.editMedia));
+  }));
+  all("[data-delete-media]", root).forEach(button => button.addEventListener("click", event => {
+    event.stopPropagation();
+    openDeleteConfirm([Number(button.dataset.deleteMedia)], "media");
   }));
 }
 
@@ -4076,6 +4131,8 @@ async function init() {
     $("#map").innerHTML = `<div class="map-fallback"><h2>Non se puido cargar Leaflet</h2><p>Comproba a conexión ou serve a libraría localmente.</p></div>`;
   }
 
+  document.getElementById("global-loading")?.setAttribute("hidden", "");
+
   const params = new URL(window.location.href).searchParams;
   const territoryId = params.get("territory_id") || params.get("id");
   const coplaId = params.get("copla_id");
@@ -4092,6 +4149,7 @@ async function init() {
 
 init().catch(error => {
   console.error(error);
+  document.getElementById("global-loading")?.setAttribute("hidden", "");
   const active = $(".view.active");
   if (active) {
     active.insertAdjacentHTML("afterbegin", `<div class="runtime-warning">Erro parcial ao cargar: ${escapeHtml(error.message)}</div>`);

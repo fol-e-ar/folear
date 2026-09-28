@@ -1,13 +1,47 @@
 # Fol e ar · Cloudflare (infraestrutura de produción, fase 1)
 
-Este directorio contén o punto de partida da arquitectura de produción en
-Cloudflare descrita en `docs/arquitectura-cloudflare.md`. É código novo e
-illado: **non modifica nada do frontend nin do backend Python actuais**, e
-**non toca `data/db/coplas.sqlite`**.
+Este directorio contén a arquitectura de produción en Cloudflare descrita en
+`docs/arquitectura-cloudflare.md`. É código novo e illado: **non modifica
+nada do frontend nin do backend Python actuais**, e **non toca
+`data/db/coplas.sqlite`** (todo o que le a SQLite real fai unha conexión de
+só lectura).
 
-Non hai conta nin credenciais de Cloudflare configuradas neste repositorio.
 Todo o que hai aquí está preparado e probado localmente (esquema, seed,
-verificación), pero non hai ningún despregamento real feito nin simulado.
+lectura e escritura completas contra unha D1 local emulada por Wrangler).
+Non hai conta nin credenciais de Cloudflare configuradas neste repositorio,
+así que non hai ningún despregamento real feito nin simulado.
+
+## Estado actual (actualizado)
+
+- **Esquema D1** (`migrations/0001_init.sql`): agora coincide co esquema real
+  de `data/db/coplas.sqlite`, incluíndo `coplas.is_volta`,
+  `copla_version_territories` e `territory_traits` (faltaban na primeira
+  versión) e as columnas `inline_text`/`role` de `piece_coplas`.
+- **Lectura** (`src/worker.js`): ademais dos 2 endpoints orixinais
+  (`GET /api/territories`, `GET /api/coplas`, simplificados, de proba de
+  concepto), o Worker agora serve en directo dende D1 os TRES ficheiros que
+  o frontend real xa pide (`frontend/js/api.js`), coa MESMA forma aniñada
+  que xera `backend/services/exporters.py`:
+  - `GET /data/exports/territorios/territorios.json` (con `traits`)
+  - `GET /data/exports/coplas/coplas.json` (con `territories`, `tags`,
+    `versions` e as súas propias `territories` por versión)
+  - `GET /data/exports/media/media.json` (con `links`)
+
+  Todo o demais (`/`, `/js/*`, `/css/*`, `/pages/*`, `/assets/*`) cae ao
+  binding `ASSETS`, é dicir, serve `frontend/` tal cal está, sen tocar nada.
+- **Escritura** (`src/worker.js`): `POST /api/coplas` (crear/editar, coa
+  mesma validación que `import_coplas`/`validate_coplas_payload` en Python:
+  territorios, versións, etiquetas), `DELETE /api/coplas`,
+  `POST /api/media` e `DELETE /api/media` (ídem con `import_media` /
+  `delete_media`). O frontend xa chama a estas rutas exactas
+  (`../api/coplas`, `../api/media`) para gardar e borrar, así que non fixo
+  falla tocar nin unha liña de `frontend/js/archive_app.js` para isto.
+- **Probado**: as catro operacións (crear copla, borrar copla, crear media,
+  borrar media) e os tres exports probáronse de punta a punta contra
+  `wrangler dev` en local (D1 emulada, sen conta de Cloudflare), incluíndo
+  casos de erro (territorio obrigatorio, id inexistente, media sen links).
+  O propio frontend (HTML/CSS/JS/geojson) tamén se comprobou servido a
+  través do binding `ASSETS` do mesmo Worker.
 
 ## Que hai aquí
 
@@ -17,15 +51,16 @@ infra/cloudflare/
 ├── .dev.vars.example       # modelo de variables locais (copiar a .dev.vars)
 ├── package.json            # dependencia de wrangler, illada do resto do repo
 ├── migrations/
-│   └── 0001_init.sql       # esquema D1, traducido do esquema SQLite actual
+│   └── 0001_init.sql       # esquema D1 completo (ver "Estado actual")
 ├── seed/                   # xerado por scripts/export_sqlite_to_d1.py
-│   ├── 01_territories.sql … 10_media_links.sql
+│   ├── 01_territories.sql … 12_territory_traits.sql
 │   └── _manifest.json      # reconto de filas exportadas/excluídas por táboa
 ├── scripts/
 │   ├── export_sqlite_to_d1.py   # SQLite (read-only) -> SQL de seed
 │   └── verify_migration.py      # verifica recontos e integridade do seed
 └── src/
-    └── worker.js            # esqueleto de API (GET /api/territories, /api/coplas)
+    └── worker.js            # API completa: lectura dinámica + escritura
+                              # de coplas e media (ver "Estado actual")
 ```
 
 ## Fluxo local (sen conta de Cloudflare)
@@ -48,7 +83,7 @@ infra/cloudflare/
    `wrangler.toml` poden quedar co valor de exemplo: `wrangler d1` en modo
    `--local` crea unha base SQLite propia en `.wrangler/state/` a partir do
    `database_name`, sen necesidade dunha conta real. Os IDs reais só fan
-   falta para `--remote` (preview/produción).
+   falla para `--remote` (preview/produción).
 
 3. Xerar (ou rexenerar) o seed desde a SQLite real, sen tocala:
 
@@ -78,9 +113,12 @@ infra/cloudflare/
    npx wrangler dev
    ```
 
-   Isto serve `frontend/` (binding `ASSETS`) máis `GET /api/territories` e
-   `GET /api/coplas` contra a D1 local, sen tocar `./serve.sh` nin o backend
-   Python existente, que seguen funcionando exactamente igual.
+   Isto serve `frontend/` (binding `ASSETS`) máis todos os endpoints de
+   lectura e escritura descritos en "Estado actual", contra a D1 local,
+   sen tocar `./serve.sh` nin o backend Python existente, que seguen
+   funcionando exactamente igual. Abre `http://localhost:8787/` (ou o porto
+   que indique a terminal) para ver o sitio real, xa lendo e escribindo
+   contra D1.
 
 ## Contornos
 
@@ -94,25 +132,58 @@ infra/cloudflare/
 
 Migracións novas engádense como `migrations/0002_*.sql`, `0003_*.sql`, etc.,
 seguindo o mesmo patrón que `backend/schema/00N_*.sql` no proxecto Python.
-`wrangler d1 migrations apply` lévalles a conta.
+`wrangler d1 migrations apply` lévalles a conta. (A migración `0001` xa
+inclúe todo o esquema real coñecido a día de hoxe, ver "Estado actual".)
 
-## Secrets
+## Acceso e secrets
 
-Nunca en `wrangler.toml` nin en `.dev.vars` cando teñan valores reais (ambos
-os dous quedan fóra de git, ver `.gitignore`). Secrets previstos (ver
-`docs/arquitectura-cloudflare.md`, secc. "API e seguridade"):
+O plan orixinal (2026-09-27) era Cloudflare Access, pero require un plan
+de pago que o equipo non ten. Optouse por unha alternativa gratuita e moito
+máis simple: **un contrasinal único compartido (HTTP Basic Auth)** que
+protexe TODO o Worker (frontend estático + API), comprobado en
+`checkSitePassword()` / `authRequiredResponse()` en `src/worker.js`, antes
+de calquera outra lóxica. O navegador amosa o seu diálogo nativo de login;
+o nome de usuario ignórase, só importa o contrasinal.
 
-- `ADMIN_TOKEN` — autenticación mínima da administración na fase 1.
-- `TURNSTILE_SECRET_KEY` — cando se active Turnstile no formulario público
-  "Enviar unha copla".
+O contrasinal gárdase coma **secret de Wrangler**, nunca en `wrangler.toml`
+nin en `.dev.vars` con valor real (ambos os dous quedan fóra de git, ver
+`.gitignore`):
 
-Configúranse con `wrangler secret put NOME` (por contorno).
+```bash
+npx wrangler secret put SITE_PASSWORD
+# pide o valor por prompt interactivo, nunca queda en ficheiros nin en git
+npx wrangler deploy   # redespregar para que o Worker recolla o secret novo
+```
+
+Se `SITE_PASSWORD` non está configurado (por exemplo en local dev sen ese
+secret posto), o Worker NON bloquea nada -- útil para desenvolver sen ter
+que meter contrasinal cada vez.
+
+**Limitacións coñecidas desta alternativa** (fronte a Cloudflare Access):
+non hai identidade por persoa (un contrasinal compartido para os tres),
+non hai caducidade nin revogación individual (cambiar o contrasinal
+desloga a todos), e o navegador cachea as credenciais ata que se pecha
+(non hai "logout" real). Para o uso actual (equipo pequeno, contrasinal
+provisional) chega; se no futuro hai orzamento, migrar a Cloudflare
+Access segue sendo unha mellora doada (a lóxica de `checkSitePassword`
+sinxelamente quitaríase).
 
 ## O que NON está feito aquí (fase 2)
 
-Ver a lista completa en `docs/arquitectura-cloudflare.md`, secc. "Pendente
-para fase 2". Resumo rápido: autenticación de administración real, endpoints
-de pezas/media, formulario de achegas pendentes de revisión, Turnstile +
-rate limiting, R2 para ficheiros propios, xeración de PDF en Cloudflare
-(ou estratexia alternativa), dominio `folear.gal`, e o propio despregamento
-en si (require conta de Cloudflare).
+- **Pezas** (`pieces`/`piece_coplas`): sen endpoints de lectura nin
+  escritura. A pestana "Pezas" do frontend NON funciona aínda contra este
+  Worker (a táboa xa existe no esquema D1 e no seed, pero non hai handlers).
+- **Xeración de PDF**: depende de Cloudflare Browser Rendering, sen empezar.
+  Localmente segue a funcionar (Chrome local vía `subprocess`), pero iso non
+  existe nun Worker.
+- **`POST /api/submissions`**: formulario público "Enviar unha copla"
+  pendente de revisión (a táboa `submissions` xa existe no esquema, sen uso).
+- **Turnstile + rate limiting** nas rutas públicas de escritura.
+- **R2** para ficheiros propios: sen uso real aínda.
+- **Atomicidade parcial**: cada copla dun payload escríbese secuencialmente
+  (non hai unha soa transacción D1 que cubra un payload con varias coplas á
+  vez); para o uso normal (editar unha copla de cada vez dende a web) isto
+  non chega a ser un problema real, pero é unha limitación coñecida.
+- **O propio despregamento**: require conta real de Cloudflare (o usuario
+  xa ten unha, conta "fol-e-ar"), dominio (pendente de merca) e configurar
+  Access + os IDs reais de D1/R2 en `wrangler.toml`.

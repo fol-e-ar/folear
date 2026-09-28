@@ -30,6 +30,19 @@ CREATE INDEX IF NOT EXISTS idx_territories_nome ON territories(nome);
 CREATE INDEX IF NOT EXISTS idx_territories_prov_cod ON territories(prov_cod);
 CREATE INDEX IF NOT EXISTS idx_territories_cod ON territories(cod);
 
+CREATE TABLE IF NOT EXISTS territory_traits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  territory_id TEXT NOT NULL,
+  trait TEXT NOT NULL,
+  category TEXT,
+  notes TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (territory_id) REFERENCES territories(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_territory_traits_territory_id ON territory_traits(territory_id);
+
 CREATE TABLE IF NOT EXISTS tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
@@ -46,6 +59,7 @@ CREATE TABLE IF NOT EXISTS coplas (
   notes TEXT,
   status TEXT NOT NULL DEFAULT 'published',
   territory_state TEXT NOT NULL DEFAULT 'assigned',
+  is_volta INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT
 );
@@ -68,6 +82,14 @@ CREATE TABLE IF NOT EXISTS copla_versions (
 
 CREATE INDEX IF NOT EXISTS idx_copla_versions_copla_id ON copla_versions(copla_id);
 CREATE INDEX IF NOT EXISTS idx_copla_versions_normalized_text ON copla_versions(normalized_text);
+
+CREATE TABLE IF NOT EXISTS copla_version_territories (
+  version_id INTEGER NOT NULL,
+  territory_id TEXT NOT NULL,
+  PRIMARY KEY (version_id, territory_id),
+  FOREIGN KEY (version_id) REFERENCES copla_versions(id) ON DELETE CASCADE,
+  FOREIGN KEY (territory_id) REFERENCES territories(id) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS copla_tags (
   copla_id INTEGER NOT NULL,
@@ -103,10 +125,13 @@ CREATE TABLE IF NOT EXISTS pieces (
 
 CREATE TABLE IF NOT EXISTS piece_coplas (
   piece_id INTEGER NOT NULL,
-  copla_id INTEGER NOT NULL,
+  copla_id INTEGER,
+  inline_text TEXT,
   position INTEGER NOT NULL,
   section_label TEXT,
+  role TEXT NOT NULL DEFAULT 'copla',
   notes TEXT,
+  CHECK (copla_id IS NOT NULL OR COALESCE(length(trim(inline_text)), 0) > 0),
   PRIMARY KEY (piece_id, position),
   FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE CASCADE,
   FOREIGN KEY (copla_id) REFERENCES coplas(id) ON DELETE CASCADE

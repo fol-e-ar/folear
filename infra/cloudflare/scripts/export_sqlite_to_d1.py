@@ -53,7 +53,7 @@ TABLES = [
     ("02_tags", "tags", ["id", "name", "slug"]),
     ("03_coplas", "coplas", [
         "id", "text", "normalized_text", "incipit", "notes", "status",
-        "territory_state", "created_at", "updated_at",
+        "territory_state", "is_volta", "created_at", "updated_at",
     ]),
     ("04_copla_versions", "copla_versions", [
         "id", "copla_id", "label", "text", "normalized_text", "incipit",
@@ -68,7 +68,8 @@ TABLES = [
         "description", "notes", "status", "created_at", "updated_at",
     ]),
     ("08_piece_coplas", "piece_coplas", [
-        "piece_id", "copla_id", "position", "section_label", "notes",
+        "piece_id", "copla_id", "inline_text", "position", "section_label",
+        "role", "notes",
     ]),
     ("09_media", "media", [
         "id", "provider", "media_kind", "title", "url", "description",
@@ -77,6 +78,13 @@ TABLES = [
     ]),
     ("10_media_links", "media_links", [
         "media_id", "entity_type", "entity_id", "relation_type",
+    ]),
+    ("11_copla_version_territories", "copla_version_territories", [
+        "version_id", "territory_id",
+    ]),
+    ("12_territory_traits", "territory_traits", [
+        "id", "territory_id", "trait", "category", "notes",
+        "created_at", "updated_at",
     ]),
 ]
 
@@ -114,6 +122,8 @@ def find_orphans(conn: sqlite3.Connection) -> dict[str, list[dict]]:
     piece_ids = known_ids(conn, "pieces")
     media_ids = known_ids(conn, "media")
 
+    version_ids = known_ids(conn, "copla_versions")
+
     checks = [
         ("copla_tags", "copla_id", copla_ids, "coplas"),
         ("copla_tags", "tag_id", tag_ids, "tags"),
@@ -123,6 +133,9 @@ def find_orphans(conn: sqlite3.Connection) -> dict[str, list[dict]]:
         ("piece_coplas", "piece_id", piece_ids, "pieces"),
         ("piece_coplas", "copla_id", copla_ids, "coplas"),
         ("media_links", "media_id", media_ids, "media"),
+        ("copla_version_territories", "version_id", version_ids, "copla_versions"),
+        ("copla_version_territories", "territory_id", territory_ids, "territories"),
+        ("territory_traits", "territory_id", territory_ids, "territories"),
     ]
 
     for table, col, valid_ids, parent in checks:
@@ -164,7 +177,6 @@ def export() -> None:
         lines = [
             f"-- Fol e ar · seed de '{table}' xerado desde data/db/coplas.sqlite",
             "PRAGMA foreign_keys = ON;",
-            "BEGIN TRANSACTION;",
         ]
         exported = 0
         for row in rows:
@@ -172,9 +184,12 @@ def export() -> None:
                 continue
             values = ", ".join(sql_literal(row[c]) for c in columns)
             cols = ", ".join(columns)
-            lines.append(f"INSERT INTO {table} ({cols}) VALUES ({values});")
+            lines.append(f"INSERT OR IGNORE INTO {table} ({cols}) VALUES ({values});")
             exported += 1
-        lines.append("COMMIT;")
+        # Nota: sen BEGIN TRANSACTION/COMMIT explicitos a proposito -- D1 en
+        # --remote rexeita eses statements SQL (require a sua API de JS para
+        # transaccions). `wrangler d1 execute --file=...` xa trata cada
+        # ficheiro coma unha soa unidade atomica.
 
         out_path = SEED_DIR / f"{filename}.sql"
         out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

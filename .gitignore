@@ -10,3 +10,4 @@ infra/cloudflare/node_modules/
 infra/cloudflare/.wrangler/
 infra/cloudflare/.dev.vars
 infra/cloudflare/wrangler.toml
+dist_pages_preview/

@@ -7,58 +7,70 @@
       "seed_file": "infra/cloudflare/seed/01_territories.sql"
     },
     "tags": {
-      "source_rows": 7,
-      "exported_rows": 7,
+      "source_rows": 16,
+      "exported_rows": 16,
       "excluded_rows": 0,
       "seed_file": "infra/cloudflare/seed/02_tags.sql"
     },
     "coplas": {
-      "source_rows": 5,
-      "exported_rows": 5,
+      "source_rows": 156,
+      "exported_rows": 156,
       "excluded_rows": 0,
       "seed_file": "infra/cloudflare/seed/03_coplas.sql"
     },
     "copla_versions": {
-      "source_rows": 0,
-      "exported_rows": 0,
+      "source_rows": 3,
+      "exported_rows": 3,
       "excluded_rows": 0,
       "seed_file": "infra/cloudflare/seed/04_copla_versions.sql"
     },
     "copla_tags": {
-      "source_rows": 10,
-      "exported_rows": 8,
+      "source_rows": 247,
+      "exported_rows": 245,
       "excluded_rows": 2,
       "seed_file": "infra/cloudflare/seed/05_copla_tags.sql"
     },
     "copla_territories": {
-      "source_rows": 5,
-      "exported_rows": 5,
+      "source_rows": 159,
+      "exported_rows": 159,
       "excluded_rows": 0,
       "seed_file": "infra/cloudflare/seed/06_copla_territories.sql"
     },
     "pieces": {
-      "source_rows": 0,
-      "exported_rows": 0,
+      "source_rows": 1,
+      "exported_rows": 1,
       "excluded_rows": 0,
       "seed_file": "infra/cloudflare/seed/07_pieces.sql"
     },
     "piece_coplas": {
-      "source_rows": 0,
-      "exported_rows": 0,
+      "source_rows": 5,
+      "exported_rows": 5,
       "excluded_rows": 0,
       "seed_file": "infra/cloudflare/seed/08_piece_coplas.sql"
     },
     "media": {
-      "source_rows": 3,
-      "exported_rows": 3,
+      "source_rows": 5,
+      "exported_rows": 5,
       "excluded_rows": 0,
       "seed_file": "infra/cloudflare/seed/09_media.sql"
     },
     "media_links": {
-      "source_rows": 3,
-      "exported_rows": 3,
+      "source_rows": 10,
+      "exported_rows": 10,
       "excluded_rows": 0,
       "seed_file": "infra/cloudflare/seed/10_media_links.sql"
+    },
+    "copla_version_territories": {
+      "source_rows": 0,
+      "exported_rows": 0,
+      "excluded_rows": 0,
+      "seed_file": "infra/cloudflare/seed/11_copla_version_territories.sql"
+    },
+    "territory_traits": {
+      "source_rows": 0,
+      "exported_rows": 0,
+      "excluded_rows": 0,
+      "seed_file": "infra/cloudflare/seed/12_territory_traits.sql"
     }
   },
   "excluded_orphans": {

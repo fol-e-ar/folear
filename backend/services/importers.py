@@ -20,6 +20,11 @@ def load_known_coplas(conn: sqlite3.Connection) -> set[int]:
     return {row["id"] for row in rows}
 
 
+def load_known_media(conn: sqlite3.Connection) -> set[int]:
+    rows = conn.execute("SELECT id FROM media").fetchall()
+    return {row["id"] for row in rows}
+
+
 def get_or_create_tag(conn: sqlite3.Connection, tag_name: str) -> int:
     existing = conn.execute(
         "SELECT id FROM tags WHERE name = ?",
@@ -547,6 +552,29 @@ def delete_coplas(conn: sqlite3.Connection, copla_ids) -> list[int]:
             (str(copla_id),),
         )
         conn.execute("DELETE FROM coplas WHERE id = ?", (copla_id,))
+
+    return ids
+
+
+def delete_media(conn: sqlite3.Connection, media_ids) -> list[int]:
+    if not isinstance(media_ids, list) or not media_ids:
+        raise ValueError("Cómpre indicar polo menos un ID de recurso para borrar.")
+
+    ids: list[int] = []
+    for raw_id in media_ids:
+        if not isinstance(raw_id, int):
+            raise ValueError(f"ID de recurso non válido: {raw_id!r}.")
+        ids.append(raw_id)
+
+    known_media_ids = load_known_media(conn)
+    missing = [media_id for media_id in ids if media_id not in known_media_ids]
+    if missing:
+        raise ValueError(f"Non existe ningún recurso con estes IDs: {missing}.")
+
+    for media_id in ids:
+        # media_links.media_id ten ON DELETE CASCADE real (a diferenza da
+        # relación polimórfica dende coplas), así que abonda con isto.
+        conn.execute("DELETE FROM media WHERE id = ?", (media_id,))
 
     return ids
 
