@@ -687,6 +687,485 @@ async function deleteMedia(env, mediaIds) {
   return ids;
 }
 
+
+// ---------------------------------------------------------------------
+// Xeracion de PDF (espello de backend/services/pdf/documents.py e
+// renderer.py): o Worker constroe o MESMO HTML que antes renderizaba
+// Chrome local, e pidelle a Cloudflare Browser Run (Quick Action /pdf)
+// que o converta en PDF -- non fai falla ningun binding de Puppeteer.
+// Require dous valores no Worker (ver README "Acceso e secrets"):
+//   - CLOUDFLARE_ACCOUNT_ID: variable normal (non e secreto).
+//   - BROWSER_RUN_API_TOKEN: secret, token de API con permiso
+//     "Browser Rendering - Edit" (creado no dashboard de Cloudflare).
+// Dispoñible no plan gratuito: 10 minutos de navegador/dia, abondo para
+// exportacions puntuais coma esta.
+// ---------------------------------------------------------------------
+
+const PDF_TYPE_LABELS = { prov: "Provincia", com: "Comarca", con: "Concello", par: "Parroquia" };
+
+const PRINT_CSS = `@page {
+  size: A4;
+  margin: 18mm 16mm 18mm;
+}
+
+@page {
+  @bottom-right {
+    content: "Fol e Ar · " counter(page);
+    color: #8a8d86;
+    font-size: 8pt;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  color: #22261f;
+  font-family: "Arial", "Helvetica", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.document-header {
+  border-bottom: 0.4pt solid #d7d9d2;
+  margin-bottom: 8mm;
+  padding-bottom: 5mm;
+}
+
+.brand {
+  color: #6f7668;
+  font-size: 8pt;
+  letter-spacing: 0.12em;
+  margin-bottom: 5mm;
+  text-transform: uppercase;
+}
+
+h1 {
+  color: #151814;
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 26pt;
+  font-weight: 400;
+  line-height: 1.05;
+  margin: 0 0 3mm;
+}
+
+.meta-row {
+  color: #5d6458;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 9pt;
+  gap: 3mm;
+  margin-bottom: 3mm;
+}
+
+.meta-row span + span::before {
+  color: #a2a79f;
+  content: "·";
+  margin-right: 3mm;
+}
+
+.description,
+.notes {
+  color: #545a50;
+  margin: 2mm 0 0;
+}
+
+.description:empty,
+.notes:empty,
+.meta-row:empty {
+  display: none;
+}
+
+.piece-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 11mm;
+  align-items: start;
+}
+
+.territory-list {
+  max-width: 150mm;
+}
+
+.part {
+  break-inside: avoid;
+  margin: 0 0 8mm;
+}
+
+.part-title {
+  break-after: avoid;
+  color: #305946;
+  font-size: 9.5pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0 0 4mm;
+  text-transform: uppercase;
+}
+
+.copla {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin: 0 0 5.5mm;
+}
+
+.copla-text {
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 11.2pt;
+  line-height: 1.38;
+  white-space: pre-line;
+}
+
+.copla.retrouso .copla-text {
+  color: #3f463c;
+  font-style: italic;
+  margin-left: 8mm;
+}
+
+.copla-meta,
+.copla-notes {
+  color: #737a70;
+  font-size: 8pt;
+  margin-top: 1.8mm;
+}
+
+.copla-notes {
+  font-style: italic;
+}
+
+.empty {
+  color: #6c7368;
+  font-style: italic;
+}
+`;
+
+function pdfSafeFilename(value, fallback) {
+  // Mirror backend/services/pdf/renderer.py::safe_filename() exactly
+  // (not the generic slugify() used elsewhere): lowercase, map the
+  // common accented Galician letters to plain ASCII, then collapse any
+  // run of non [a-z0-9] characters (spaces, parentheses, punctuation)
+  // into a single hyphen.
+  let text = (value || fallback || "").trim().toLowerCase();
+  const accents = { "\u00e1": "a", "\u00e9": "e", "\u00ed": "i", "\u00f3": "o", "\u00fa": "u", "\u00f1": "n", "\u00e7": "c", "\u00fc": "u" };
+  text = text.replace(/[\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00e7\u00fc]/g, ch => accents[ch] || ch);
+  text = text.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return text || fallback;
+}
+
+function pdfFirstLine(text) {
+  if (!text) return "";
+  const line = String(text).split(/\r?\n/).find(l => l.trim());
+  return line ? line.trim() : "";
+}
+
+async function fetchTerritoryForPdf(env, territoryId) {
+  const row = await env.DB.prepare(
+    `SELECT id, tipo, cod, nome, slug, prov_cod, com_cod, con_cod, parent_id FROM territories WHERE id = ?`
+  ).bind(territoryId).first();
+  if (!row) throw new Error(`Non existe o territorio ${territoryId}.`);
+  return row;
+}
+
+async function territoryHierarchyForPdf(env, territory) {
+  const { results } = await env.DB.prepare(
+    `SELECT id, tipo, nome, prov_cod, com_cod, con_cod FROM territories
+     WHERE id = ? OR (tipo = 'prov' AND cod = ?) OR (tipo = 'com' AND cod = ?) OR (tipo = 'con' AND cod = ?)`
+  ).bind(territory.id, territory.prov_cod, territory.com_cod, territory.con_cod).all();
+  const byType = new Map(results.map(row => [row.tipo, row]));
+  const order = ["prov", "com", "con", "par"];
+  return order.filter(t => byType.has(t)).map(t => byType.get(t));
+}
+
+async function parentCouncilNameForPdf(env, territory) {
+  if (territory.tipo === "con") return territory.nome || "";
+  if (!territory.con_cod) return "";
+  const row = await env.DB.prepare(`SELECT nome FROM territories WHERE tipo = 'con' AND cod = ? LIMIT 1`).bind(territory.con_cod).first();
+  return row ? row.nome : "";
+}
+
+async function territoryLabelForPdf(env, territory) {
+  if (!territory) return "";
+  let label = territory.nome || "";
+  if (territory.tipo === "par") {
+    const council = await parentCouncilNameForPdf(env, territory);
+    if (council) label = `${label} \u00b7 ${council}`;
+  }
+  return label;
+}
+
+async function territoryContextForPdf(env, territory) {
+  const hierarchy = await territoryHierarchyForPdf(env, territory);
+  return hierarchy.map(item => `${PDF_TYPE_LABELS[item.tipo] || item.tipo}: ${item.nome}`).join(" \u00b7 ");
+}
+
+async function descendantIdsForPdf(env, territory) {
+  const tipo = territory.tipo;
+  let query;
+  let bind;
+  if (tipo === "prov") { query = `SELECT id FROM territories WHERE id = ? OR prov_cod = ?`; bind = [territory.id, territory.cod]; }
+  else if (tipo === "com") { query = `SELECT id FROM territories WHERE id = ? OR com_cod = ?`; bind = [territory.id, territory.cod]; }
+  else if (tipo === "con") { query = `SELECT id FROM territories WHERE id = ? OR con_cod = ?`; bind = [territory.id, territory.cod]; }
+  else { query = `SELECT id FROM territories WHERE id = ?`; bind = [territory.id]; }
+  const { results } = await env.DB.prepare(query).bind(...bind).all();
+  return results.map(row => row.id);
+}
+
+async function coplaTerritoriesForPdf(env, coplaId) {
+  const { results } = await env.DB.prepare(
+    `SELECT t.id, t.tipo, t.nome, t.prov_cod, t.com_cod, t.con_cod
+     FROM copla_territories ct JOIN territories t ON t.id = ct.territory_id
+     WHERE ct.copla_id = ? ORDER BY t.tipo, t.nome`
+  ).bind(coplaId).all();
+  const labels = [];
+  for (const row of results) labels.push(await territoryLabelForPdf(env, row));
+  return labels;
+}
+
+async function fetchCoplaForPdf(env, coplaId) {
+  const row = await env.DB.prepare(
+    `SELECT id, text, incipit, notes, territory_state FROM coplas WHERE id = ?`
+  ).bind(coplaId).first();
+  if (!row) throw new Error(`Non existe a copla ${coplaId}.`);
+  const incipit = row.incipit || pdfFirstLine(row.text);
+  const territories = await coplaTerritoriesForPdf(env, coplaId);
+  return { ...row, incipit, territories };
+}
+
+async function fetchPieceSectionsForPdf(env, pieceId) {
+  const { results } = await env.DB.prepare(
+    `SELECT pc.position, pc.section_label, pc.notes, pc.role, c.id AS copla_id,
+            COALESCE(NULLIF(pc.inline_text, ''), c.text) AS text, COALESCE(c.incipit, '') AS incipit
+     FROM piece_coplas pc LEFT JOIN coplas c ON c.id = pc.copla_id
+     WHERE pc.piece_id = ? ORDER BY pc.position ASC`
+  ).bind(pieceId).all();
+  const sections = new Map();
+  for (const row of results) {
+    const label = row.section_label || "Parte";
+    if (!sections.has(label)) sections.set(label, []);
+    let copla;
+    if (row.copla_id) {
+      copla = await fetchCoplaForPdf(env, row.copla_id);
+    } else {
+      copla = { id: null, text: row.text, incipit: pdfFirstLine(row.text), notes: null, territories: [] };
+    }
+    copla = {
+      ...copla,
+      position: row.position,
+      text: row.text,
+      incipit: row.incipit || pdfFirstLine(row.text),
+      role: row.role || "copla",
+      occurrence_notes: row.notes,
+    };
+    sections.get(label).push(copla);
+  }
+  return Array.from(sections.entries()).map(([label, coplas]) => ({ label, coplas }));
+}
+
+async function buildPieceDocumentForPdf(env, pieceId) {
+  const row = await env.DB.prepare(
+    `SELECT id, title, slug, author, context_territory_id, description, notes, status FROM pieces WHERE id = ?`
+  ).bind(pieceId).first();
+  if (!row) throw new Error(`Non existe a peza ${pieceId}.`);
+  const territory = row.context_territory_id ? await fetchTerritoryForPdf(env, row.context_territory_id) : null;
+  return {
+    kind: "piece",
+    title: row.title || "Peza sen t\u00edtulo",
+    slug: row.slug,
+    author: row.author,
+    description: row.description,
+    notes: row.notes,
+    context: territory ? await territoryLabelForPdf(env, territory) : "",
+    sections: await fetchPieceSectionsForPdf(env, pieceId),
+  };
+}
+
+async function buildPieceDraftDocumentForPdf(env, payload) {
+  const territoryId = payload.context_territory_id;
+  const territory = territoryId ? await fetchTerritoryForPdf(env, territoryId) : null;
+  const sections = [];
+  for (const section of payload.sections || []) {
+    const coplas = [];
+    for (const item of section.coplas || []) {
+      let copla;
+      if (item.copla_id === null || item.copla_id === undefined) {
+        const text = item.text || "";
+        if (!text.trim()) continue;
+        copla = {
+          id: null,
+          text,
+          incipit: item.incipit || pdfFirstLine(text),
+          notes: item.notes,
+          territories: item.territory ? [item.territory] : [],
+        };
+      } else {
+        copla = await fetchCoplaForPdf(env, Number(item.copla_id));
+      }
+      copla = { ...copla, position: item.position, role: item.role || "copla", occurrence_notes: item.notes };
+      coplas.push(copla);
+    }
+    sections.push({ label: section.label || "Parte", coplas });
+  }
+  return {
+    kind: "piece",
+    title: payload.title || "Peza sen t\u00edtulo",
+    slug: payload.slug,
+    author: payload.author,
+    description: payload.description,
+    notes: payload.notes,
+    context: territory ? await territoryLabelForPdf(env, territory) : "",
+    sections,
+  };
+}
+
+async function buildTerritoryDocumentForPdf(env, territoryId) {
+  const territory = await fetchTerritoryForPdf(env, territoryId);
+  const ids = await descendantIdsForPdf(env, territory);
+  const placeholders = ids.map(() => "?").join(",");
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT c.id, c.text, c.incipit, c.notes, c.territory_state
+     FROM coplas c JOIN copla_territories ct ON ct.copla_id = c.id
+     WHERE ct.territory_id IN (${placeholders}) ORDER BY c.id DESC`
+  ).bind(...ids).all();
+  const coplas = [];
+  for (const row of results) {
+    const incipit = row.incipit || pdfFirstLine(row.text);
+    const territories = await coplaTerritoriesForPdf(env, row.id);
+    coplas.push({ ...row, incipit, territories });
+  }
+  return {
+    kind: "territory",
+    title: await territoryLabelForPdf(env, territory),
+    territory_type: PDF_TYPE_LABELS[territory.tipo] || territory.tipo,
+    context: await territoryContextForPdf(env, territory),
+    coplas,
+  };
+}
+
+function pdfHtmlEscape(value) {
+  // Mirror Python's html.escape(str, quote=True), which also escapes '.
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
+}
+
+function pdfNl2br(value) {
+  return pdfHtmlEscape(value).split(/\r?\n/).join("<br>");
+}
+
+function renderPdfMeta(document) {
+  const items = [];
+  if (document.author) items.push(`<span>${pdfHtmlEscape(document.author)}</span>`);
+  if (document.context) items.push(`<span>${pdfHtmlEscape(document.context)}</span>`);
+  if (document.territory_type) items.push(`<span>${pdfHtmlEscape(document.territory_type)}</span>`);
+  return items.join("\n");
+}
+
+function renderPdfCopla(copla) {
+  const role = copla.role === "retrouso" ? "retrouso" : "copla";
+  const notes = copla.notes ? `<div class="copla-notes">${pdfHtmlEscape(copla.notes)}</div>` : "";
+  return `
+      <article class="copla ${role}">
+        <div class="copla-text">${pdfNl2br(copla.text)}</div>
+        ${notes}
+      </article>
+    `;
+}
+
+function renderPiecePdfHtml(document) {
+  const sections = [];
+  for (const section of document.sections || []) {
+    const coplas = (section.coplas || []).map(renderPdfCopla).join("");
+    if (!coplas) continue;
+    sections.push(`
+            <section class="part">
+              <h2 class="part-title">${pdfHtmlEscape(section.label || "Parte")}</h2>
+              ${coplas}
+            </section>
+            `);
+  }
+  const body = sections.join("\n") || `<p class="empty">Esta peza a\u00ednda non ten coplas.</p>`;
+  return `<!doctype html>
+<html lang="gl">
+<head>
+  <meta charset="utf-8">
+  <title>${pdfHtmlEscape(document.title)}</title>
+  <style>${PRINT_CSS}</style>
+</head>
+<body>
+  <header class="document-header">
+    <div class="brand">Fol e Ar</div>
+    <h1>${pdfHtmlEscape(document.title)}</h1>
+    <div class="meta-row">${renderPdfMeta(document)}</div>
+    <p class="description">${pdfHtmlEscape(document.description)}</p>
+    <p class="notes">${pdfHtmlEscape(document.notes)}</p>
+  </header>
+  <main class="piece-grid">
+    ${body}
+  </main>
+</body>
+</html>`;
+}
+
+function renderTerritoryPdfHtml(document) {
+  const coplas = (document.coplas || []).map(renderPdfCopla).join("");
+  const body = coplas || `<p class="empty">Non hai coplas rexistradas para este territorio.</p>`;
+  const meta = document.territory_type ? `<span>${pdfHtmlEscape(document.territory_type)}</span>` : "";
+  return `<!doctype html>
+<html lang="gl">
+<head>
+  <meta charset="utf-8">
+  <title>${pdfHtmlEscape(document.title)}</title>
+  <style>${PRINT_CSS}</style>
+</head>
+<body>
+  <header class="document-header">
+    <div class="brand">Fol e Ar</div>
+    <h1>${pdfHtmlEscape(document.title)}</h1>
+    <div class="meta-row">${meta}</div>
+    <p class="description">${pdfHtmlEscape(document.context)}</p>
+  </header>
+  <main class="territory-list">
+    ${body}
+  </main>
+</body>
+</html>`;
+}
+
+async function renderPdfViaBrowserRun(env, htmlText) {
+  if (!env.BROWSER_RUN_API_TOKEN) {
+    throw new Error("Falta configurar o secret BROWSER_RUN_API_TOKEN no Worker (ver README, seccion Acceso e secrets) para poder xerar PDFs.");
+  }
+  if (!env.CLOUDFLARE_ACCOUNT_ID) {
+    throw new Error("Falta configurar a variable CLOUDFLARE_ACCOUNT_ID no Worker para poder xerar PDFs.");
+  }
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/browser-run/pdf`,
+    {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${env.BROWSER_RUN_API_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ html: htmlText }),
+    }
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Cloudflare Browser Run devolveu un erro (${response.status}): ${detail.slice(0, 500)}`);
+  }
+  return response.arrayBuffer();
+}
+
+function pdfResponse(pdfBuffer, filename) {
+  return new Response(pdfBuffer, {
+    status: 200,
+    headers: {
+      "content-type": "application/pdf",
+      "content-disposition": `inline; filename="${filename}"`,
+    },
+  });
+}
+
 // ---------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------
@@ -747,6 +1226,27 @@ export default {
         const payload = await request.json().catch(() => ({}));
         const ids = await deleteMedia(env, payload.ids);
         return jsonResponse({ ok: true, ids }, { env });
+      }
+
+      const pieceIdMatch = url.pathname.match(/^\/api\/pieces\/(\d+)\/pdf$/);
+      if (request.method === "GET" && pieceIdMatch) {
+        const document = await buildPieceDocumentForPdf(env, Number(pieceIdMatch[1]));
+        const pdf = await renderPdfViaBrowserRun(env, renderPiecePdfHtml(document));
+        return pdfResponse(pdf, `fol-e-ar-${pdfSafeFilename(document.title, "peza")}.pdf`);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/pdf/piece-draft") {
+        const payload = await request.json();
+        const document = await buildPieceDraftDocumentForPdf(env, payload);
+        const pdf = await renderPdfViaBrowserRun(env, renderPiecePdfHtml(document));
+        return pdfResponse(pdf, `fol-e-ar-${pdfSafeFilename(document.title, "peza")}.pdf`);
+      }
+
+      const territoryIdMatch = url.pathname.match(/^\/api\/territories\/([^/]+)\/pdf$/);
+      if (request.method === "GET" && territoryIdMatch) {
+        const document = await buildTerritoryDocumentForPdf(env, decodeURIComponent(territoryIdMatch[1]));
+        const pdf = await renderPdfViaBrowserRun(env, renderTerritoryPdfHtml(document));
+        return pdfResponse(pdf, `fol-e-ar-${pdfSafeFilename(document.title, "territorio")}.pdf`);
       }
 
       // Calquera outra ruta cae ao binding de Static Assets (frontend).

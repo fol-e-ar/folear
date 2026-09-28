@@ -168,14 +168,51 @@ provisional) chega; se no futuro hai orzamento, migrar a Cloudflare
 Access segue sendo unha mellora doada (a lóxica de `checkSitePassword`
 sinxelamente quitaríase).
 
+## Xeración de PDF
+
+Pezas e territorios pódense exportar a PDF dende o propio Worker, usando
+**Cloudflare Browser Run** (o "Quick Action" `/pdf` da API REST, gratuíto
+no plan Free: 10 minutos de navegador/día, 3 navegadores concorrentes).
+O Worker constrúe o mesmo HTML que xerarían `backend/services/pdf/renderer.py`
++ `documents.py` en local (mesmas consultas, mesmo `print.css` incrustado)
+e mándao por `fetch()` a:
+
+```
+POST https://api.cloudflare.com/client/v4/accounts/<CLOUDFLARE_ACCOUNT_ID>/browser-run/pdf
+Authorization: Bearer <BROWSER_RUN_API_TOKEN>
+```
+
+Rutas novas no Worker (mesmos camiños que en local, ver `tools/local_server.py`):
+
+- `GET /api/pieces/:id/pdf`
+- `POST /api/pdf/piece-draft`
+- `GET /api/territories/:id/pdf`
+
+Para activalo hai que:
+
+1. Crear un API Token na conta de Cloudflare (dashboard → **My Profile** →
+   **API Tokens** → **Create Token**) co permiso **"Browser Rendering -
+   Edit"** para a conta `fol-e-ar`.
+2. Gardalo coma secret do Worker:
+   ```bash
+   npx wrangler secret put BROWSER_RUN_API_TOKEN
+   ```
+3. Confirmar que `wrangler.toml` ten `CLOUDFLARE_ACCOUNT_ID` en `[vars]`
+   (xa está posto). Non é un secret, é só o identificador da conta.
+4. `npx wrangler deploy`.
+
+Se falta o token ou o `CLOUDFLARE_ACCOUNT_ID`, as rutas de PDF devolven un
+erro claro explicando que falta configurar, en vez de fallar en seco.
+
 ## O que NON está feito aquí (fase 2)
 
 - **Pezas** (`pieces`/`piece_coplas`): sen endpoints de lectura nin
   escritura. A pestana "Pezas" do frontend NON funciona aínda contra este
   Worker (a táboa xa existe no esquema D1 e no seed, pero non hai handlers).
-- **Xeración de PDF**: depende de Cloudflare Browser Rendering, sen empezar.
-  Localmente segue a funcionar (Chrome local vía `subprocess`), pero iso non
-  existe nun Worker.
+- ~~Xeración de PDF~~: **xa implementado**, ver seccion "Xeración de PDF"
+  máis arriba (Cloudflare Browser Run). Falta só que crees o token
+  `BROWSER_RUN_API_TOKEN` na conta e fagas `wrangler secret put` +
+  `wrangler deploy` para que quede activo en produción.
 - **`POST /api/submissions`**: formulario público "Enviar unha copla"
   pendente de revisión (a táboa `submissions` xa existe no esquema, sen uso).
 - **Turnstile + rate limiting** nas rutas públicas de escritura.
