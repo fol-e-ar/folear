@@ -72,6 +72,9 @@ const state = {
   pieceAuthorFilter: "",
   pieceEntryModal: "",
   pieceNotice: "",
+  pieceAddMenu: false,
+  pieceLibraryOpen: false,
+  pieceAddTarget: "",
   mediaQuery: "",
   mediaKindFilter: "",
   mediaRoleFilter: "",
@@ -383,6 +386,20 @@ const MEDIA_KIND_ICONS = {
   media: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m9.5 9 6 3-6 3Z"/>',
 };
 
+const UI_ICONS = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  trash: '<path d="M5 7h14M10 7V5h4v2m-8 0 1 12h8l1-12M10 11v5m4-5v5"/>',
+  grip: '<circle cx="9" cy="6" r="1.1"/><circle cx="15" cy="6" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="18" r="1.1"/><circle cx="15" cy="18" r="1.1"/>',
+  book: '<path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3Z"/><path d="M5 17a3 3 0 0 1 3-3h10"/>',
+  pen: '<path d="m4 20 1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19Z"/><path d="m14.5 6.5 3 3"/>',
+  file: '<path d="M7 3h7l4 4v14H7Z"/><path d="M14 3v4h4"/><path d="M12 11v6m-3-3 3 3 3-3"/>',
+};
+
+function uiIcon(name, size = 18) {
+  return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${UI_ICONS[name] || ""}</svg>`;
+}
+
 function mediaKindIconSvg(kind) {
   const paths = MEDIA_KIND_ICONS[kind] || MEDIA_KIND_ICONS.media;
   return `<svg class="media-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
@@ -558,15 +575,13 @@ function updateMapCard() {
   const clearButton = $("#clearTerritory");
   if (clearButton) clearButton.hidden = !territory;
   const title = $("#mapCardTitle");
-  const text = $("#mapCardText");
+  const label = $("#mapCardLabel");
   const coplaCount = $("#mapCoplaCount");
   const pieceCount = $("#mapPieceCount");
   const territoryCount = $("#mapTerritoryCount");
-  if (!title || !text || !coplaCount || !pieceCount || !territoryCount) return;
+  if (!title || !coplaCount || !pieceCount || !territoryCount) return;
   title.textContent = territory?.nome || "Galiza";
-  text.textContent = territory
-    ? `${territoryLabel(territory)} con ${ctx.coplas.length} coplas asociadas, directas ou herdadas dos seus subterritorios.`
-    : "Explora o corpus territorialmente ou emprega a busca para localizar unha parroquia, concello, copla ou peza.";
+  if (label) label.textContent = territory ? territoryLabel(territory) : "";
   coplaCount.textContent = territory ? ctx.coplas.length : state.coplas.length;
   pieceCount.textContent = territory ? ctx.pezas.length : state.pezas.length;
   territoryCount.textContent = territory ? ctx.children.length : state.territorios.length;
@@ -809,9 +824,7 @@ function renderCoplasView() {
     <div class="page">
       <div class="page-head">
         <div>
-          <div class="eyebrow">Corpus</div>
           <h1>Coplas</h1>
-          <p>Consulta transversal do repertorio, sempre sobre o arquivo completo. A lista serve para ler rápido; a galería abre unha lectura máis pausada.</p>
         </div>
         <button class="btn primary" type="button" data-view="submit">+ Nova copla</button>
       </div>
@@ -887,7 +900,8 @@ function bindCoplaActions(root = document) {
     if (!copla) return;
     const draft = loadDraft();
     if (state.selectedTerritory && !draft.territoryId) draft.territoryId = state.selectedTerritory.id;
-    draft.sections[0].coplas.push({
+    const targetSection = (state.view === "pieces" && draft.sections.find(item => item.id === state.pieceAddTarget)) || draft.sections[0];
+    targetSection.coplas.push({
       uid: `${copla.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       id: copla.id,
       incipit: copla.incipit || "",
@@ -1504,7 +1518,8 @@ function updatePieceLibrary(root = $("#view-pieces")) {
       <p>${nl2br(restOfText(copla.text || ""))}</p>
       <div class="mini-bottom">
         <span class="tag place">${escapeHtml(coplaPlaceLabel(copla))}</span>
-        <button class="mini-add" type="button" data-add-copla="${copla.id}">+</button>
+        ${copla.is_volta ? `<span class="tag is-volta">Volta</span>` : ""}
+        <button class="mini-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir á peza">${uiIcon("plus", 16)}</button>
       </div>
     </article>
   `).join("") || `<p class="muted">Sen coplas no repertorio.</p>`;
@@ -1537,22 +1552,22 @@ function updatePieceRepository(root = $("#view-pieces")) {
   const count = $("#pieceRepositoryCount", root);
   if (count) count.textContent = `${repo.length} pezas`;
   if (!list) return;
-  list.innerHTML = repo.map(pieceCard).join("") || `<article class="panel empty-panel"><p class="muted">Aínda non hai pezas gardadas neste ámbito. Cando se publique unha peza, aparecerá aquí como mapa de referencias.</p></article>`;
+  list.innerHTML = repo.map(pieceCard).join("") || `<article class="panel empty-panel"><p class="muted">Sen pezas gardadas.</p></article>`;
   bindPieceCardActions(list);
 }
 
 function pieceEntryModalMarkup(draft) {
   if (!state.pieceEntryModal) return "";
-  const sectionOptions = draft.sections.map((section, index) => `<option value="${escapeHtml(section.id)}">${escapeHtml(section.label || `Parte ${index + 1}`)}</option>`).join("");
+  const sectionOptions = draft.sections.map((section, index) => `<option value="${escapeHtml(section.id)}" ${section.id === state.pieceAddTarget ? "selected" : ""}>${escapeHtml(section.label || `Parte ${index + 1}`)}</option>`).join("");
   const close = `<button class="card-close" type="button" data-close-piece-entry aria-label="Pechar">×</button>`;
   if (state.pieceEntryModal === "write") {
     return `
       <div class="media-modal piece-entry-modal" role="dialog" aria-modal="true" aria-label="Escribir copla">
         <div class="media-modal-backdrop" data-close-piece-entry></div>
         <div class="media-modal-panel piece-entry-panel">
-          <div class="media-modal-head"><div><div class="eyebrow">Obradoiro</div><h2>Escribir copla</h2></div>${close}</div>
+          <div class="media-modal-head"><div><h2>Escribir copla</h2></div>${close}</div>
           <div class="piece-entry-body formgrid">
-            <div class="field full"><label>Texto</label><textarea id="writtenCoplaText" rows="7" placeholder="Escribe a copla conservando os saltos de verso..."></textarea></div>
+            <div class="field full"><label>Texto</label><textarea id="writtenCoplaText" rows="7" placeholder="Un verso por liña"></textarea></div>
             <div class="field"><label>Parte</label><select id="writtenCoplaSection">${sectionOptions}<option value="new">Nova parte...</option></select></div>
             <div class="field" id="writtenNewSectionFields" hidden><label>Ritmo da nova parte</label><select id="writtenCoplaRhythm"><option value="">Seleccionar ritmo</option>${RHYTHMS.map(value => `<option value="${value}">${value}</option>`).join("")}</select></div>
             <div class="field"><label>Función</label><select id="writtenCoplaRole"><option value="copla">Copla</option><option value="retrouso">Volta</option></select></div>
@@ -1566,7 +1581,7 @@ function pieceEntryModalMarkup(draft) {
     <div class="media-modal piece-entry-modal" role="dialog" aria-modal="true" aria-label="Importar peza">
       <div class="media-modal-backdrop" data-close-piece-entry></div>
       <div class="media-modal-panel piece-entry-panel">
-        <div class="media-modal-head"><div><div class="eyebrow">Obradoiro</div><h2>Importar peza</h2><p>O ficheiro converterase nun borrador visual antes de gardalo.</p></div>${close}</div>
+        <div class="media-modal-head"><div><h2>Importar peza</h2></div>${close}</div>
         <div class="piece-entry-body">
           ${draftCount(draft) ? `<p class="inline-notice">O borrador actual ten ${draftCount(draft)} ${draftCount(draft) === 1 ? "copla" : "coplas"}. Ao importar, substituirase polo contido do ficheiro.</p>` : ""}
           <div class="piece-import-drop">
@@ -1768,27 +1783,102 @@ function downloadPieceJsonTemplate() {
   downloadText("fol-e-ar-modelo-peza.json", JSON.stringify(template, null, 2), "application/json");
 }
 
+function workshopPartsMarkup(draft, rhythmOptions) {
+  return draft.sections.map((section, index) => `
+    <article class="builder-section" data-section-id="${section.id}">
+      <div class="section-line">
+        <select class="part-rhythm" data-section-label="${section.id}" aria-label="Ritmo da parte ${index + 1}">${rhythmOptions}</select>
+        <span class="part-actions">
+          <button class="icon-btn" type="button" data-add-to-section="${section.id}" aria-label="Engadir copla a esta parte">${uiIcon("plus")}</button>
+          ${draft.sections.length > 1 ? `<button class="icon-btn icon-trash" type="button" data-remove-section="${section.id}" aria-label="Eliminar parte">${uiIcon("trash")}</button>` : ""}
+        </span>
+      </div>
+      <div class="sequence-list" data-drop-section="${section.id}">
+        ${section.coplas.map(item => {
+          const uid = escapeHtml(item.uid || item.id);
+          const isVolta = (item.role || "copla") === "retrouso";
+          const rows = Math.max(2, String(item.text || "").split("\n").length);
+          return `
+          <article class="seq-item ${isVolta ? "is-retrouso" : ""}" draggable="true" data-drag-copla="${uid}" data-section="${section.id}">
+            <div class="drag" aria-hidden="true">${uiIcon("grip", 16)}</div>
+            <div class="seq-body">
+              <textarea class="seq-edit-text" rows="${rows}" data-edit-item="${uid}" aria-label="Texto usado nesta peza (non altera a copla orixinal)" placeholder="${escapeHtml(item.incipit || "Copla sen texto")}">${escapeHtml(item.text || "")}</textarea>
+              ${item.territory ? `<div class="meta"><span class="tag place">${escapeHtml(item.territory)}</span></div>` : ""}
+            </div>
+            <div class="seq-tools">
+              <select aria-label="Tipo textual" data-item-role="${uid}">
+                <option value="copla" ${!isVolta ? "selected" : ""}>Copla</option>
+                <option value="retrouso" ${isVolta ? "selected" : ""}>Volta</option>
+              </select>
+              <button class="icon-btn" type="button" data-remove-cart="${uid}" aria-label="Quitar da peza">${uiIcon("close", 16)}</button>
+            </div>
+          </article>`;
+        }).join("") || `<button class="drop-empty" type="button" data-add-to-section="${section.id}">${uiIcon("plus", 16)} Engadir copla</button>`}
+      </div>
+    </article>
+  `).join("");
+}
+
+function workshopLibraryMarkup(library, draft) {
+  const target = draft.sections.find(item => item.id === state.pieceAddTarget);
+  const targetIndex = draft.sections.indexOf(target);
+  const targetName = target ? (target.label || `Parte ${targetIndex + 1}`) : "";
+  return `
+    <aside class="library-sheet" aria-label="Repertorio">
+      <div class="library-sheet-head">
+        <div class="searchbox"><input id="pieceSearch" type="search" value="${escapeHtml(state.pieceLibraryQuery)}" placeholder="Buscar coplas${targetName ? ` para ${escapeHtml(targetName)}` : ""}…" aria-label="Buscar coplas para engadir"></div>
+        <button class="icon-btn" type="button" id="closePieceLibrary" aria-label="Pechar repertorio">${uiIcon("close")}</button>
+      </div>
+      <div class="library-sheet-count"><span id="pieceLibraryCount">${library.length} coplas</span></div>
+      <div id="pieceLibraryList" class="library-list">
+        ${library.map(copla => `
+          <article class="mini-copla">
+            <h3>${escapeHtml(coplaTitle(copla))}</h3>
+            <p>${nl2br(restOfText(copla.text || ""))}</p>
+            <div class="mini-bottom">
+              <span class="tag place">${escapeHtml(coplaPlaceLabel(copla))}</span>
+              ${copla.is_volta ? `<span class="tag is-volta">Volta</span>` : ""}
+              <button class="mini-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir á peza">${uiIcon("plus", 16)}</button>
+            </div>
+          </article>
+        `).join("") || `<p class="muted">Sen coplas no repertorio.</p>`}
+      </div>
+    </aside>`;
+}
+
+function workshopAddMenuMarkup(draft) {
+  const target = draft.sections.find(item => item.id === state.pieceAddTarget);
+  const targetName = target ? (target.label || `Parte ${draft.sections.indexOf(target) + 1}`) : "";
+  return `
+    <div class="add-menu-backdrop" data-close-add-menu></div>
+    <div class="add-menu" role="menu" aria-label="Engadir á peza">
+      ${targetName ? `<div class="add-menu-target">${escapeHtml(targetName)}</div>` : ""}
+      <button type="button" role="menuitem" id="focusPieceLibrary">${uiIcon("book")}<span>Do repertorio</span></button>
+      <button type="button" role="menuitem" id="openPieceWriter">${uiIcon("pen")}<span>Escribir copla</span></button>
+      <button type="button" role="menuitem" id="openPieceImport">${uiIcon("file")}<span>Importar ficheiro</span></button>
+    </div>`;
+}
+
 function renderPiecesView() {
   const view = $("#view-pieces");
+  const keepScrollY = window.scrollY;
+  const keepListScroll = $("#pieceLibraryList", view)?.scrollTop || 0;
   const draft = loadDraft();
   const library = filteredPieceLibrary();
   const repo = filteredPieceRepository();
   const total = draftCount(draft);
   const territory = pieceTerritory();
-  const rhythmOptions = `<option value="">Seleccionar ritmo</option>${RHYTHMS.map(value => `<option value="${value}">${value}</option>`).join("")}`;
+  const rhythmOptions = `<option value="">Ritmo…</option>${RHYTHMS.map(value => `<option value="${value}">${value}</option>`).join("")}`;
+  const workshop = state.pieceTab === "workshop";
   view.innerHTML = `
-    <div class="page">
-      <div class="page-head">
-        <div>
-          <div class="eyebrow">Pezas</div>
-          <h1>${state.pieceTab === "workshop" ? "Obradoiro" : "Biblioteca de pezas"}</h1>
-          <p>${state.pieceTab === "workshop" ? "Engade coplas mentres exploras e constrúe aquí unha peza con partes, ritmo, orde e saída para canto." : "Repositorio de pezas publicadas ou gardadas como mapas de coplas, filtrábeis por territorio, creador e ritmo."}</p>
-        </div>
-        ${state.pieceTab === "workshop" ? `
+    <div class="page ${workshop ? "workshop-page" : ""} ${workshop && state.pieceLibraryOpen ? "has-sheet" : ""}">
+      <div class="page-head ${workshop ? "page-head-bare" : ""}">
+        ${workshop ? "" : `<div><h1>Biblioteca de pezas</h1></div>`}
+        ${workshop ? `
           <div class="header-actions">
             <button class="btn" type="button" id="clearPiece">Baleirar</button>
-            <button class="btn" type="button" id="savePieceDirect">Gardar peza</button>
             <button class="btn" type="button" id="downloadPiece">Descargar estrutura</button>
+            <button class="btn" type="button" id="savePieceDirect">Gardar peza</button>
             <button class="btn primary" type="button" id="openA4" ${state.pdfBusy ? "disabled" : ""}>${state.pdfBusy ? "Xerando PDF..." : "Exportar PDF"}</button>
           </div>
         ` : ""}
@@ -1809,7 +1899,7 @@ function renderPiecesView() {
             </select>
           </div>
           <div id="pieceRepositoryList" class="piece-grid">
-            ${repo.map(pieceCard).join("") || `<article class="panel empty-panel"><p class="muted">Aínda non hai pezas gardadas neste ámbito. Cando se publique unha peza, aparecerá aquí como mapa de referencias.</p></article>`}
+            ${repo.map(pieceCard).join("") || `<article class="panel empty-panel"><p class="muted">Sen pezas gardadas.</p></article>`}
           </div>
         </section>
         <section class="panel creator-note">
@@ -1821,81 +1911,41 @@ function renderPiecesView() {
         </section>
       ` : `
         <div id="pieceExportStatus" class="export-status" role="status" aria-live="polite">${escapeHtml(state.pieceNotice)}</div>
-        <div class="piece-entry-bar" aria-label="Formas de engadir contido á peza">
-          <span>Engadir á peza</span>
-          <button class="btn" type="button" id="focusPieceLibrary">Do repertorio</button>
-          <button class="btn" type="button" id="openPieceWriter">Escribir copla</button>
-          <button class="btn" type="button" id="openPieceImport">Importar ficheiro</button>
-        </div>
-        <div class="toolbar piece-scopebar">
-          <div class="searchbox"><span>⌕</span><input id="pieceTerritorySearch" type="search" value="${escapeHtml(state.pieceTerritoryQuery)}" placeholder="Centrar peza nun territorio..."></div>
-          ${territory ? `<button class="btn" type="button" id="clearPieceTerritory">Limpar territorio: ${escapeHtml(territory.nome)}</button>` : `<span class="muted">Sen territorio de traballo.</span>`}
-        </div>
-        <div id="pieceTerritoryResults" class="territory-results compact"></div>
-        <div class="piece-layout">
-          <section class="panel">
-            <div class="section-title"><h2>Repertorio</h2><span id="pieceLibraryCount" class="muted">${library.length} coplas</span></div>
-            <div class="toolbar"><div class="searchbox"><span>⌕</span><input id="pieceSearch" type="search" value="${escapeHtml(state.pieceLibraryQuery)}" placeholder="Buscar coplas para engadir..."></div></div>
-            <div id="pieceLibraryList" class="library-list">
-              ${library.map(copla => `
-                <article class="mini-copla">
-                  <h3>${escapeHtml(coplaTitle(copla))}</h3>
-                  <p>${nl2br(restOfText(copla.text || ""))}</p>
-                  <div class="mini-bottom">
-                    <span class="tag place">${escapeHtml(coplaPlaceLabel(copla))}</span>
-                    ${copla.is_volta ? `<span class="tag is-volta">Volta</span>` : ""}
-                    <button class="mini-add" type="button" data-add-copla="${copla.id}">+</button>
-                  </div>
-                </article>
-              `).join("") || `<p class="muted">Sen coplas no repertorio.</p>`}
+        <section class="workshop">
+          <header class="workshop-head">
+            <input id="pieceTitle" class="workshop-title" type="text" value="${escapeHtml(draft.title || "")}" placeholder="${escapeHtml(territoryContextTitle(territory) || "Título da peza")}" aria-label="Título da peza">
+            <div class="workshop-meta">
+              <input id="pieceAuthor" class="workshop-author" type="text" value="${escapeHtml(draft.author || "")}" placeholder="Autoría" aria-label="Autoría">
+              ${territory
+                ? `<button class="chip-btn" type="button" id="clearPieceTerritory" aria-label="Quitar territorio ${escapeHtml(territory.nome)}"><span>${escapeHtml(territory.nome)}</span>${uiIcon("close", 14)}</button>`
+                : `<div class="searchbox workshop-territory"><input id="pieceTerritorySearch" type="search" value="${escapeHtml(state.pieceTerritoryQuery)}" placeholder="Territorio…" aria-label="Centrar peza nun territorio"></div>`}
             </div>
-          </section>
-          <section class="piece-editor">
-            <div class="formgrid">
-              <div class="field full"><label>Título da peza</label><input id="pieceTitle" type="text" value="${escapeHtml(draft.title || "")}" placeholder="${escapeHtml(territoryContextTitle(territory) || "Xota de Cerdedo")}"></div>
-              <div class="field full"><label>Notas da peza <span class="muted">(opcional, para imprimir)</span></label><textarea id="pieceNotes" rows="2" placeholder="Xota curta; muiñeira empuñada; toque a man aberta...">${escapeHtml(draft.notes || "")}</textarea></div>
-              <div class="field"><label>Autoría</label><input id="pieceAuthor" type="text" value="${escapeHtml(draft.author || "")}" placeholder="Nome"></div>
-            </div>
-            <div class="sequence">
-              <div class="sequence-head"><div><div class="eyebrow">Estrutura</div><h2>Partes e ritmos</h2></div><button class="btn" type="button" id="addSection">Engadir parte</button></div>
-              <div class="builder-sections">
-                ${draft.sections.map(section => `
-                  <article class="builder-section" data-section-id="${section.id}">
-                    <div class="section-line">
-                      <select data-section-label="${section.id}" aria-label="Ritmo da parte">${rhythmOptions}</select>
-                      <button class="icon-trash" type="button" data-remove-section="${section.id}" aria-label="Eliminar parte">🗑</button>
-                    </div>
-                    <div class="sequence-list" data-drop-section="${section.id}">
-                      ${section.coplas.map(item => `
-                        <article class="seq-item ${(item.role || "copla") === "retrouso" ? "is-retrouso" : ""}" draggable="true" data-drag-copla="${escapeHtml(item.uid || item.id)}" data-section="${section.id}">
-                          <div class="drag">☷</div>
-                          <div>
-                            <div class="seq-text">${escapeHtml(firstLine(item.text) || item.incipit || "Copla sen íncipit")}</div>
-                            <textarea class="seq-edit-text" rows="3" data-edit-item="${escapeHtml(item.uid || item.id)}" aria-label="Texto usado nesta peza (non altera a copla orixinal)">${escapeHtml(item.text || "")}</textarea>
-                            <div class="meta"><span class="tag place">${escapeHtml(item.territory || "")}</span></div>
-                          </div>
-                          <div class="seq-tools">
-                            <select aria-label="Tipo textual" data-item-role="${escapeHtml(item.uid || item.id)}">
-                              <option value="copla" ${(item.role || "copla") === "copla" ? "selected" : ""}>Copla</option>
-                              <option value="retrouso" ${item.role === "retrouso" ? "selected" : ""}>Volta</option>
-                            </select>
-                            <button type="button" data-remove-cart="${escapeHtml(item.uid || item.id)}">×</button>
-                          </div>
-                        </article>
-                      `).join("") || `<p class="muted">Engade coplas ou arrastra aquí desde outra parte.</p>`}
-                    </div>
-                  </article>
-                `).join("")}
-              </div>
-            </div>
-          </section>
+            <div id="pieceTerritoryResults" class="territory-results compact"></div>
+            <textarea id="pieceNotes" class="workshop-notes" rows="1" placeholder="Notas para imprimir…" aria-label="Notas da peza">${escapeHtml(draft.notes || "")}</textarea>
+          </header>
+          <div class="builder-sections">
+            ${workshopPartsMarkup(draft, rhythmOptions)}
+          </div>
+          <button class="add-part" type="button" id="addSection">${uiIcon("plus", 16)} Parte</button>
+        </section>
+        <div class="add-fab">
+          <button class="fab" type="button" id="pieceAddToggle" aria-expanded="${state.pieceAddMenu ? "true" : "false"}">${uiIcon("plus")}<span>Engadir</span></button>
         </div>
+        ${state.pieceAddMenu ? workshopAddMenuMarkup(draft) : ""}
+        ${state.pieceLibraryOpen ? workshopLibraryMarkup(library, draft) : ""}
         ${pieceEntryModalMarkup(draft)}
       `}
     </div>
   `;
+  if (workshop) {
+    window.scrollTo(0, keepScrollY);
+    const list = $("#pieceLibraryList", view);
+    if (list) list.scrollTop = keepListScroll;
+  }
   all("[data-piece-tab]", view).forEach(button => button.addEventListener("click", () => {
     state.pieceTab = button.dataset.pieceTab;
+    state.pieceAddMenu = false;
+    state.pieceLibraryOpen = false;
     renderPiecesView();
   }));
   draft.sections.forEach(section => {
@@ -1934,12 +1984,33 @@ function renderPiecesView() {
   $("#pieceTitle")?.addEventListener("input", event => saveDraft({ ...loadDraft(), title: event.target.value }));
   $("#pieceAuthor")?.addEventListener("input", event => saveDraft({ ...loadDraft(), author: event.target.value }));
   $("#pieceNotes")?.addEventListener("input", event => saveDraft({ ...loadDraft(), notes: event.target.value }));
-  $("#focusPieceLibrary")?.addEventListener("click", () => {
-    $("#pieceSearch")?.focus();
-    $("#pieceLibraryList")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  $("#pieceAddToggle")?.addEventListener("click", () => {
+    state.pieceAddMenu = !state.pieceAddMenu;
+    if (state.pieceAddMenu) state.pieceAddTarget = "";
+    renderPiecesView();
   });
-  $("#openPieceWriter")?.addEventListener("click", () => openPieceEntryModal("write"));
-  $("#openPieceImport")?.addEventListener("click", () => openPieceEntryModal("import"));
+  all("[data-add-to-section]", view).forEach(button => button.addEventListener("click", () => {
+    state.pieceAddTarget = button.dataset.addToSection;
+    state.pieceAddMenu = true;
+    renderPiecesView();
+  }));
+  all("[data-close-add-menu]", view).forEach(item => item.addEventListener("click", () => {
+    state.pieceAddMenu = false;
+    renderPiecesView();
+  }));
+  $("#focusPieceLibrary")?.addEventListener("click", () => {
+    state.pieceAddMenu = false;
+    state.pieceLibraryOpen = true;
+    renderPiecesView();
+    $("#pieceSearch")?.focus();
+  });
+  $("#closePieceLibrary")?.addEventListener("click", () => {
+    state.pieceLibraryOpen = false;
+    state.pieceAddTarget = "";
+    renderPiecesView();
+  });
+  $("#openPieceWriter")?.addEventListener("click", () => { state.pieceAddMenu = false; openPieceEntryModal("write"); });
+  $("#openPieceImport")?.addEventListener("click", () => { state.pieceAddMenu = false; openPieceEntryModal("import"); });
   all("[data-close-piece-entry]", view).forEach(button => button.addEventListener("click", closePieceEntryModal));
   $("#addWrittenCopla")?.addEventListener("click", addWrittenCopla);
   $("#writtenCoplaSection")?.addEventListener("change", event => {
@@ -2007,10 +2078,22 @@ function renderPiecesView() {
       });
       saveDraft(next);
     });
-    textarea.addEventListener("blur", () => renderPiecesView());
   });
+  fitTextareas(view);
   bindCoplaActions(view);
   bindPieceDrag(view);
+}
+
+function fitTextareas(root) {
+  all(".seq-edit-text, .workshop-notes", root).forEach(area => {
+    const fit = () => {
+      if (!area.scrollHeight) return;
+      area.style.height = "auto";
+      area.style.height = `${area.scrollHeight}px`;
+    };
+    fit();
+    area.addEventListener("input", fit);
+  });
 }
 
 function moveDraftCopla(coplaUid, targetSectionId, beforeCoplaUid = null) {
@@ -2418,12 +2501,7 @@ function renderTerritoryView() {
   if (territory?.tipo === "par" && state.territoryTab === "children") state.territoryTab = "summary";
   view.innerHTML = `
     <div class="page">
-      <div class="page-head">
-        <div>
-          <div class="eyebrow">Territorios</div>
-          <h1>${territory ? escapeHtml(territory.nome) : "Galiza"}</h1>
-          <p>${territory ? "Xerarquía, coplas directas, material herdado, pezas e media." : "Visión xeral do arquivo. Para media, melodías e navegación fina escolle unha provincia, comarca, concello ou parroquia."}</p>
-        </div>
+      <div class="page-head page-head-bare">
         <button class="btn primary" type="button" data-view="map">Ver no mapa</button>
       </div>
       <div class="toolbar">
@@ -2435,7 +2513,7 @@ function renderTerritoryView() {
           <div class="breadcrumbs">${breadcrumbTrail(territory, ctx)}</div>
           <div class="eyebrow">${escapeHtml(territory ? territoryLabel(territory) : "País")}</div>
           <h1>${territory ? escapeHtml(territory.nome) : "Galiza"}</h1>
-          <p>${territory ? `${direct} coplas directas e ${Math.max(ctx.coplas.length - direct, 0)} herdadas dos subterritorios.` : `${ctx.coplas.length} coplas no conxunto do arquivo. A vista xeral amosa unha mostra e deixa a exploración completa para territorios menores.`}</p>
+          ${territory ? `<p>${direct} coplas directas e ${Math.max(ctx.coplas.length - direct, 0)} herdadas dos subterritorios.</p>` : ""}
           <div class="stats">
             <div class="stat"><b>${ctx.coplas.length}</b><span>coplas</span></div>
             <div class="stat"><b>${ctx.pezas.length}</b><span>pezas</span></div>
@@ -2595,7 +2673,7 @@ function renderTerritoryTab(territory, ctx) {
       const sample = ctx.coplas.slice(0, 24);
       return `
         <div class="section-title"><h2>Coplas de Galiza</h2><span class="muted">${ctx.coplas.length} no arquivo</span></div>
-        <div class="territory-limit">Mostrando unha mostra inicial. Para traballar con todas as coplas dun ámbito concreto, escolle unha provincia, comarca, concello ou parroquia.</div>
+        <div class="territory-limit">Mostra inicial. Escolle un territorio para ver todas as coplas.</div>
         <div class="toolbar toolbar-end">${coplaViewToggleMarkup()}</div>
         <div id="territoryCoplaList" class="${coplaStreamClass()}${state.coplaViewMode === "gallery" ? " territory-copla-grid" : ""}">${renderCoplaItems(sample)}</div>
       `;
@@ -2604,7 +2682,6 @@ function renderTerritoryTab(territory, ctx) {
       return `
         <section class="panel territory-limit-panel">
           <h2>Escolle un territorio menor</h2>
-          <p class="muted">Para evitar unha pantalla inmanexable, as pezas, melodías e recursos multimedia explóranse desde provincia, comarca, concello ou parroquia.</p>
         </section>
       `;
     }
@@ -2650,7 +2727,7 @@ function renderTerritoryTab(territory, ctx) {
     const melodies = ctx.media.filter(item => ["melody", "mixed"].includes(mediaRole(item)));
     return `
       <div class="section-title"><h2>Melodías</h2><button class="btn" type="button" data-view="media" data-media-role="melody">+ Novo recurso</button><span class="muted">${melodies.length} recursos sonoros</span></div>
-      <div class="media-grid">${melodies.map(mediaCard).join("") || `<article class="panel"><p class="muted">Aínda non hai melodías rexistradas neste territorio. A pantalla xa admite audio local, vídeo, YouTube e Spotify cando se dean de alta.</p></article>`}</div>
+      <div class="media-grid">${melodies.map(mediaCard).join("") || `<article class="panel"><p class="muted">Sen melodías rexistradas.</p></article>`}</div>
     `;
   }
   if (state.territoryTab === "children") {
@@ -2754,9 +2831,7 @@ function renderSubmitView() {
     <div class="page">
       <div class="page-head">
         <div>
-          <div class="eyebrow">Alta</div>
           <h1>${editing ? "Editar copla" : "Nova copla"}</h1>
-          <p>${editing ? "Modifica o texto, as variantes, o territorio ou o uso como volta desta copla." : "Incorpora unha ou varias coplas ao arquivo, coas súas variantes, nun só proceso."}</p>
         </div>
         ${editing ? `<div class="header-actions"><button class="btn" type="button" id="cancelEdit">Cancelar edición</button></div>` : ""}
       </div>
@@ -3780,9 +3855,7 @@ function renderMediaView() {
     <div class="page">
       <div class="page-head">
         <div>
-          <div class="eyebrow">Media</div>
           <h1>Media</h1>
-          <p>Biblioteca global de audio, vídeo, documentos e ligazóns. O formulario lembra o territorio activo para axilizar a alta.</p>
         </div>
         <button class="btn primary" type="button" id="openMediaModal">+ Novo recurso</button>
       </div>
@@ -4089,6 +4162,12 @@ function bindGlobalEvents() {
     if (event.key === "Escape") {
       if (state.mediaModalOpen) {
         closeMediaModal();
+        return;
+      }
+      if (state.view === "pieces" && state.pieceTab === "workshop" && (state.pieceEntryModal || state.pieceAddMenu)) {
+        state.pieceEntryModal = "";
+        state.pieceAddMenu = false;
+        renderPiecesView();
         return;
       }
       closeCoplaDrawer();
