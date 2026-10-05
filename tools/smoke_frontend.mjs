@@ -81,10 +81,17 @@ globalThis.window = {
   location: { href: "http://localhost:8765/frontend/index.html", protocol: "http:" },
   setTimeout: fn => fn(),
   addEventListener() {},
+  scrollTo() {},
+  scrollY: 0,
   topojson: null,
 };
 
+elements.set("#global-loading", new ElementStub("#global-loading"));
+
 globalThis.document = {
+  getElementById(id) {
+    return elements.get(`#${id}`) || null;
+  },
   querySelector(selector) {
     return elements.get(selector) || null;
   },

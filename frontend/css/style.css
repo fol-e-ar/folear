@@ -525,14 +525,7 @@ label textarea {
   margin: 18px 0;
 }
 
-.layout-two {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 310px;
-  gap: 20px;
-}
-
 .panel,
-.piece-editor,
 .territory-card {
   padding: 18px;
 }
@@ -544,8 +537,7 @@ label textarea {
 }
 
 .results-row,
-.section-title,
-.sequence-head {
+.section-title {
   display: flex;
   gap: 14px;
   align-items: center;
@@ -740,8 +732,7 @@ label textarea {
   color: var(--ink);
 }
 
-.gallery-text,
-.copla-text {
+.gallery-text {
   margin: 0 0 14px;
   white-space: pre-line;
 }
@@ -770,16 +761,6 @@ label textarea {
   justify-content: center;
   padding: 8px 10px;
   text-align: center;
-}
-
-.gallery-actions.vertical {
-  flex-direction: column;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
 }
 
 .copla-drawer[hidden] {
@@ -879,12 +860,6 @@ label textarea {
   font-size: 12px;
 }
 
-.piece-layout {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.78fr) minmax(420px, 1.22fr);
-  gap: 20px;
-}
-
 .library-list {
   max-height: calc(100vh - 245px);
   padding-right: 4px;
@@ -917,35 +892,9 @@ label textarea {
   justify-content: space-between;
 }
 
-.piece-scopebar {
-  margin-bottom: 14px;
-}
-
 .piece-tabs {
   width: fit-content;
   max-width: 100%;
-}
-
-.piece-entry-bar {
-  display: flex;
-  width: fit-content;
-  max-width: 100%;
-  gap: 8px;
-  align-items: center;
-  padding: 7px;
-  margin: 0 0 14px;
-}
-
-.piece-entry-bar > span {
-  padding: 0 8px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.piece-entry-bar .btn {
-  background: #FAFAF6;
 }
 
 .piece-entry-panel {
@@ -1532,11 +1481,6 @@ label {
   text-align: center;
 }
 
-.seq-text {
-  font-size: 14px;
-  line-height: 1.3;
-}
-
 .seq-edit-text {
   display: block;
   width: 100%;
@@ -1609,8 +1553,9 @@ label {
 
 .territory-hero {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 300px);
+  gap: 32px;
+  align-items: center;
   margin-top: 20px;
 }
 
@@ -1651,27 +1596,6 @@ label {
 
 .territory-tabs button.active {
   font-weight: 700;
-}
-
-.territory-mini-map-wrap {
-  position: relative;
-  min-height: 240px;
-  color: var(--muted);
-}
-
-.territory-mini-map-wrap > span {
-  position: absolute;
-  inset: 50% auto auto 50%;
-  z-index: 2;
-  padding: 8px 10px;
-  font-size: 12px;
-  transform: translate(-50%, -50%);
-}
-
-.territory-mini-map {
-  width: 100%;
-  min-height: 240px;
-  height: 100%;
 }
 
 .territory-results {
@@ -1760,10 +1684,6 @@ label {
     right: 16%;
   }
 
-  .layout-two,
-  .piece-layout,
-  .territory-hero,
-  .detail-grid,
   .about-grid {
     grid-template-columns: 1fr;
   }
@@ -1880,21 +1800,6 @@ label {
   .stats,
   .gallery-actions {
     flex-direction: column;
-  }
-
-  .piece-entry-bar {
-    display: grid;
-    width: 100%;
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .piece-entry-bar > span,
-  .piece-entry-bar .btn:first-of-type {
-    grid-column: 1 / -1;
-  }
-
-  .piece-entry-bar > span {
-    padding-top: 4px;
   }
 
   .piece-import-drop,
@@ -2019,10 +1924,6 @@ label textarea:focus-visible,
 }
 
 /* --- Cuarta tanda: alta múltiple/edición, duplicados, volta, chip de lugar discreto, trazos de territorio --- */
-
-.gallery-top.align-end {
-  justify-content: flex-end;
-}
 
 .gallery-place.is-subtle {
   opacity: 0.55;
@@ -2399,7 +2300,6 @@ h3,
 .level-badge,
 .gallery-title,
 .mini-copla h3,
-.seq-text,
 .incipit-text,
 .breadcrumbs,
 .media-kind-badge {
@@ -2564,12 +2464,10 @@ textarea {
 /* Sen caixas: os paneis son só contido */
 
 .panel,
-.piece-editor,
 .territory-card,
 .map-card,
 .file-mode-notice section,
 .creator-note,
-.piece-entry-bar,
 .empty-panel {
   background: transparent;
   border: 0;
@@ -2578,7 +2476,6 @@ textarea {
 }
 
 .panel,
-.piece-editor,
 .territory-card,
 .creator-note {
   padding-left: 0;
@@ -2941,14 +2838,12 @@ label {
 }
 
 .gallery-text,
-.copla-text,
 .mini-copla p,
 .piece-drawer-copla .gallery-text {
   font-family: var(--font-ui);
 }
 
-.gallery-text,
-.copla-text {
+.gallery-text {
   font-size: clamp(16px, 1.3vw, 18px);
   font-weight: 400;
   line-height: 1.6;
@@ -3129,19 +3024,6 @@ label {
   background: var(--tint);
   border: 0;
   border-radius: 999px;
-}
-
-.territory-mini-map-wrap {
-  background: #EFEFE9;
-  border: 0;
-  border-radius: 22px;
-  overflow: hidden;
-}
-
-.territory-mini-map-wrap > span {
-  background: var(--float-bg);
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
 }
 
 .map-fallback {
@@ -4089,5 +3971,166 @@ label {
 
   .workshop .seq-item .drag {
     opacity: 0.5;
+  }
+}
+
+/* Mapa sen mapa base: papel + polígonos */
+
+.leaflet-container {
+  font-family: var(--font-ui);
+  background: var(--bg);
+}
+
+/* Siluetas: o contorno de cada territorio, en tinta, integrado na páxina */
+
+.silhouette,
+.silhouette-file svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.silhouette-file {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.territory-silhouette {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 280px;
+  color: var(--ink);
+}
+
+.territory-silhouette .silhouette,
+.territory-silhouette .silhouette-file {
+  width: auto;
+  max-width: 100%;
+  height: 100%;
+}
+
+.territory-silhouette .silhouette-file svg {
+  width: auto;
+  max-width: 100%;
+}
+
+.map-card h2 {
+  padding-right: 92px;
+}
+
+.map-card.is-collapsed h2 {
+  padding-right: 0;
+}
+
+.map-card-sil {
+  position: absolute;
+  top: 58px;
+  right: 24px;
+  width: 78px;
+  height: 78px;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+.map-card-sil .silhouette,
+.map-card-sil .silhouette-file {
+  width: 100%;
+  height: 100%;
+}
+
+.map-card.is-collapsed .map-card-sil {
+  display: none;
+}
+
+/* Subterritorios explorábeis */
+
+.territory-children {
+  margin-top: 26px;
+}
+
+.territory-children-head {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.territory-children.is-collapsed .chip-row {
+  max-height: 88px;
+  overflow: hidden;
+}
+
+.chip-territory {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  background: var(--tint);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.chip-territory.has-coplas {
+  color: var(--ink);
+  background: var(--float-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.chip-territory:hover {
+  color: var(--bg);
+  background: var(--ink);
+}
+
+.chip-sil {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: inherit;
+}
+
+.chip-sil .silhouette {
+  width: 100%;
+  height: 100%;
+}
+
+.chip-territory:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 920px) {
+  .territory-hero {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .territory-silhouette {
+    order: -1;
+    justify-content: flex-start;
+    height: 150px;
+  }
+}
+
+@media (max-width: 620px) {
+  .territory-card .stats {
+    flex-flow: row wrap;
+    gap: 8px 28px;
   }
 }

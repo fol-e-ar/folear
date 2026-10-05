@@ -1,4 +1,4 @@
-import { clearApiCache, getCoplas, getGeoLayer, getMedia, getPezas, getTerritorios } from "./api.js";
+import { clearApiCache, getCoplas, getGeoLayer, getMedia, getPezas, getTerritorios, getTextAsset } from "./api.js";
 import { escapeHtml, nl2br, normalizeText, slugify } from "./utils.js";
 import {
   TYPE_LABELS,
@@ -9,6 +9,7 @@ import {
   findTerritoryByFeature,
   getChildren,
   getDescendantIds,
+  getFeatureCod,
   getFeatureNome,
   searchTerritories,
 } from "./territory_data.js";
@@ -47,10 +48,8 @@ const state = {
   layerType: "con",
   selectedTerritory: null,
   selectedCoplaId: null,
-  miniMap: null,
-  miniLayer: null,
   view: "map",
-  territoryTab: "summary",
+  territoryTab: "coplas",
   coplaViewMode: "gallery",
   pieceTab: "workshop",
   coplaQuery: "",
@@ -208,6 +207,153 @@ async function geoLayerForMap(type) {
   return { ...data, features: [...data.features, ...(parts.features || [])] };
 }
 
+/* ==========================================================
+   Siluetas: contorno de cada territorio debuxado en SVG a partir
+   dos mesmos GeoJSON do mapa (sen Leaflet, sen mapa base).
+   Galiza usa assets/silhuetas/galiza.svg (substituíbel).
+   ========================================================== */
+const silhouetteIndexes = new Map();
+const silhouetteCache = new Map();
+const SIL_DETAIL = { hero: 0.12, chip: 0.55 };
+
+function geoIndexFor(tipo) {
+  if (!silhouetteIndexes.has(tipo)) {
+    silhouetteIndexes.set(tipo, geoLayerForMap(tipo).then(data => {
+      const index = new Map();
+      (data.features || []).forEach(feature => {
+        const cod = getFeatureCod(feature, tipo);
+        if (cod == null || Number.isNaN(cod)) return;
+        if (!index.has(cod)) index.set(cod, []);
+        index.get(cod).push(feature);
+      });
+      return index;
+    }).catch(error => {
+      silhouetteIndexes.delete(tipo);
+      throw error;
+    }));
+  }
+  return silhouetteIndexes.get(tipo);
+}
+
+function simplifyLine(points, eps) {
+  if (points.length <= 2) return points;
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const e2 = eps * eps;
+  const stack = [[0, points.length - 1]];
+  while (stack.length) {
+    const [from, to] = stack.pop();
+    const [ax, ay] = points[from];
+    const dx = points[to][0] - ax;
+    const dy = points[to][1] - ay;
+    const len2 = dx * dx + dy * dy;
+    let far = 0;
+    let index = -1;
+    for (let i = from + 1; i < to; i += 1) {
+      const px = points[i][0] - ax;
+      const py = points[i][1] - ay;
+      let d2;
+      if (len2 === 0) d2 = px * px + py * py;
+      else {
+        const t = Math.max(0, Math.min(1, (px * dx + py * dy) / len2));
+        d2 = (px - t * dx) ** 2 + (py - t * dy) ** 2;
+      }
+      if (d2 > far) { far = d2; index = i; }
+    }
+    if (far > e2 && index > 0) {
+      keep[index] = 1;
+      stack.push([from, index], [index, to]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
+}
+
+function ringArea(points) {
+  let area = 0;
+  for (let i = 0; i < points.length - 1; i += 1) area += points[i][0] * points[i + 1][1] - points[i + 1][0] * points[i][1];
+  return Math.abs(area) / 2;
+}
+
+function geometryPolygons(geometry) {
+  if (!geometry) return [];
+  if (geometry.type === "Polygon") return [geometry.coordinates];
+  if (geometry.type === "MultiPolygon") return geometry.coordinates;
+  if (geometry.type === "GeometryCollection") return (geometry.geometries || []).flatMap(geometryPolygons);
+  return [];
+}
+
+function buildSilhouette(features, eps) {
+  const polygons = features.flatMap(feature => geometryPolygons(feature.geometry));
+  if (!polygons.length) return null;
+  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  polygons.forEach(polygon => (polygon[0] || []).forEach(([lon, lat]) => {
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }));
+  const k = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+  const w = (maxLon - minLon) * k;
+  const h = maxLat - minLat;
+  if (!(w > 0) || !(h > 0)) return null;
+  const scale = 100 / Math.max(w, h);
+  let d = "";
+  polygons.forEach(polygon => polygon.forEach((ring, ringIndex) => {
+    const points = ring.map(([lon, lat]) => [(lon - minLon) * k * scale, (maxLat - lat) * scale]);
+    const simple = simplifyLine(points, eps);
+    if (simple.length < 4) return;
+    if (ringIndex === 0 && polygons.length > 1 && ringArea(simple) < eps * eps * 4) return;
+    d += `M${simple.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join("L")}Z`;
+  }));
+  if (!d) return null;
+  return { d, w: Number((w * scale).toFixed(2)), h: Number((h * scale).toFixed(2)) };
+}
+
+async function territorySilhouette(territory, detail) {
+  const key = `${territory.id}:${detail}`;
+  if (!silhouetteCache.has(key)) {
+    silhouetteCache.set(key, geoIndexFor(territory.tipo).then(index => {
+      const features = index.get(Number(territory.cod));
+      return features?.length ? buildSilhouette(features, SIL_DETAIL[detail]) : null;
+    }).catch(() => null));
+  }
+  return silhouetteCache.get(key);
+}
+
+function silhouetteSvg(sil, label = "") {
+  if (!sil) return "";
+  return `<svg class="silhouette" viewBox="0 0 ${sil.w} ${sil.h}" preserveAspectRatio="xMidYMid meet" ${label ? `role="img" aria-label="Silueta de ${escapeHtml(label)}"` : `aria-hidden="true"`}><path d="${sil.d}" fill="currentColor" fill-rule="evenodd"/></svg>`;
+}
+
+let galizaSilhouettePromise = null;
+function galizaSilhouetteMarkup() {
+  if (!galizaSilhouettePromise) {
+    galizaSilhouettePromise = getTextAsset("assets/silhuetas/galiza.svg")
+      .then(text => text.replace(/<\?xml[^>]*\?>/g, "").replace(/<!DOCTYPE[^>]*>/gi, "").trim())
+      .then(text => /<svg[\s>]/i.test(text) ? `<span class="silhouette-file" role="img" aria-label="Silueta de Galiza">${text}</span>` : "")
+      .catch(() => "");
+  }
+  return galizaSilhouettePromise;
+}
+
+async function hydrateSilhouettes(root = document) {
+  const hero = $("[data-silhouette-hero]", root);
+  if (hero) {
+    const id = hero.dataset.silhouetteHero;
+    const territory = id === "galiza" ? null : state.territorios.find(item => item.id === id);
+    const markup = territory ? silhouetteSvg(await territorySilhouette(territory, "hero"), territory.nome) : await galizaSilhouetteMarkup();
+    if (hero.dataset.silhouetteHero === id && hero.isConnected) hero.innerHTML = markup;
+  }
+  const chips = all("[data-silhouette]", root);
+  if (!chips.length) return;
+  const items = chips.map(node => ({ node, territory: state.territorios.find(item => item.id === node.dataset.silhouette) })).filter(entry => entry.territory);
+  await Promise.all(items.map(async ({ node, territory }) => {
+    const markup = silhouetteSvg(await territorySilhouette(territory, "chip"));
+    if (node.isConnected) node.innerHTML = markup;
+  }));
+}
+
 function territoryLabel(territory) {
   return territory ? (TYPE_LABELS[territory.tipo] || territory.tipo || "Territorio") : "Territorio";
 }
@@ -217,9 +363,10 @@ function parentCouncil(territory) {
   return state.territorios.find(item => item.tipo === "con" && item.cod === territory.con) || null;
 }
 
-function territoryChildButton(item) {
+function territoryChipMarkup(item) {
   const full = territoryHasCoplas(item);
-  return `<button type="button" class="${full ? "has-coplas" : ""}" data-territory-id="${item.id}"><strong>${escapeHtml(item.nome)}</strong><span>${escapeHtml(territorySearchMeta(item))}</span></button>`;
+  const council = parentCouncil(item);
+  return `<button type="button" class="chip-territory ${full ? "has-coplas" : ""}" data-territory-id="${item.id}" title="${escapeHtml(council ? `${item.nome} · ${council.nome}` : item.nome)}"><span class="chip-sil" data-silhouette="${item.id}" aria-hidden="true"></span><span class="chip-name">${escapeHtml(item.nome)}</span></button>`;
 }
 
 function territorySearchMeta(territory) {
@@ -489,7 +636,7 @@ function setView(viewName) {
 function clearTerritory() {
   state.selectedTerritory = null;
   state.selectedCoplaId = null;
-  state.territoryTab = "summary";
+  state.territoryTab = "coplas";
   state.territoryCoplaQuery = "";
   $("#mapSearch").value = "";
   $("#mapResults").innerHTML = "";
@@ -507,13 +654,17 @@ function clearTerritory() {
   if (state.view === "coplas") renderCoplasView();
 }
 
+const MAP_INK = "#171717";
+const MAP_PAPER = "#F7F7F2";
+const MAP_ACCENT = "#C24330";
+
 function styleFeature(selected = false, fragment = false, hasCoplas = false) {
   const base = selected
-    ? { weight: 2.5, color: "#F8FCFF", fillColor: "#1F90C9", fillOpacity: 0.78 }
+    ? { weight: 1.5, color: MAP_PAPER, fillColor: MAP_ACCENT, fillOpacity: 0.92 }
     : hasCoplas
-      ? { weight: 1.4, color: "#0B3D68", fillColor: "#49BDF7", fillOpacity: 0.78 }
-      : { weight: 1, color: "#0B3D68", fillColor: "#0B3D68", fillOpacity: 0.55 };
-  return fragment ? { ...base, weight: selected ? 2.2 : 1.2, dashArray: "3 3" } : base;
+      ? { weight: 1, color: MAP_PAPER, fillColor: MAP_INK, fillOpacity: 0.86 }
+      : { weight: 1, color: MAP_PAPER, fillColor: MAP_INK, fillOpacity: 0.14 };
+  return fragment ? { ...base, dashArray: "3 3" } : base;
 }
 
 async function loadLayer(type = state.layerType) {
@@ -534,8 +685,8 @@ async function loadLayer(type = state.layerType) {
       const name = part ? `${feature.properties.COMARCA} · ${part}` : territory?.nome || getFeatureNome(feature, type);
       layer.bindTooltip(name, { sticky: true, direction: "auto" });
       layer.on("mouseover", () => {
-        if (part) layer.setStyle({ weight: 2, fillOpacity: 0.88 });
-        else if (territory?.id !== state.selectedTerritory?.id) layer.setStyle({ weight: 2, fillOpacity: 0.88 });
+        if (part) layer.setStyle({ weight: 1.5, fillOpacity: 0.55 });
+        else if (territory?.id !== state.selectedTerritory?.id) layer.setStyle({ weight: 1.5, fillOpacity: territoryHasCoplas(territory) ? 0.7 : 0.32 });
       });
       layer.on("mouseout", () => state.layer?.resetStyle(layer));
       layer.on("click", () => {
@@ -585,6 +736,11 @@ function updateMapCard() {
   coplaCount.textContent = territory ? ctx.coplas.length : state.coplas.length;
   pieceCount.textContent = territory ? ctx.pezas.length : state.pezas.length;
   territoryCount.textContent = territory ? ctx.children.length : state.territorios.length;
+  const sil = $("#mapCardSil");
+  if (sil) {
+    sil.dataset.silhouetteHero = territory ? territory.id : "galiza";
+    hydrateSilhouettes(sil.parentElement);
+  }
 }
 
 function setMapCardCollapsed(collapsed) {
@@ -2484,6 +2640,22 @@ function bindTerritoryTabs(root = $("#view-territory")) {
   });
 }
 
+const CHILD_LABELS = { prov: "Comarcas", com: "Concellos", con: "Parroquias" };
+const CHILD_CHIP_LIMIT = 36;
+
+function territoryChildrenMarkup(territory, ctx) {
+  const children = [...ctx.children].sort((a, b) => Number(territoryHasCoplas(b)) - Number(territoryHasCoplas(a)) || a.nome.localeCompare(b.nome, "gl"));
+  if (!children.length) return "";
+  const label = territory ? (CHILD_LABELS[territory.tipo] || "Subterritorios") : "Provincias";
+  const long = children.length > CHILD_CHIP_LIMIT;
+  return `
+    <section class="territory-children ${long ? "is-collapsed" : ""}" id="territoryChildren" aria-label="${label}">
+      <div class="territory-children-head"><span class="eyebrow">${label} · ${children.length}</span>${long ? `<button class="link-button" type="button" id="toggleTerritoryChildren" aria-expanded="false">Ver todos</button>` : ""}</div>
+      <div class="chip-row">${children.map(territoryChipMarkup).join("")}</div>
+    </section>
+  `;
+}
+
 function renderTerritoryView() {
   const view = $("#view-territory");
   const territory = state.selectedTerritory;
@@ -2491,16 +2663,15 @@ function renderTerritoryView() {
   const ctx = placeContext(territory);
   const direct = territory ? ctx.coplas.filter(copla => (copla.territories || []).some(item => item.id === territory.id)).length : ctx.coplas.length;
   const tabs = [
-    ["summary", "Resumo"],
     ["coplas", "Coplas"],
     ["pieces", "Pezas"],
     ["melodies", "Melodías"],
     ["media", "Media"],
-    ...(territory?.tipo === "par" ? [] : [["children", "Subterritorios"]]),
+    ["summary", "Resumo"],
   ];
-  if (territory?.tipo === "par" && state.territoryTab === "children") state.territoryTab = "summary";
+  if (!tabs.some(([key]) => key === state.territoryTab)) state.territoryTab = "coplas";
   view.innerHTML = `
-    <div class="page">
+    <div class="page territory-page">
       <div class="page-head page-head-bare">
         <button class="btn primary" type="button" data-view="map">Ver no mapa</button>
       </div>
@@ -2520,10 +2691,9 @@ function renderTerritoryView() {
             <div class="stat"><b>${ctx.media.length}</b><span>media</span></div>
           </div>
         </section>
-        <section class="territory-mini-map-wrap">
-          <div id="territoryMiniMap" class="territory-mini-map"></div>
-        </section>
+        <div class="territory-silhouette" id="territorySilhouette" data-silhouette-hero="${territory ? territory.id : "galiza"}"></div>
       </div>
+      ${territoryChildrenMarkup(territory, ctx)}
       <div class="territory-tabs">
         ${tabs.map(([key, label]) => `<button class="${state.territoryTab === key ? "active" : ""}" type="button" data-territory-tab="${key}">${label}</button>`).join("")}
       </div>
@@ -2534,6 +2704,12 @@ function renderTerritoryView() {
     state.territoryQuery = event.target.value;
     renderTerritorySearchResults(view);
   });
+  $("#toggleTerritoryChildren")?.addEventListener("click", event => {
+    const box = $("#territoryChildren", view);
+    const collapsed = box.classList.toggle("is-collapsed");
+    event.currentTarget.textContent = collapsed ? "Ver todos" : "Ver menos";
+    event.currentTarget.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  });
   bindTerritoryTabs(view);
   bindResultButtons(view);
   bindCoplaActions(view);
@@ -2541,7 +2717,7 @@ function renderTerritoryView() {
   bindTerritoryCoplaViewToggle(view);
   bindTerritorySummaryCard(view);
   renderTerritorySearchResults(view);
-  renderTerritoryMiniMap(territory);
+  hydrateSilhouettes(view);
 }
 
 function territoryOwnTraits(territory) {
@@ -2685,13 +2861,7 @@ function renderTerritoryTab(territory, ctx) {
         </section>
       `;
     }
-    return `
-      <div class="section-title"><h2>Resumo</h2><button class="btn" type="button" data-territory-tab="coplas">Ver coplas</button></div>
-      <div class="territory-limit">Galiza funciona aquí como vista xeral. Baixa a unha entidade territorial para consultar media, melodías e pezas con precisión.</div>
-      ${territorySummaryCard(null, ctx)}
-      <div class="section-title"><h2>Provincias</h2></div>
-      <div class="territory-results">${ctx.children.map(territoryChildButton).join("")}</div>
-    `;
+    return territorySummaryCard(null, ctx);
   }
   if (state.territoryTab === "coplas") {
     const tq = normalizeText(state.territoryCoplaQuery || "");
@@ -2730,95 +2900,7 @@ function renderTerritoryTab(territory, ctx) {
       <div class="media-grid">${melodies.map(mediaCard).join("") || `<article class="panel"><p class="muted">Sen melodías rexistradas.</p></article>`}</div>
     `;
   }
-  if (state.territoryTab === "children") {
-    return `
-      <div class="section-title"><h2>Subterritorios</h2><span class="muted">${ctx.children.length} elementos</span></div>
-      <div class="territory-results">${ctx.children.map(territoryChildButton).join("") || `<p class="muted">Sen subterritorios neste nivel.</p>`}</div>
-    `;
-  }
-  return `
-    <div class="section-title"><h2>Resumo</h2><button class="btn" type="button" data-territory-tab="coplas">Ver coplas</button></div>
-    ${territorySummaryCard(territory, ctx)}
-    <div class="section-title"><h2>Subterritorios</h2></div>
-    <div class="territory-results">${ctx.children.slice(0, 18).map(territoryChildButton).join("") || `<p class="muted">Sen subterritorios neste nivel.</p>`}</div>
-  `;
-}
-
-async function renderTerritoryMiniMap(territory) {
-  const el = $("#territoryMiniMap");
-  if (!el) return;
-  if (!window.L) {
-    el.innerHTML = `<div class="map-fallback"><p>Mini-mapa non dispoñible.</p></div>`;
-    return;
-  }
-  if (state.miniMap) {
-    state.miniMap.remove();
-    state.miniMap = null;
-    state.miniLayer = null;
-  }
-  state.miniMap = L.map(el, {
-    attributionControl: false,
-    zoomControl: true,
-    scrollWheelZoom: false,
-  }).setView([42.8, -8.2], 8);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, opacity: 0.6 }).addTo(state.miniMap);
-  if (!territory) {
-    try {
-      let data = await geoLayerForMap("prov");
-      state.miniLayer = L.geoJSON(data, {
-        style: { weight: 1.4, color: "#0B3D68", fillColor: "#0B3D68", fillOpacity: 0.5 },
-      }).addTo(state.miniMap);
-      window.setTimeout(() => {
-        state.miniMap.invalidateSize();
-        try {
-          state.miniMap.fitBounds(state.miniLayer.getBounds(), { padding: [18, 18] });
-        } catch {}
-      }, 80);
-    } catch {
-      window.setTimeout(() => state.miniMap.invalidateSize(), 80);
-    }
-    return;
-  }
-  try {
-    let data = await geoLayerForMap(territory.tipo);
-    const activeBounds = [];
-    state.miniLayer = L.geoJSON(data, {
-      style: feature => {
-        const item = findTerritoryByFeature(feature, territory.tipo, state.territorios);
-        const active = item?.id === territory.id;
-        const full = !active && territoryHasCoplas(item);
-        return {
-          weight: active ? 2.4 : full ? 1.6 : 0.8,
-          color: active ? "#0F1722" : "#0B3D68",
-          fillColor: active ? "#1F90C9" : full ? "#49BDF7" : "#0B3D68",
-          fillOpacity: active ? 0.7 : full ? 0.72 : 0.5,
-          dashArray: feature?.properties?.part ? "3 3" : null,
-        };
-      },
-      onEachFeature: (feature, layer) => {
-        const item = findTerritoryByFeature(feature, territory.tipo, state.territorios);
-        if (item?.id === territory.id) activeBounds.push(layer.getBounds());
-        if (!item) return;
-        const council = parentCouncil(item);
-        layer.bindTooltip(`${item.nome}${item.tipo === "par" && council?.nome ? ` · ${council.nome}` : ""}`, { sticky: true });
-        layer.on("click", async () => {
-          await selectTerritory(item);
-          renderTerritoryView();
-        });
-        layer.on("mouseover", () => layer.setStyle({ fillOpacity: item.id === territory.id ? 0.85 : 0.8, weight: item.id === territory.id ? 2.4 : 1.4 }));
-        layer.on("mouseout", () => state.miniLayer?.resetStyle(layer));
-      },
-    }).addTo(state.miniMap);
-    window.setTimeout(() => {
-      state.miniMap.invalidateSize();
-      try {
-        const bounds = activeBounds[0] || state.miniLayer.getBounds();
-        state.miniMap.fitBounds(bounds, { padding: [50, 50], maxZoom: territory.tipo === "par" ? 13 : 10 });
-      } catch {}
-    }, 80);
-  } catch {
-    el.innerHTML = `<span>Non se puido cargar a xeometría.</span>`;
-  }
+  return territorySummaryCard(territory, ctx);
 }
 
 function renderSubmitView() {
@@ -4115,7 +4197,7 @@ function bindGlobalEvents() {
       }
       if (normalizeView(nav.dataset.view) === "territory") {
         state.selectedTerritory = null;
-        state.territoryTab = "summary";
+        state.territoryTab = "coplas";
         state.territoryQuery = "";
         state.territoryCoplaQuery = "";
       }
@@ -4193,13 +4275,8 @@ async function init() {
   state.media = media.status === "fulfilled" ? media.value : [];
 
   if (window.L) {
-    state.map = L.map("map", { zoomControl: false }).setView([42.8, -8.2], 8);
+    state.map = L.map("map", { zoomControl: false, attributionControl: false, zoomSnap: 0.25 }).setView([42.8, -8.2], 8);
     L.control.zoom({ position: "bottomleft" }).addTo(state.map);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      opacity: 0.6,
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(state.map);
     try {
       await loadLayer("con");
     } catch (error) {

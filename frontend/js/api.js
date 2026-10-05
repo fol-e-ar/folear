@@ -132,3 +132,9 @@ export function clearApiCache() {
 export function getPathConfig() {
   return buildPaths();
 }
+
+export async function getTextAsset(path) {
+  const res = await fetch(new URL(`${getAssetsPrefix()}${path}`, window.location.href).toString());
+  if (!res.ok) throw new Error(`Non se puido cargar ${path}`);
+  return res.text();
+}
