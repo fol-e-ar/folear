@@ -49,6 +49,7 @@
         <button class="active" type="button" data-view="map"><span class="nav-icon">⌖</span><span class="nav-label">Mapa</span></button>
         <button type="button" data-view="territory"><span class="nav-icon">⌂</span><span class="nav-label">Territorios</span></button>
         <button type="button" data-view="coplas"><span class="nav-icon">≋</span><span class="nav-label">Coplas</span></button>
+        <button type="button" data-view="melodies"><span class="nav-icon">♫</span><span class="nav-label">Melodías</span></button>
         <button type="button" data-view="pieces"><span class="nav-icon">♪</span><span class="nav-label">Pezas <b class="cart-count" data-cart-count hidden>0</b></span></button>
         <button type="button" data-view="media"><span class="nav-icon">◧</span><span class="nav-label">Media</span></button>
       </nav>
@@ -101,6 +102,7 @@
       </section>
 
       <section class="view" id="view-coplas" aria-label="Coplas"></section>
+      <section class="view" id="view-melodies" aria-label="Melodías"></section>
       <section class="view" id="view-pieces" aria-label="Pezas"></section>
       <section class="view" id="view-territory" aria-label="Territorios"></section>
       <section class="view" id="view-submit" aria-label="Alta"></section>
@@ -118,9 +120,15 @@
   <nav class="mobile-nav" aria-label="Navegación móbil">
     <button class="active" type="button" data-view="map">⌖<span>Mapa</span></button>
     <button type="button" data-view="territory">⌂<span>Territorios</span></button>
-    <button type="button" data-view="coplas">≋<span>Coplas</span></button>
+    <div class="mobile-nav-group">
+      <button type="button" id="mobileExploreBtn" data-mobile-explore aria-haspopup="true" aria-expanded="false" aria-controls="mobileExploreMenu">☰<span>Explorar ▴</span></button>
+      <div class="mobile-menu" id="mobileExploreMenu" role="menu" hidden>
+        <button type="button" role="menuitem" data-view="coplas"><i>≋</i>Coplas</button>
+        <button type="button" role="menuitem" data-view="melodies"><i>♫</i>Melodías</button>
+        <button type="button" role="menuitem" data-view="media"><i>◧</i>Media</button>
+      </div>
+    </div>
     <button type="button" data-view="pieces">♪<span>Pezas</span><b class="cart-count" data-cart-count hidden>0</b></button>
-    <button type="button" data-view="media">◧<span>Media</span></button>
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

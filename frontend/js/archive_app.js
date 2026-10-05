@@ -37,7 +37,7 @@ const RHYTHMS = [
 ].sort((a, b) => a.localeCompare(b, "gl"));
 const MUSICAL_MEDIA_KINDS = new Set(["audio", "spotify", "soundcloud"]);
 const DRAFT_KEY = "fol-e-ar-piece-cart-v2";
-const VIEWS = ["map", "coplas", "pieces", "territory", "submit", "media", "about"];
+const VIEWS = ["map", "coplas", "melodies", "pieces", "territory", "submit", "media", "about"];
 
 const state = {
   territorios: [],
@@ -78,6 +78,9 @@ const state = {
   pieceAddMenu: false,
   pieceLibraryOpen: false,
   pieceAddTarget: "",
+  melodyQuery: "",
+  melodyRhythmFilter: "",
+  melodyResourceFilter: "",
   mediaQuery: "",
   mediaKindFilter: "",
   mediaRoleFilter: "",
@@ -140,6 +143,8 @@ function normalizeView(view = "map") {
     alta: "submit",
     importar: "submit",
     territorios: "territory",
+    melodias: "melodies",
+    melodia: "melodies",
   };
   return aliases[view] || (VIEWS.includes(view) ? view : "map");
 }
@@ -761,27 +766,40 @@ function melodiesTabMarkup(territory, ctx) {
 
 // --- Rexistro no servidor --------------------------------------------
 
+// Fala á API de melodías e devolve o JSON. Se a rede falla ou o servidor
+// responde algo que non é JSON (por exemplo unha páxina de erro), a mensaxe
+// di que pasou en vez do críptico "Failed to fetch".
+async function melodiesRequest(method, body, fallbackMessage) {
+  let response;
+  try {
+    response = await fetch("../api/melodies", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    console.error("Erro de rede en /api/melodies:", error);
+    throw new Error("Non se puido contactar co servidor (/api/melodies). Revisa a conexión e que a API estea desprazada; detalle na consola do navegador.");
+  }
+  let result = null;
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error(`${fallbackMessage} O servidor respondeu ${response.status} sen JSON; a API de melodías pode non estar desprazada.`);
+  }
+  if (!response.ok) throw new Error(result?.error || fallbackMessage);
+  return result;
+}
+
 async function postMelodies(melodies) {
-  const response = await fetch("../api/melodies", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ melodies }),
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Non se puido gardar a melodía.");
+  const result = await melodiesRequest("POST", { melodies }, "Non se puido gardar a melodía.");
   clearApiCache();
   state.melodias = await getMelodias();
   return result.ids || [];
 }
 
 async function removeMelody(melodyId) {
-  const response = await fetch("../api/melodies", {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids: [melodyId] }),
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Non se puido borrar a melodía.");
+  await melodiesRequest("DELETE", { ids: [melodyId] }, "Non se puido borrar a melodía.");
   clearApiCache();
   [state.melodias, state.media] = await Promise.all([getMelodias(), getMedia()]);
 }
@@ -789,6 +807,105 @@ async function removeMelody(melodyId) {
 function rerenderMelodyViews() {
   if (state.view === "territory") renderTerritoryView();
   else if (state.view === "media") renderMediaView();
+  else if (state.view === "melodies") renderMelodiesView();
+}
+
+// --- Vista "Melodías" (todo o inventario, con filtros) -----------------
+
+function melodySearchText(melody) {
+  const territory = melodyTerritory(melody);
+  const hierarchy = territory
+    ? buildHierarchy(territory, state.territorios).map(item => `${item.nome} ${territorySearchMeta(item)}`).join(" ")
+    : "";
+  return normalizeText([
+    melodyName(melody),
+    melodyShortName(melody),
+    melody.notes,
+    hierarchy,
+    melodyMedia(melody).map(item => `${item.title || ""} ${item.author_or_source || ""}`).join(" "),
+  ].join(" "));
+}
+
+function filteredMelodies() {
+  const query = normalizeText(state.melodyQuery);
+  const rhythmKey = normalizeText(state.melodyRhythmFilter);
+  return state.melodias.filter(melody => {
+    if (rhythmKey && normalizeText(melody.rhythm) !== rhythmKey) return false;
+    const resources = melodyMedia(melody).length;
+    if (state.melodyResourceFilter === "with" && !resources) return false;
+    if (state.melodyResourceFilter === "without" && resources) return false;
+    return !query || melodySearchText(melody).includes(query);
+  });
+}
+
+function melodiesResultsMarkup() {
+  const melodies = filteredMelodies().sort(compareMelodies);
+  const filtering = state.melodyQuery.trim() || state.melodyRhythmFilter || state.melodyResourceFilter;
+  const count = filtering
+    ? `${melodies.length} de ${state.melodias.length} melodías`
+    : `${melodies.length} melodía${melodies.length === 1 ? "" : "s"} inventariada${melodies.length === 1 ? "" : "s"}`;
+  const groups = new Map();
+  melodies.forEach(melody => {
+    const key = normalizeText(melody.rhythm);
+    if (!groups.has(key)) groups.set(key, { rhythm: melody.rhythm, items: [] });
+    groups.get(key).items.push(melody);
+  });
+  const empty = state.melodias.length
+    ? "Ningunha melodía coincide cos filtros."
+    : "Aínda non hai melodías inventariadas. Crea a primeira co botón de arriba e despois indica en que recursos aparece.";
+  return `
+    <p class="muted melody-count">${count}</p>
+    ${melodies.length ? [...groups.values()].map(group => `
+      <section class="melody-group">
+        <h3 class="melody-group-title">${escapeHtml(group.rhythm)} <span class="muted">${group.items.length}</span></h3>
+        <div class="melody-grid">${group.items.map(melody => melodyCard(melody)).join("")}</div>
+      </section>
+    `).join("") : `<p class="muted melody-empty">${empty}</p>`}
+  `;
+}
+
+function renderMelodiesView() {
+  const view = $("#view-melodies");
+  if (!view) return;
+  const rhythms = [...new Map(state.melodias.map(melody => [normalizeText(melody.rhythm), melody.rhythm])).values()]
+    .sort((a, b) => a.localeCompare(b, "gl"));
+  view.innerHTML = `
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <h1>Melodías</h1>
+          <p class="muted">Inventario de melodías, cada unha co seu ritmo, número e lugar.</p>
+        </div>
+        <button class="btn primary" type="button" data-new-melody="">+ Nova melodía</button>
+      </div>
+      <div class="toolbar melody-toolbar">
+        <div class="searchbox"><span>⌕</span><input id="melodiesSearch" type="search" value="${escapeHtml(state.melodyQuery)}" placeholder="Buscar por ritmo, lugar, notas ou recurso..."></div>
+        <select id="melodiesRhythmFilter" aria-label="Filtrar por ritmo">
+          <option value="">Todos os ritmos</option>
+          ${rhythms.map(rhythm => `<option value="${escapeHtml(rhythm)}" ${normalizeText(state.melodyRhythmFilter) === normalizeText(rhythm) ? "selected" : ""}>${escapeHtml(rhythm)}</option>`).join("")}
+        </select>
+        <select id="melodiesResourceFilter" aria-label="Filtrar por recursos">
+          <option value="">Con ou sen recursos</option>
+          <option value="with" ${state.melodyResourceFilter === "with" ? "selected" : ""}>Con recursos</option>
+          <option value="without" ${state.melodyResourceFilter === "without" ? "selected" : ""}>Sen recursos</option>
+        </select>
+      </div>
+      <div id="melodiesResults">${melodiesResultsMarkup()}</div>
+    </div>
+  `;
+  const update = () => { $("#melodiesResults", view).innerHTML = melodiesResultsMarkup(); };
+  $("#melodiesSearch", view).addEventListener("input", event => {
+    state.melodyQuery = event.target.value;
+    update();
+  });
+  $("#melodiesRhythmFilter", view).addEventListener("change", event => {
+    state.melodyRhythmFilter = event.target.value;
+    update();
+  });
+  $("#melodiesResourceFilter", view).addEventListener("change", event => {
+    state.melodyResourceFilter = event.target.value;
+    update();
+  });
 }
 
 // --- Ficha da melodía -------------------------------------------------
@@ -912,7 +1029,7 @@ function openMelodyModal({ id = null, territoryId = "" } = {}) {
     territoryId: existing ? existing.territory_id : territoryId,
     rhythm: existing ? existing.rhythm : "",
     notes: existing ? existing.notes || "" : "",
-    picking: false,
+    picking: !existing && !territoryId,
   };
   renderMelodyModal();
   window.setTimeout(() => $("#melodyRhythm")?.focus(), 30);
@@ -1281,10 +1398,36 @@ function bindMelodyEvents() {
   });
 }
 
+function closeMobileExplore() {
+  const menu = $("#mobileExploreMenu");
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  $("#mobileExploreBtn")?.setAttribute("aria-expanded", "false");
+}
+
+function bindMobileExplore() {
+  const button = $("#mobileExploreBtn");
+  const menu = $("#mobileExploreMenu");
+  if (!button || !menu) return;
+  button.addEventListener("click", () => {
+    const open = menu.hidden;
+    menu.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+  });
+  document.addEventListener("click", event => {
+    if (!event.target.closest(".mobile-nav-group")) closeMobileExplore();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeMobileExplore();
+  });
+}
+
 function setView(viewName) {
   state.view = normalizeView(viewName);
   all(".view").forEach(view => view.classList.toggle("active", view.id === `view-${state.view}`));
   all("[data-view]").forEach(button => button.classList.toggle("active", normalizeView(button.dataset.view) === state.view));
+  $("#mobileExploreBtn")?.classList.toggle("active", ["coplas", "melodies", "media"].includes(state.view));
+  closeMobileExplore();
   renderView();
   if (state.view === "map" && state.map) window.setTimeout(() => state.map.invalidateSize(), 120);
 }
@@ -3569,7 +3712,11 @@ function renderTerritoryTab(territory, ctx) {
     `;
   }
   if (state.territoryTab === "media") {
-    const media = ctx.media.filter(item => ["documental", "mixed"].includes(mediaRole(item)));
+    // Tamén entran os recursos nos que aparece unha melodía deste territorio
+    // (ou dos seus subterritorios), sexa cal sexa o seu "uso no arquivo".
+    const scopeMelodies = new Set(ctx.melodias.map(melody => String(melody.id)));
+    const media = ctx.media.filter(item => ["documental", "mixed"].includes(mediaRole(item))
+      || (item.links || []).some(link => link.entity_type === "melody" && scopeMelodies.has(String(link.entity_id))));
     return `
       <div class="section-title"><h2>Media relacionada</h2><button class="btn" type="button" data-view="media" data-media-role="documental">+ Novo recurso</button><span class="muted">${media.length} recursos</span></div>
       <div class="media-grid">${media.map(mediaCard).join("") || `<article class="panel"><p class="muted">Aínda non hai media documental neste territorio.</p></article>`}</div>
@@ -4866,6 +5013,7 @@ function downloadText(filename, text, type = "text/plain") {
 
 function renderView() {
   if (state.view === "coplas") renderCoplasView();
+  if (state.view === "melodies") renderMelodiesView();
   if (state.view === "pieces") renderPiecesView();
   if (state.view === "territory") renderTerritoryView();
   if (state.view === "submit") renderSubmitView();
@@ -4875,6 +5023,7 @@ function renderView() {
 
 function bindGlobalEvents() {
   bindMelodyEvents();
+  bindMobileExplore();
   document.addEventListener("click", event => {
     const nav = event.target.closest("[data-view]");
     if (nav) {
