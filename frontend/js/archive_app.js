@@ -80,7 +80,6 @@ const state = {
   pieceAddTarget: "",
   melodyQuery: "",
   melodyRhythmFilter: "",
-  melodyResourceFilter: "",
   mediaQuery: "",
   mediaKindFilter: "",
   mediaRoleFilter: "",
@@ -375,17 +374,17 @@ function parentCouncil(territory) {
 function territoryChipMarkup(item) {
   const full = territoryHasCoplas(item);
   const council = parentCouncil(item);
-  return `<button type="button" class="chip-territory ${full ? "has-coplas" : ""}" data-territory-id="${item.id}" title="${escapeHtml(council ? `${item.nome} · ${council.nome}` : item.nome)}"><span class="chip-sil" data-silhouette="${item.id}" aria-hidden="true"></span><span class="chip-name">${escapeHtml(item.nome)}</span></button>`;
+  return `<button type="button" class="chip-territory ${full ? "has-coplas" : ""}" data-territory-id="${item.id}" title="${escapeHtml(council ? `${item.nome} \\ ${council.nome}` : item.nome)}"><span class="chip-sil" data-silhouette="${item.id}" aria-hidden="true"></span><span class="chip-name">${escapeHtml(item.nome)}</span></button>`;
 }
 
 function territorySearchMeta(territory) {
   const council = parentCouncil(territory);
-  return council ? `${territoryLabel(territory)} · ${council.nome}` : territoryLabel(territory);
+  return council ? `${territoryLabel(territory)} \\ ${council.nome}` : territoryLabel(territory);
 }
 
 function territoryDisplayName(territory) {
   const council = parentCouncil(territory);
-  return council ? `${territory.nome} · ${council.nome}` : territory.nome;
+  return council ? `${territory.nome} \\ ${council.nome}` : territory.nome;
 }
 
 function coplaPlaceChipsHtml(copla) {
@@ -593,7 +592,7 @@ function mediaCard(item, options = {}) {
         ${description ? `<p>${escapeHtml(description)}</p>` : ""}
         <div class="meta">
           <span class="tag">${escapeHtml(mediaRoleLabel(role))}</span>
-          ${territoryLinks.length ? `<span class="tag place">${escapeHtml(territoryLinks.slice(0, 2).join(" · "))}</span>` : ""}
+          ${territoryLinks.length ? `<span class="tag place">${escapeHtml(territoryLinks.slice(0, 2).join(" \\ "))}</span>` : ""}
           ${linkedCoplas.length ? `<span class="tag">${linkedCoplas.length} copla${linkedCoplas.length === 1 ? "" : "s"}</span>` : ""}
           ${linkedMelodies.slice(0, 2).map(melody => `<span class="tag is-melody" title="${escapeHtml(melodyName(melody))}">${escapeHtml(melodyShortName(melody))}</span>`).join("")}
           ${linkedMelodies.length > 2 ? `<span class="tag is-melody">+${linkedMelodies.length - 2} melodías</span>` : ""}
@@ -731,14 +730,33 @@ function melodyCard(melody, options = {}) {
   `;
 }
 
-function melodiesTabMarkup(territory, ctx) {
-  const melodies = [...ctx.melodias].sort(compareMelodies);
-  const groups = new Map();
-  melodies.forEach(melody => {
+// Lista plana (para poder cargar por tramos): a cabeceira de cada ritmo
+// ponse ao cambiar de ritmo, tendo en conta a melodía anterior ao tramo.
+function melodyItemsMarkup(slice, previous, counts, territoryId) {
+  let last = previous ? normalizeText(previous.rhythm) : null;
+  return slice.map(melody => {
     const key = normalizeText(melody.rhythm);
-    if (!groups.has(key)) groups.set(key, { rhythm: melody.rhythm, items: [] });
-    groups.get(key).items.push(melody);
+    const head = key !== last ? `<h3 class="melody-group-title melody-grid-title">${escapeHtml(melody.rhythm)} <span class="muted">${counts.get(key)}</span></h3>` : "";
+    last = key;
+    return head + melodyCard(melody, { territoryId });
+  }).join("");
+}
+
+function mountMelodyList(list, melodias, key, territoryId) {
+  const melodies = [...melodias].sort(compareMelodies);
+  const counts = new Map();
+  melodies.forEach(melody => {
+    const rhythmKey = normalizeText(melody.rhythm);
+    counts.set(rhythmKey, (counts.get(rhythmKey) || 0) + 1);
   });
+  mountInfiniteList(list, melodies, {
+    key,
+    renderItems: (slice, previous) => melodyItemsMarkup(slice, previous, counts, territoryId),
+  });
+}
+
+function melodiesTabMarkup(territory, ctx) {
+  const melodies = ctx.melodias;
   const loose = ctx.media.filter(item => ["melody", "mixed"].includes(mediaRole(item)) && !mediaMelodies(item).length);
   return `
     <div class="section-title">
@@ -749,12 +767,9 @@ function melodiesTabMarkup(territory, ctx) {
       ${territory ? `<button class="btn primary" type="button" data-new-melody="${territory.id}">+ Nova melodía</button>` : ""}
       <button class="btn" type="button" data-view="media" data-media-role="melody">+ Novo recurso</button>
     </div>
-    ${melodies.length ? [...groups.values()].map(group => `
-      <section class="melody-group">
-        <h3 class="melody-group-title">${escapeHtml(group.rhythm)} <span class="muted">${group.items.length}</span></h3>
-        <div class="melody-grid">${group.items.map(melody => melodyCard(melody, { territoryId: territory?.id })).join("")}</div>
-      </section>
-    `).join("") : `<p class="muted melody-empty">${territory ? "Aínda non hai melodías inventariadas neste territorio. Crea a primeira e despois indica en que recursos aparece." : "Aínda non hai melodías inventariadas."}</p>`}
+    ${melodies.length
+      ? `<div id="territoryMelodyList" class="melody-grid"></div>`
+      : `<p class="muted melody-empty">${territory ? "Aínda non hai melodías inventariadas neste territorio. Crea a primeira e despois indica en que recursos aparece." : "Aínda non hai melodías inventariadas."}</p>`}
     ${loose.length ? `
       <section class="melody-group">
         <h3 class="melody-group-title">Recursos sonoros sen melodía asignada <span class="muted">${loose.length}</span></h3>
@@ -831,37 +846,23 @@ function filteredMelodies() {
   const rhythmKey = normalizeText(state.melodyRhythmFilter);
   return state.melodias.filter(melody => {
     if (rhythmKey && normalizeText(melody.rhythm) !== rhythmKey) return false;
-    const resources = melodyMedia(melody).length;
-    if (state.melodyResourceFilter === "with" && !resources) return false;
-    if (state.melodyResourceFilter === "without" && resources) return false;
     return !query || melodySearchText(melody).includes(query);
   });
 }
 
-function melodiesResultsMarkup() {
-  const melodies = filteredMelodies().sort(compareMelodies);
-  const filtering = state.melodyQuery.trim() || state.melodyRhythmFilter || state.melodyResourceFilter;
+function updateMelodiesResults(view = $("#view-melodies")) {
+  const melodies = filteredMelodies();
+  const filtering = state.melodyQuery.trim() || state.melodyRhythmFilter;
   const count = filtering
     ? `${melodies.length} de ${state.melodias.length} melodías`
     : `${melodies.length} melodía${melodies.length === 1 ? "" : "s"} inventariada${melodies.length === 1 ? "" : "s"}`;
-  const groups = new Map();
-  melodies.forEach(melody => {
-    const key = normalizeText(melody.rhythm);
-    if (!groups.has(key)) groups.set(key, { rhythm: melody.rhythm, items: [] });
-    groups.get(key).items.push(melody);
-  });
-  const empty = state.melodias.length
+  $("#melodiesCount", view).textContent = count;
+  const empty = $("#melodiesEmpty", view);
+  empty.hidden = melodies.length > 0;
+  empty.textContent = state.melodias.length
     ? "Ningunha melodía coincide cos filtros."
     : "Aínda non hai melodías inventariadas. Crea a primeira co botón de arriba e despois indica en que recursos aparece.";
-  return `
-    <p class="muted melody-count">${count}</p>
-    ${melodies.length ? [...groups.values()].map(group => `
-      <section class="melody-group">
-        <h3 class="melody-group-title">${escapeHtml(group.rhythm)} <span class="muted">${group.items.length}</span></h3>
-        <div class="melody-grid">${group.items.map(melody => melodyCard(melody)).join("")}</div>
-      </section>
-    `).join("") : `<p class="muted melody-empty">${empty}</p>`}
-  `;
+  mountMelodyList($("#melodiesList", view), melodies, `${state.melodyQuery}|${state.melodyRhythmFilter}`, null);
 }
 
 function renderMelodiesView() {
@@ -884,16 +885,13 @@ function renderMelodiesView() {
           <option value="">Todos os ritmos</option>
           ${rhythms.map(rhythm => `<option value="${escapeHtml(rhythm)}" ${normalizeText(state.melodyRhythmFilter) === normalizeText(rhythm) ? "selected" : ""}>${escapeHtml(rhythm)}</option>`).join("")}
         </select>
-        <select id="melodiesResourceFilter" aria-label="Filtrar por recursos">
-          <option value="">Con ou sen recursos</option>
-          <option value="with" ${state.melodyResourceFilter === "with" ? "selected" : ""}>Con recursos</option>
-          <option value="without" ${state.melodyResourceFilter === "without" ? "selected" : ""}>Sen recursos</option>
-        </select>
       </div>
-      <div id="melodiesResults">${melodiesResultsMarkup()}</div>
+      <p class="muted melody-count" id="melodiesCount"></p>
+      <div id="melodiesList" class="melody-grid"></div>
+      <p class="muted melody-empty" id="melodiesEmpty" hidden></p>
     </div>
   `;
-  const update = () => { $("#melodiesResults", view).innerHTML = melodiesResultsMarkup(); };
+  const update = () => updateMelodiesResults(view);
   $("#melodiesSearch", view).addEventListener("input", event => {
     state.melodyQuery = event.target.value;
     update();
@@ -902,10 +900,7 @@ function renderMelodiesView() {
     state.melodyRhythmFilter = event.target.value;
     update();
   });
-  $("#melodiesResourceFilter", view).addEventListener("change", event => {
-    state.melodyResourceFilter = event.target.value;
-    update();
-  });
+  update();
 }
 
 // --- Ficha da melodía -------------------------------------------------
@@ -988,7 +983,7 @@ function renderMelodyLinkResults(melody, rawQuery) {
   results.innerHTML = matches.map(item => `
     <button type="button" data-link-melody-media="${item.id}">
       <strong>${escapeHtml(item.title || "Recurso sen título")}</strong>
-      <span>${escapeHtml([mediaLabel(mediaKind(item)), item.author_or_source].filter(Boolean).join(" · "))}</span>
+      <span>${escapeHtml([mediaLabel(mediaKind(item)), item.author_or_source].filter(Boolean).join(" \\ "))}</span>
     </button>
   `).join("") || `<p class="muted">Sen resultados.</p>`;
 }
@@ -1406,6 +1401,7 @@ function closeMobileExplore() {
 }
 
 function bindMobileExplore() {
+  MOBILE_QUERY.addEventListener?.("change", () => renderView());
   const button = $("#mobileExploreBtn");
   const menu = $("#mobileExploreMenu");
   if (!button || !menu) return;
@@ -1423,11 +1419,13 @@ function bindMobileExplore() {
 }
 
 function setView(viewName) {
+  const previousView = state.view;
   state.view = normalizeView(viewName);
   all(".view").forEach(view => view.classList.toggle("active", view.id === `view-${state.view}`));
   all("[data-view]").forEach(button => button.classList.toggle("active", normalizeView(button.dataset.view) === state.view));
-  $("#mobileExploreBtn")?.classList.toggle("active", ["coplas", "melodies", "media"].includes(state.view));
+  $("#mobileExploreBtn")?.classList.toggle("active", ["pieces", "melodies", "media"].includes(state.view));
   closeMobileExplore();
+  if (state.view !== previousView) resetInfiniteLists();
   renderView();
   if (state.view === "map" && state.map) window.setTimeout(() => state.map.invalidateSize(), 120);
 }
@@ -1481,7 +1479,7 @@ async function loadLayer(type = state.layerType) {
     onEachFeature(feature, layer) {
       const territory = findTerritoryByFeature(feature, type, state.territorios);
       const part = feature?.properties?.part;
-      const name = part ? `${feature.properties.COMARCA} · ${part}` : territory?.nome || getFeatureNome(feature, type);
+      const name = part ? `${feature.properties.COMARCA} \\ ${part}` : territory?.nome || getFeatureNome(feature, type);
       layer.bindTooltip(name, { sticky: true, direction: "auto" });
       layer.on("mouseover", () => {
         if (part) layer.setStyle({ weight: 1.5, fillOpacity: 0.55 });
@@ -1606,6 +1604,76 @@ function coplaSelectCheckbox(copla, options) {
   return `<label class="select-check" title="Seleccionar"><input type="checkbox" data-select-copla="${copla.id}" ${options.selected ? "checked" : ""}></label>`;
 }
 
+// --- Carga progresiva ------------------------------------------------
+//
+// As listaxes longas (coplas, recursos, melodías) pintan unha primeira
+// páxina e engaden as seguintes cando a persoa chega ao fondo e segue
+// baixando, como un feed. Así nunca hai miles de tarxetas no DOM de golpe.
+// `key` identifica a consulta: se non cambia (por exemplo ao marcar unha
+// copla) consérvase canto levaba cargado; se cambia, volve á primeira páxina.
+
+const PAGE_SIZE = Number(window.FOL_E_AR_PAGE_SIZE) || 48;
+const infiniteLists = new Map();
+
+function resetInfiniteLists() {
+  infiniteLists.forEach(entry => entry.observer?.disconnect());
+  infiniteLists.clear();
+}
+
+function mountInfiniteList(list, items, { renderItems, bind, key = "", empty = "", pageSize = PAGE_SIZE }) {
+  if (!list) return;
+  const previous = infiniteLists.get(list.id);
+  previous?.observer?.disconnect();
+  previous?.footer?.remove();
+  const entry = { key, count: previous && previous.key === key ? Math.max(previous.count, pageSize) : pageSize, observer: null, footer: null };
+  infiniteLists.set(list.id, entry);
+  if (!items.length) {
+    list.innerHTML = empty;
+    return;
+  }
+  list.innerHTML = renderItems(items.slice(0, entry.count), null);
+  bind?.(list);
+  if (entry.count >= items.length) return;
+
+  const footer = document.createElement("div");
+  footer.className = "infinite-footer";
+  footer.setAttribute("aria-live", "polite");
+  list.insertAdjacentElement("afterend", footer);
+  entry.footer = footer;
+  const paint = () => {
+    footer.innerHTML = `<span class="muted">Mostrando ${entry.count} de ${items.length}</span><button type="button" class="btn">Cargar máis</button>`;
+  };
+  const loadMore = () => {
+    if (entry.count >= items.length) return;
+    const previousItem = items[entry.count - 1];
+    const next = items.slice(entry.count, entry.count + pageSize);
+    entry.count += next.length;
+    const holder = document.createElement("div");
+    holder.innerHTML = renderItems(next, previousItem);
+    bind?.(holder);
+    list.append(...holder.childNodes);
+    if (entry.count >= items.length) {
+      entry.observer?.disconnect();
+      footer.remove();
+      return;
+    }
+    paint();
+    // Volve observar para que, se o fondo segue á vista, cargue a seguinte.
+    entry.observer?.unobserve(footer);
+    entry.observer?.observe(footer);
+  };
+  paint();
+  footer.addEventListener("click", event => {
+    if (event.target.closest("button")) loadMore();
+  });
+  if (typeof IntersectionObserver !== "undefined") {
+    entry.observer = new IntersectionObserver(entries => {
+      if (entries.some(item => item.isIntersecting)) loadMore();
+    }, { rootMargin: "0px 0px 120px 0px" });
+    entry.observer.observe(footer);
+  }
+}
+
 function coplaCard(copla, options = {}) {
   const versionCount = (copla.versions || []).length;
   const versionChip = versionCount ? `<span class="tag">${versionCount} variantes</span>` : "";
@@ -1662,20 +1730,28 @@ function filteredCoplas() {
   });
 }
 
+const MOBILE_QUERY = window.matchMedia?.("(max-width: 920px)") || { matches: false };
+
+// En pantallas pequenas a galería en grade non aporta nada (vai a unha
+// columna, coma a lista), así que alí só hai lista e íncipits.
+function currentCoplaViewMode() {
+  return MOBILE_QUERY.matches && state.coplaViewMode === "gallery" ? "list" : state.coplaViewMode;
+}
+
 function coplaViewToggleMarkup() {
   const gridIcon = `<span class="grid-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`;
   return `
     <div class="view-toggle">
-      <button class="chip icon-view ${state.coplaViewMode === "list" ? "active" : ""}" type="button" data-copla-view="list" title="Vista de lista" aria-label="Vista de lista">☰</button>
-      <button class="chip icon-view ${state.coplaViewMode === "gallery" ? "active" : ""}" type="button" data-copla-view="gallery" title="Vista de galería" aria-label="Vista de galería">${gridIcon}</button>
-      <button class="chip icon-view ${state.coplaViewMode === "incipits" ? "active" : ""}" type="button" data-copla-view="incipits" title="Vista de só íncipits" aria-label="Vista de só íncipits">━</button>
+      <button class="chip icon-view ${currentCoplaViewMode() === "list" ? "active" : ""}" type="button" data-copla-view="list" title="Vista de lista" aria-label="Vista de lista">☰</button>
+      <button class="chip icon-view ${currentCoplaViewMode() === "gallery" ? "active" : ""}" type="button" data-copla-view="gallery" title="Vista de galería" aria-label="Vista de galería">${gridIcon}</button>
+      <button class="chip icon-view ${currentCoplaViewMode() === "incipits" ? "active" : ""}" type="button" data-copla-view="incipits" title="Vista de só íncipits" aria-label="Vista de só íncipits">━</button>
     </div>
   `;
 }
 
 function coplaStreamClass() {
-  if (state.coplaViewMode === "list") return "copla-list";
-  if (state.coplaViewMode === "incipits") return "copla-incipits";
+  if (currentCoplaViewMode() === "list") return "copla-list";
+  if (currentCoplaViewMode() === "incipits") return "copla-incipits";
   return "copla-gallery gallery-wide";
 }
 
@@ -1693,10 +1769,23 @@ function renderCoplaItems(items) {
   const dimPlace = Boolean(state.selectedTerritory);
   const selectMode = state.coplaSelectMode;
   const isSelected = copla => state.coplaSelectedIds.includes(copla.id);
-  if (state.coplaViewMode === "incipits") {
+  if (currentCoplaViewMode() === "incipits") {
     return items.map(copla => coplaIncipitRow(copla, { dimPlace, selectMode, selected: isSelected(copla) })).join("") || `<p class="muted">Sen coplas para esta consulta.</p>`;
   }
-  return items.map(copla => coplaCard(copla, { list: state.coplaViewMode === "list", dimPlace, selectMode, selected: isSelected(copla) })).join("") || `<p class="muted">Sen coplas para esta consulta.</p>`;
+  return items.map(copla => coplaCard(copla, { list: currentCoplaViewMode() === "list", dimPlace, selectMode, selected: isSelected(copla) })).join("") || `<p class="muted">Sen coplas para esta consulta.</p>`;
+}
+
+function coplaItemsMarkup(items) {
+  return renderCoplaItems(items);
+}
+
+function mountCoplaList(list, items, key) {
+  mountInfiniteList(list, items, {
+    key,
+    renderItems: slice => coplaItemsMarkup(slice),
+    bind: bindCoplaActions,
+    empty: `<p class="muted">Sen coplas para esta consulta.</p>`,
+  });
 }
 
 function updateCoplasResults(root = $("#view-coplas")) {
@@ -1708,14 +1797,13 @@ function updateCoplasResults(root = $("#view-coplas")) {
   if (scope) scope.textContent = state.selectedTerritory ? "inclúe subterritorios" : "arquivo completo";
   if (list) {
     list.className = coplaStreamClass();
-    list.innerHTML = renderCoplaItems(items);
-    bindCoplaActions(list);
+    mountCoplaList(list, items, `${state.coplaQuery}|${state.coplaStateFilter}`);
   }
-  all("[data-copla-view]", root).forEach(button => button.classList.toggle("active", button.dataset.coplaView === state.coplaViewMode));
+  all("[data-copla-view]", root).forEach(button => button.classList.toggle("active", button.dataset.coplaView === currentCoplaViewMode()));
   all("[data-state-filter]", root).forEach(button => button.classList.toggle("active", button.dataset.stateFilter === state.coplaStateFilter));
   const allChip = $("[data-copla-total]", root);
   if (allChip) {
-    allChip.textContent = `Todas · ${items.length}`;
+    allChip.textContent = `Todas \\ ${items.length}`;
     allChip.classList.toggle("active", state.coplaStateFilter === "all");
   }
   const toggleButton = $("#toggleCoplaSelect", root);
@@ -1743,7 +1831,7 @@ function coplaBatchBarMarkup(items) {
   return `
     <div class="batch-bar" role="toolbar" aria-label="Edición en lote">
       <span>${count} copla${count === 1 ? "" : "s"} seleccionada${count === 1 ? "" : "s"}</span>
-      <button class="btn" type="button" id="batchSelectAllVisible">Seleccionar as ${items.length} visíbeis</button>
+      <button class="btn" type="button" id="batchSelectAllVisible">Seleccionar as ${items.length} da consulta</button>
       <button class="btn" type="button" id="batchClearSelection" ${count ? "" : "disabled"}>Baleirar selección</button>
       <button class="btn primary" type="button" id="openBatchAssign" ${count ? "" : "disabled"}>Asignar territorio...</button>
       <button class="btn danger" type="button" id="openBatchDelete" ${count ? "" : "disabled"}>Borrar seleccionadas</button>
@@ -1790,15 +1878,13 @@ function renderCoplasView() {
         <button class="btn ${state.coplaSelectMode ? "active" : ""}" type="button" id="toggleCoplaSelect">${state.coplaSelectMode ? "Saír da selección" : "Seleccionar varias"}</button>
       </div>
       <div class="chips">
-        <button class="chip ${state.coplaStateFilter === "all" ? "active" : ""}" type="button" data-copla-total data-state-filter="all">Todas · ${items.length}</button>
+        <button class="chip ${state.coplaStateFilter === "all" ? "active" : ""}" type="button" data-copla-total data-state-filter="all">Todas \\ ${items.length}</button>
         <button class="chip ${state.coplaStateFilter === "assigned" ? "active" : ""}" type="button" data-state-filter="assigned">Asignadas</button>
         <button class="chip ${state.coplaStateFilter === "unassigned" ? "active" : ""}" type="button" data-state-filter="unassigned">Sen asignar</button>
       </div>
       <div id="coplaBatchBar">${coplaBatchBarMarkup(items)}</div>
       <div class="results-row"><span id="coplaResultCount" class="muted">Mostrando ${items.length} coplas</span><span id="coplaResultScope" class="muted">${state.coplaQuery ? "resultados da busca" : "arquivo completo"}</span></div>
-      <div id="coplaList" class="${coplaStreamClass()}">
-        ${renderCoplaItems(items)}
-      </div>
+      <div id="coplaList" class="${coplaStreamClass()}"></div>
       ${state.batchAssignModalOpen ? batchAssignModalMarkup() : ""}
     </div>
   `;
@@ -1821,6 +1907,7 @@ function renderCoplasView() {
   });
   bindCoplaBatchBar(view);
   bindCoplaActions(view);
+  mountCoplaList($("#coplaList", view), items, `${state.coplaQuery}|${state.coplaStateFilter}`);
   if (state.batchAssignModalOpen) bindBatchAssignModal(view);
 }
 
@@ -1890,7 +1977,7 @@ function openCoplaDrawer(coplaId) {
     <div class="drawer-scrim" data-close-drawer></div>
     <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="Ficha da copla">
       <button class="card-close" type="button" data-close-drawer aria-label="Pechar">×</button>
-      <div class="eyebrow">Ficha textual${copla.is_volta ? ` · <span class="tag is-volta">Volta</span>` : ""}</div>
+      <div class="eyebrow">Ficha textual${copla.is_volta ? ` \\ <span class="tag is-volta">Volta</span>` : ""}</div>
       <h2>${escapeHtml(coplaTitle(copla))}</h2>
       <div class="gallery-text">${nl2br(restOfText(copla.text || ""))}</div>
       <div class="drawer-section">
@@ -1910,7 +1997,7 @@ function openCoplaDrawer(coplaId) {
           <div class="variant">
             <strong>${escapeHtml(version.label || version.incipit || "Variante")}</strong>
             <div>${nl2br(version.text || "")}</div>
-            <p class="muted">${version.territory_mode === "custom" && (version.territories || []).length ? escapeHtml(version.territories.map(territoryDisplayName).join(" · ")) : "Mesma adscrición territorial ca copla principal"}</p>
+            <p class="muted">${version.territory_mode === "custom" && (version.territories || []).length ? escapeHtml(version.territories.map(territoryDisplayName).join(" \\ ")) : "Mesma adscrición territorial ca copla principal"}</p>
             ${version.notes ? `<p class="muted">${escapeHtml(version.notes)}</p>` : ""}
           </div>
         `).join("") || `<p class="muted">Sen variantes rexistradas.</p>`}
@@ -3370,7 +3457,7 @@ function renderTerritorySearchResults(root = $("#view-territory")) {
 }
 
 function breadcrumbTrail(territory, ctx) {
-  if (!territory) return "Galiza";
+  if (!territory) return "";
   return ctx.hierarchy.map(item => `
     <button type="button" data-territory-id="${item.id}">${escapeHtml(item.nome)}</button>
   `).join(`<span>/</span>`);
@@ -3387,6 +3474,24 @@ function updateTerritoryTabPanel(root = $("#view-territory")) {
   bindTerritoryCoplaSearch(panel);
   bindTerritoryCoplaViewToggle(panel);
   bindTerritorySummaryCard(panel);
+  hydrateTerritoryLists(root);
+}
+
+// Pinta (con carga progresiva) as listaxes longas da pestana aberta.
+function hydrateTerritoryLists(root = $("#view-territory")) {
+  const territory = state.selectedTerritory;
+  if ($("#territoryCoplaList", root)) updateTerritoryCoplaResults(root);
+  const mediaList = $("#territoryMediaList", root);
+  if (mediaList) {
+    mountInfiniteList(mediaList, territoryMediaItems(territory, placeContext(territory)), {
+      key: territory ? territory.id : "galiza",
+      renderItems: slice => slice.map(item => mediaCard(item)).join(""),
+      bind: bindMediaCards,
+      empty: `<article class="panel"><p class="muted">Aínda non hai media documental neste territorio.</p></article>`,
+    });
+  }
+  const melodyList = $("#territoryMelodyList", root);
+  if (melodyList) mountMelodyList(melodyList, placeContext(territory).melodias, territory ? territory.id : "galiza", territory?.id);
 }
 
 function bindTerritoryCoplaSearch(root = $("#view-territory")) {
@@ -3418,14 +3523,13 @@ function updateTerritoryCoplaResults(root = $("#view-territory")) {
     items = ctx.coplas.filter(copla => !tq || normalizeText(coplaHaystack(copla)).includes(tq));
     if (count) count.textContent = `${items.length} de ${ctx.coplas.length} resultados`;
   } else {
-    items = ctx.coplas.slice(0, 24);
+    items = ctx.coplas;
   }
   if (list) {
-    list.className = `${coplaStreamClass()}${state.coplaViewMode === "gallery" ? " territory-copla-grid" : ""}`;
-    list.innerHTML = renderCoplaItems(items);
-    bindCoplaActions(list);
+    list.className = `${coplaStreamClass()}${currentCoplaViewMode() === "gallery" ? " territory-copla-grid" : ""}`;
+    mountCoplaList(list, items, `${territory ? territory.id : "galiza"}|${state.territoryCoplaQuery || ""}`);
   }
-  all("[data-copla-view]", root).forEach(button => button.classList.toggle("active", button.dataset.coplaView === state.coplaViewMode));
+  all("[data-copla-view]", root).forEach(button => button.classList.toggle("active", button.dataset.coplaView === currentCoplaViewMode()));
 }
 
 function bindTerritoryTabs(root = $("#view-territory")) {
@@ -3448,7 +3552,7 @@ function territoryChildrenMarkup(territory, ctx) {
   const label = territory ? (CHILD_LABELS[territory.tipo] || "Subterritorios") : "Provincias";
   return `
     <section class="territory-children is-collapsed" id="territoryChildren" aria-label="${label}">
-      <div class="territory-children-head"><span class="eyebrow">${label} · ${children.length}</span></div>
+      <div class="territory-children-head"><span class="eyebrow">${label} \\ ${children.length}</span></div>
       <div class="chip-row">${children.map(territoryChipMarkup).join("")}</div>
       <button class="chip-more" type="button" id="toggleTerritoryChildren" aria-expanded="false" hidden></button>
     </section>
@@ -3468,7 +3572,7 @@ function fitTerritoryChildren(root = $("#view-territory")) {
   const hidden = overflow ? all(".chip-territory", row).filter(chip => chip.offsetTop >= limit - 4).length : 0;
   more.hidden = !overflow;
   box.classList.toggle("is-collapsed", overflow && !open);
-  more.textContent = open ? "Ver menos" : `Ver máis · ${hidden}`;
+  more.textContent = open ? "Ver menos" : `Ver máis \\ ${hidden}`;
   more.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
@@ -3503,7 +3607,7 @@ function renderTerritoryView() {
       <div id="territorySearchResults" class="territory-results"></div>
       <div class="territory-hero">
         <section class="territory-card">
-          <div class="breadcrumbs">${breadcrumbTrail(territory, ctx)}</div>
+          ${territory ? `<div class="breadcrumbs">${breadcrumbTrail(territory, ctx)}</div>` : ""}
           <div class="eyebrow">${escapeHtml(territory ? territoryLabel(territory) : "País")}</div>
           <h1>${territory ? escapeHtml(territory.nome) : "Galiza"}</h1>
           ${territory ? `<p>${direct} coplas directas e ${Math.max(ctx.coplas.length - direct, 0)} herdadas dos subterritorios.</p>` : ""}
@@ -3538,6 +3642,7 @@ function renderTerritoryView() {
   bindTerritoryCoplaSearch(view);
   bindTerritoryCoplaViewToggle(view);
   bindTerritorySummaryCard(view);
+  hydrateTerritoryLists(view);
   renderTerritorySearchResults(view);
   fitTerritoryChildren(view);
   document.fonts?.ready.then(() => fitTerritoryChildren(view));
@@ -3667,15 +3772,21 @@ async function removeTerritoryTrait(traitId, root = $("#view-territory")) {
   }
 }
 
+// Tamén entran os recursos nos que aparece unha melodía deste territorio
+// (ou dos seus subterritorios), sexa cal sexa o seu "uso no arquivo".
+function territoryMediaItems(territory, ctx) {
+  const scopeMelodies = new Set(ctx.melodias.map(melody => String(melody.id)));
+  return ctx.media.filter(item => ["documental", "mixed"].includes(mediaRole(item))
+    || (item.links || []).some(link => link.entity_type === "melody" && scopeMelodies.has(String(link.entity_id))));
+}
+
 function renderTerritoryTab(territory, ctx) {
   if (!territory) {
     if (state.territoryTab === "coplas") {
-      const sample = ctx.coplas.slice(0, 24);
       return `
         <div class="section-title"><h2>Coplas de Galiza</h2><span class="muted">${ctx.coplas.length} no arquivo</span></div>
-        <div class="territory-limit">Mostra inicial. Escolle un territorio para ver todas as coplas.</div>
         <div class="toolbar toolbar-end">${coplaViewToggleMarkup()}</div>
-        <div id="territoryCoplaList" class="${coplaStreamClass()}${state.coplaViewMode === "gallery" ? " territory-copla-grid" : ""}">${renderCoplaItems(sample)}</div>
+        <div id="territoryCoplaList" class="${coplaStreamClass()}${currentCoplaViewMode() === "gallery" ? " territory-copla-grid" : ""}"></div>
       `;
     }
     if (state.territoryTab === "melodies") return melodiesTabMarkup(null, ctx);
@@ -3697,7 +3808,7 @@ function renderTerritoryTab(territory, ctx) {
         <div class="searchbox"><span>⌕</span><input id="territoryCoplaSearch" type="search" value="${escapeHtml(state.territoryCoplaQuery || '')}" placeholder="Buscar texto nas coplas deste territorio..."></div>
         ${coplaViewToggleMarkup()}
       </div>
-      <div id="territoryCoplaList" class="${coplaStreamClass()}${state.coplaViewMode === "gallery" ? " territory-copla-grid" : ""}">${renderCoplaItems(filteredTerritoryCoplas)}</div>
+      <div id="territoryCoplaList" class="${coplaStreamClass()}${currentCoplaViewMode() === "gallery" ? " territory-copla-grid" : ""}"></div>
     `;
   }
   if (state.territoryTab === "pieces") {
@@ -3712,14 +3823,10 @@ function renderTerritoryTab(territory, ctx) {
     `;
   }
   if (state.territoryTab === "media") {
-    // Tamén entran os recursos nos que aparece unha melodía deste territorio
-    // (ou dos seus subterritorios), sexa cal sexa o seu "uso no arquivo".
-    const scopeMelodies = new Set(ctx.melodias.map(melody => String(melody.id)));
-    const media = ctx.media.filter(item => ["documental", "mixed"].includes(mediaRole(item))
-      || (item.links || []).some(link => link.entity_type === "melody" && scopeMelodies.has(String(link.entity_id))));
+    const media = territoryMediaItems(territory, ctx);
     return `
       <div class="section-title"><h2>Media relacionada</h2><button class="btn" type="button" data-view="media" data-media-role="documental">+ Novo recurso</button><span class="muted">${media.length} recursos</span></div>
-      <div class="media-grid">${media.map(mediaCard).join("") || `<article class="panel"><p class="muted">Aínda non hai media documental neste territorio.</p></article>`}</div>
+      <div id="territoryMediaList" class="media-grid"></div>
     `;
   }
   if (state.territoryTab === "melodies") return melodiesTabMarkup(territory, ctx);
@@ -3924,7 +4031,7 @@ function bindCoplaMediaLinker(copla) {
       results.innerHTML = matches.map(item => `
         <button type="button" data-link-copla-media="${item.id}">
           <strong>${escapeHtml(item.title || "Recurso sen título")}</strong>
-          <span>${escapeHtml(mediaLabel(mediaKind(item)))} · ${escapeHtml(item.url || "")}</span>
+          <span>${escapeHtml(mediaLabel(mediaKind(item)))} \\ ${escapeHtml(item.url || "")}</span>
         </button>
       `).join("") || `<p class="muted">Sen resultados.</p>`;
       all("[data-link-copla-media]", results).forEach(button => button.addEventListener("click", async () => {
@@ -4472,7 +4579,7 @@ function submitBatchQueueMarkup() {
           <article class="submit-batch-item">
             <div>
               <strong>${escapeHtml(item.preview)}</strong>
-              <span class="muted">${escapeHtml(item.placeLabel)}${item.versionCount ? ` · ${item.versionCount} variante(s)` : ""}${item.isVolta ? " · Volta" : ""}</span>
+              <span class="muted">${escapeHtml(item.placeLabel)}${item.versionCount ? ` \\ ${item.versionCount} variante(s)` : ""}${item.isVolta ? " \\ Volta" : ""}</span>
             </div>
             <button class="icon-button" type="button" data-remove-batch="${index}" aria-label="Retirar da lista" title="Retirar da lista">×</button>
           </article>
@@ -4763,7 +4870,6 @@ function renderMediaView() {
   if (!state.mediaTerritoryIds.length && state.selectedTerritory) state.mediaTerritoryIds = [state.selectedTerritory.id];
   const selectedMediaTerritories = state.mediaTerritoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
   const selectedMediaCoplas = state.mediaCoplaIds.map(id => state.coplas.find(item => Number(item.id) === Number(id))).filter(Boolean);
-  const items = filteredMediaItems();
   view.innerHTML = `
     <div class="page">
       <div class="page-head">
@@ -4784,20 +4890,11 @@ function renderMediaView() {
         </select>
       </div>
       <div id="mediaList" class="media-grid">
-        ${items.map(item => mediaCard(item, { editable: true })).join("") || `<article class="panel"><p class="muted">Aínda non hai recursos multimedia para mostrar.</p></article>`}
       </div>
       ${mediaModalMarkup(selectedMediaTerritories, selectedMediaCoplas)}
     </div>
   `;
   $("#openMediaModal")?.addEventListener("click", () => openMediaModal());
-  all("[data-edit-media]", view).forEach(button => button.addEventListener("click", event => {
-    event.stopPropagation();
-    startEditMedia(Number(button.dataset.editMedia));
-  }));
-  all("[data-delete-media]", view).forEach(button => button.addEventListener("click", event => {
-    event.stopPropagation();
-    openDeleteConfirm([Number(button.dataset.deleteMedia)], "media");
-  }));
   $("#mediaSearch")?.addEventListener("input", event => {
     state.mediaQuery = event.target.value;
     updateMediaResults(view);
@@ -4816,6 +4913,7 @@ function renderMediaView() {
   bindMediaMelodyPicker();
   bindSelectedTerritoryChips(view);
   bindMediaCards(view);
+  updateMediaResults(view);
   $("#saveMediaDirect")?.addEventListener("click", saveMediaDirect);
   $("#fetchMediaMeta")?.addEventListener("click", fetchMediaMetadata);
   $("#mediaUrl")?.addEventListener("blur", () => {
@@ -4849,11 +4947,7 @@ function filteredMediaItems() {
   });
 }
 
-function updateMediaResults(root = $("#view-media")) {
-  const list = $("#mediaList", root);
-  if (!list) return;
-  const items = filteredMediaItems();
-  list.innerHTML = items.map(item => mediaCard(item, { editable: true })).join("") || `<article class="panel"><p class="muted">Aínda non hai recursos multimedia para mostrar.</p></article>`;
+function bindMediaCardActions(root) {
   bindMediaCards(root);
   all("[data-edit-media]", root).forEach(button => button.addEventListener("click", event => {
     event.stopPropagation();
@@ -4863,6 +4957,17 @@ function updateMediaResults(root = $("#view-media")) {
     event.stopPropagation();
     openDeleteConfirm([Number(button.dataset.deleteMedia)], "media");
   }));
+}
+
+function updateMediaResults(root = $("#view-media")) {
+  const list = $("#mediaList", root);
+  if (!list) return;
+  mountInfiniteList(list, filteredMediaItems(), {
+    key: `${state.mediaQuery}|${state.mediaKindFilter}|${state.mediaRoleFilter}`,
+    renderItems: slice => slice.map(item => mediaCard(item, { editable: true })).join(""),
+    bind: bindMediaCardActions,
+    empty: `<article class="panel"><p class="muted">Aínda non hai recursos multimedia para mostrar.</p></article>`,
+  });
 }
 
 function renderAboutTerritoryResults(root = $("#view-about")) {
@@ -4888,7 +4993,7 @@ function renderAboutTerritoryResults(root = $("#view-about")) {
     const input = $("#aboutTerritorySearch", root);
     const label = $("#aboutTerritorySelected", root);
     if (input) input.value = territory.nome;
-    if (label) label.textContent = `${territory.nome} · ${territorySearchMeta(territory)}`;
+    if (label) label.textContent = `${territory.nome} \\ ${territorySearchMeta(territory)}`;
     results.innerHTML = "";
   }));
 }
@@ -4926,7 +5031,7 @@ function submitAboutCopla(event) {
     "Payload para revisión:",
     JSON.stringify(payload, null, 2),
   ].filter(line => line !== "").join("\n");
-  const subject = `Nova copla para Fol e Ar${payload.territory_name ? ` · ${payload.territory_name}` : ""}`;
+  const subject = `Nova copla para Fol e Ar${payload.territory_name ? ` \\ ${payload.territory_name}` : ""}`;
   window.location.href = `mailto:folear3@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
@@ -4947,7 +5052,7 @@ function renderAboutView() {
         <article class="panel"><h2>Contacto</h2><p>Dúbidas, correccións ou coplas para achegar: escríbenos a <a href="mailto:folear3@gmail.com">folear3@gmail.com</a>.</p></article>
       </div>
       <section class="panel about-manual">
-        <div class="section-title"><h2>Código de cores dos territorios</h2><span class="muted">Manual de uso · iremos actualizándoo</span></div>
+        <div class="section-title"><h2>Código de cores dos territorios</h2><span class="muted">Manual de uso \\ iremos actualizándoo</span></div>
         <p>Cada copla, peza ou recurso pode levar ligado un ou varios territorios, e cada nivel administrativo ten a súa propia cor para sabermos dun golpe de vista, en cada pastilla, se se trata dunha parroquia, un concello, unha comarca ou unha provincia.</p>
         <ul class="legend-list">
           <li><span class="level-chip level-par">Parroquia</span><span class="muted">o nivel máis miúdo: unha parroquia concreta.</span></li>

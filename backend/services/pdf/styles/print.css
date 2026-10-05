@@ -5,7 +5,7 @@
 
 @page {
   @bottom-right {
-    content: "Fol e Ar · " counter(page);
+    content: "Fol e Ar \\ " counter(page);
     color: #8a8d86;
     font-size: 8pt;
   }
@@ -57,7 +57,7 @@ h1 {
 
 .meta-row span + span::before {
   color: #a2a79f;
-  content: "·";
+  content: "\\";
   margin-right: 3mm;
 }
 

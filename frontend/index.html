@@ -120,15 +120,15 @@
   <nav class="mobile-nav" aria-label="Navegación móbil">
     <button class="active" type="button" data-view="map">⌖<span>Mapa</span></button>
     <button type="button" data-view="territory">⌂<span>Territorios</span></button>
+    <button type="button" data-view="coplas">≋<span>Coplas</span></button>
     <div class="mobile-nav-group">
-      <button type="button" id="mobileExploreBtn" data-mobile-explore aria-haspopup="true" aria-expanded="false" aria-controls="mobileExploreMenu">☰<span>Explorar ▴</span></button>
+      <button type="button" id="mobileExploreBtn" data-mobile-explore aria-haspopup="true" aria-expanded="false" aria-controls="mobileExploreMenu">☰<span>Explorar ▴</span><b class="cart-count" data-cart-count hidden>0</b></button>
       <div class="mobile-menu" id="mobileExploreMenu" role="menu" hidden>
-        <button type="button" role="menuitem" data-view="coplas"><i>≋</i>Coplas</button>
-        <button type="button" role="menuitem" data-view="melodies"><i>♫</i>Melodías</button>
+        <button type="button" role="menuitem" data-view="pieces"><i>♪</i>Pezas<b class="cart-count" data-cart-count hidden>0</b></button>
         <button type="button" role="menuitem" data-view="media"><i>◧</i>Media</button>
+        <button type="button" role="menuitem" data-view="melodies"><i>♫</i>Melodías</button>
       </div>
     </div>
-    <button type="button" data-view="pieces">♪<span>Pezas</span><b class="cart-count" data-cart-count hidden>0</b></button>
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

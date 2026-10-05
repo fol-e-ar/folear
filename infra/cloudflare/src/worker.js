@@ -1096,7 +1096,7 @@ const PRINT_CSS = `@page {
 
 @page {
   @bottom-right {
-    content: "Fol e Ar · " counter(page);
+    content: "Fol e Ar \\\\ " counter(page);
     color: #8a8d86;
     font-size: 8pt;
   }
@@ -1148,7 +1148,7 @@ h1 {
 
 .meta-row span + span::before {
   color: #a2a79f;
-  content: "·";
+  content: "\\\\";
   margin-right: 3mm;
 }
 
@@ -1275,14 +1275,14 @@ async function territoryLabelForPdf(env, territory) {
   let label = territory.nome || "";
   if (territory.tipo === "par") {
     const council = await parentCouncilNameForPdf(env, territory);
-    if (council) label = `${label} \u00b7 ${council}`;
+    if (council) label = `${label} \\ ${council}`;
   }
   return label;
 }
 
 async function territoryContextForPdf(env, territory) {
   const hierarchy = await territoryHierarchyForPdf(env, territory);
-  return hierarchy.map(item => `${PDF_TYPE_LABELS[item.tipo] || item.tipo}: ${item.nome}`).join(" \u00b7 ");
+  return hierarchy.map(item => `${PDF_TYPE_LABELS[item.tipo] || item.tipo}: ${item.nome}`).join(" \\ ");
 }
 
 async function descendantIdsForPdf(env, territory) {

@@ -73,7 +73,7 @@ def territory_label(conn: sqlite3.Connection, territory: dict[str, Any] | None) 
     if territory.get("tipo") == "par":
         council = parent_council_name(conn, territory)
         if council:
-            label = f"{label} · {council}"
+            label = f"{label} \\ {council}"
     return label
 
 
@@ -82,7 +82,7 @@ def territory_context(conn: sqlite3.Connection, territory: dict[str, Any]) -> st
     for item in territory_hierarchy(conn, territory):
         tipo = TYPE_LABELS.get(item["tipo"], item["tipo"])
         parts.append(f"{tipo}: {item['nome']}")
-    return " · ".join(parts)
+    return " \\ ".join(parts)
 
 
 def descendant_ids(conn: sqlite3.Connection, territory: dict[str, Any]) -> list[str]:
