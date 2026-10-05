@@ -1,5 +1,6 @@
-import { clearApiCache, getCoplas, getGeoLayer, getMedia, getPezas, getTerritorios, getTextAsset } from "./api.js";
+import { clearApiCache, getCoplas, getGeoLayer, getMedia, getMelodias, getPezas, getTerritorios, getTextAsset } from "./api.js";
 import { escapeHtml, nl2br, normalizeText, slugify } from "./utils.js";
+import { initPdfThumbs } from "./pdf_thumbs.js";
 import {
   TYPE_LABELS,
   buildHierarchy,
@@ -43,6 +44,9 @@ const state = {
   coplas: [],
   pezas: [],
   media: [],
+  melodias: [],
+  mediaMelodyIds: [],
+  melodyModal: null,
   map: null,
   layer: null,
   layerType: "con",
@@ -417,12 +421,15 @@ function placeContext(territory = state.selectedTerritory) {
       coplas: state.coplas,
       pezas: state.pezas,
       media: state.media,
+      melodias: state.melodias,
     };
   }
   const descendantIds = getDescendantIds(territory, state.territorios);
   const coplas = filterCoplasByTerritory(state.coplas, descendantIds);
   const pezas = filterPiecesByTerritory(state.pezas, descendantIds, coplas);
-  const media = filterMediaByContext(state.media, descendantIds, coplas, pezas);
+  const territoryScope = new Set(descendantIds);
+  const melodias = state.melodias.filter(melody => territoryScope.has(melody.territory_id));
+  const media = filterMediaByContext(state.media, descendantIds, coplas, pezas, melodias.map(melody => melody.id));
   return {
     hierarchy: buildHierarchy(territory, state.territorios),
     children: getChildren(territory, state.territorios),
@@ -430,6 +437,7 @@ function placeContext(territory = state.selectedTerritory) {
     coplas,
     pezas,
     media,
+    melodias,
   };
 }
 
@@ -560,8 +568,10 @@ function mediaCard(item, options = {}) {
   const role = mediaRole(item);
   const territoryLinks = mediaTerritories(item).map(territory => territory.nome);
   const linkedCoplas = mediaCoplas(item);
+  const linkedMelodies = mediaMelodies(item);
   const yt = kind === "youtube" ? youtubeId(url) : "";
-  let preview = `<div class="media-preview is-${kind}"><span class="media-preview-icon">${mediaKindIconSvg(kind)}</span></div>`;
+  const pdfThumb = kind === "pdf" && url && !item.thumbnail_url ? ` data-pdf-thumb="${escapeHtml(url)}"` : "";
+  let preview = `<div class="media-preview is-${kind}"${pdfThumb}><span class="media-preview-icon">${mediaKindIconSvg(kind)}</span></div>`;
   if (item.thumbnail_url) preview = `<img class="media-preview is-photo" src="${escapeHtml(item.thumbnail_url)}" alt="">`;
   if (kind === "image" && url) preview = `<img class="media-preview is-photo" src="${escapeHtml(url)}" alt="">`;
   if (kind === "youtube" && yt) preview = `<img class="media-preview is-photo" src="https://img.youtube.com/vi/${escapeHtml(yt)}/hqdefault.jpg" alt="">`;
@@ -580,6 +590,8 @@ function mediaCard(item, options = {}) {
           <span class="tag">${escapeHtml(mediaRoleLabel(role))}</span>
           ${territoryLinks.length ? `<span class="tag place">${escapeHtml(territoryLinks.slice(0, 2).join(" · "))}</span>` : ""}
           ${linkedCoplas.length ? `<span class="tag">${linkedCoplas.length} copla${linkedCoplas.length === 1 ? "" : "s"}</span>` : ""}
+          ${linkedMelodies.slice(0, 2).map(melody => `<span class="tag is-melody" title="${escapeHtml(melodyName(melody))}">${escapeHtml(melodyShortName(melody))}</span>`).join("")}
+          ${linkedMelodies.length > 2 ? `<span class="tag is-melody">+${linkedMelodies.length - 2} melodías</span>` : ""}
         </div>
         ${url ? "" : `<p class="muted">Sen ligazón pública.</p>`}
         ${options.editable ? `<div class="media-card-actions"><button class="btn" type="button" data-edit-media="${item.id}">Editar</button><button class="btn danger" type="button" data-delete-media="${item.id}">Borrar</button></div>` : ""}
@@ -622,6 +634,650 @@ function bindMediaCards(root = document) {
         open(event);
       }
     });
+  });
+}
+
+// ---------------------------------------------------------------------
+// Melodías (inventario)
+//
+// Unha melodía é un ritmo + un número dentro dese ritmo e dese lugar,
+// rexistrada no territorio máis baixo no que se documenta. Non hai
+// xerarquía propia: o nome ("Xota número 1 de Moscoso") constrúese con eses
+// tres datos, e iso é o que as fai distinguibles ao subir a un
+// supraterritorio. Cada melodía pode aparecer en varios recursos e cada
+// recurso pode conter varias melodías (ligazóns `melody` en media_links).
+// ---------------------------------------------------------------------
+
+function melodyTerritory(melody) {
+  return state.territorios.find(item => item.id === melody.territory_id) || null;
+}
+
+function melodyName(melody) {
+  if (melody.name) return melody.name;
+  const territory = melodyTerritory(melody);
+  return `${melody.rhythm} número ${melody.number}${territory ? ` de ${territory.nome}` : ""}`;
+}
+
+function melodyShortName(melody) {
+  return `${melody.rhythm} #${melody.number}`;
+}
+
+function melodyMedia(melody) {
+  return state.media.filter(item => (item.links || []).some(link => link.entity_type === "melody" && String(link.entity_id) === String(melody.id)));
+}
+
+function mediaMelodies(item) {
+  return (item.links || [])
+    .filter(link => link.entity_type === "melody")
+    .map(link => state.melodias.find(melody => String(melody.id) === String(link.entity_id)))
+    .filter(Boolean);
+}
+
+function compareMelodies(a, b) {
+  const territoryA = melodyTerritory(a)?.nome || "";
+  const territoryB = melodyTerritory(b)?.nome || "";
+  return a.rhythm.localeCompare(b.rhythm, "gl", { sensitivity: "base" })
+    || territoryA.localeCompare(territoryB, "gl", { sensitivity: "base" })
+    || a.number - b.number;
+}
+
+function rhythmSuggestions() {
+  const known = new Map(RHYTHMS.map(rhythm => [normalizeText(rhythm), rhythm]));
+  state.melodias.forEach(melody => {
+    const key = normalizeText(melody.rhythm);
+    if (!known.has(key)) known.set(key, melody.rhythm);
+  });
+  return [...known.values()].sort((a, b) => a.localeCompare(b, "gl"));
+}
+
+function rhythmDatalist(id) {
+  return `<datalist id="${id}">${rhythmSuggestions().map(rhythm => `<option value="${escapeHtml(rhythm)}"></option>`).join("")}</datalist>`;
+}
+
+// Grafía do ritmo que quedará gardada (a mesma que xa se usa no inventario).
+function canonicalRhythm(rhythm) {
+  const clean = String(rhythm || "").trim().replace(/\s+/g, " ");
+  if (!clean) return "";
+  const key = normalizeText(clean);
+  const existing = state.melodias.find(melody => normalizeText(melody.rhythm) === key);
+  return existing ? existing.rhythm : clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
+function nextMelodyNumberFor(territoryId, rhythm, ignoreId = null) {
+  const key = normalizeText(rhythm);
+  const group = state.melodias.filter(melody => melody.territory_id === territoryId && normalizeText(melody.rhythm) === key);
+  const current = ignoreId ? group.find(melody => Number(melody.id) === Number(ignoreId)) : null;
+  if (current) return current.number;
+  return group.reduce((max, melody) => Math.max(max, melody.number), 0) + 1;
+}
+
+function melodyCard(melody, options = {}) {
+  const own = options.territoryId && melody.territory_id === options.territoryId;
+  const territory = melodyTerritory(melody);
+  const resources = melodyMedia(melody).length;
+  const notes = (melody.notes || "").trim();
+  return `
+    <article class="melody-card" tabindex="0" role="button" data-open-melody="${melody.id}" aria-label="${escapeHtml(melodyName(melody))}">
+      <h3>${escapeHtml(own ? melodyShortName(melody) : melodyName(melody))}</h3>
+      ${!own && territory ? `<p class="melody-card-place">${escapeHtml(territorySearchMeta(territory))}</p>` : ""}
+      ${notes ? `<p class="melody-card-notes">${escapeHtml(notes.length > 110 ? `${notes.slice(0, 107)}…` : notes)}</p>` : ""}
+      <div class="meta"><span class="tag">${resources ? `${resources} recurso${resources === 1 ? "" : "s"}` : "Sen recursos"}</span></div>
+    </article>
+  `;
+}
+
+function melodiesTabMarkup(territory, ctx) {
+  const melodies = [...ctx.melodias].sort(compareMelodies);
+  const groups = new Map();
+  melodies.forEach(melody => {
+    const key = normalizeText(melody.rhythm);
+    if (!groups.has(key)) groups.set(key, { rhythm: melody.rhythm, items: [] });
+    groups.get(key).items.push(melody);
+  });
+  const loose = ctx.media.filter(item => ["melody", "mixed"].includes(mediaRole(item)) && !mediaMelodies(item).length);
+  return `
+    <div class="section-title">
+      <h2>Melodías${territory ? ` de ${escapeHtml(territory.nome)}` : " de Galiza"}</h2>
+      <span class="muted">${melodies.length} inventariada${melodies.length === 1 ? "" : "s"}</span>
+    </div>
+    <div class="melody-actions">
+      ${territory ? `<button class="btn primary" type="button" data-new-melody="${territory.id}">+ Nova melodía</button>` : ""}
+      <button class="btn" type="button" data-view="media" data-media-role="melody">+ Novo recurso</button>
+    </div>
+    ${melodies.length ? [...groups.values()].map(group => `
+      <section class="melody-group">
+        <h3 class="melody-group-title">${escapeHtml(group.rhythm)} <span class="muted">${group.items.length}</span></h3>
+        <div class="melody-grid">${group.items.map(melody => melodyCard(melody, { territoryId: territory?.id })).join("")}</div>
+      </section>
+    `).join("") : `<p class="muted melody-empty">${territory ? "Aínda non hai melodías inventariadas neste territorio. Crea a primeira e despois indica en que recursos aparece." : "Aínda non hai melodías inventariadas."}</p>`}
+    ${loose.length ? `
+      <section class="melody-group">
+        <h3 class="melody-group-title">Recursos sonoros sen melodía asignada <span class="muted">${loose.length}</span></h3>
+        <div class="media-grid">${loose.map(item => mediaCard(item)).join("")}</div>
+      </section>
+    ` : ""}
+  `;
+}
+
+// --- Rexistro no servidor --------------------------------------------
+
+async function postMelodies(melodies) {
+  const response = await fetch("../api/melodies", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ melodies }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Non se puido gardar a melodía.");
+  clearApiCache();
+  state.melodias = await getMelodias();
+  return result.ids || [];
+}
+
+async function removeMelody(melodyId) {
+  const response = await fetch("../api/melodies", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: [melodyId] }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Non se puido borrar a melodía.");
+  clearApiCache();
+  [state.melodias, state.media] = await Promise.all([getMelodias(), getMedia()]);
+}
+
+function rerenderMelodyViews() {
+  if (state.view === "territory") renderTerritoryView();
+  else if (state.view === "media") renderMediaView();
+}
+
+// --- Ficha da melodía -------------------------------------------------
+
+function openMelodyDrawer(melodyId) {
+  const melody = state.melodias.find(item => Number(item.id) === Number(melodyId));
+  const drawer = $("#melodyDrawer");
+  if (!melody || !drawer) return;
+  const territory = melodyTerritory(melody);
+  const resources = melodyMedia(melody);
+  const notes = (melody.notes || "").trim();
+  drawer.hidden = false;
+  drawer.dataset.melodyId = String(melody.id);
+  drawer.innerHTML = `
+    <div class="drawer-scrim" data-close-melody-drawer></div>
+    <aside class="drawer-panel melody-drawer" role="dialog" aria-modal="true" aria-label="Ficha da melodía">
+      <button class="card-close" type="button" data-close-melody-drawer aria-label="Pechar">×</button>
+      <div class="eyebrow">Ficha de melodía</div>
+      <h2>${escapeHtml(melodyName(melody))}</h2>
+      <div class="meta"><span class="tag">${escapeHtml(melody.rhythm)}</span><span class="tag">Número ${melody.number}</span></div>
+      <div class="drawer-section">
+        <h3>Lugar</h3>
+        <div class="territory-links">
+          ${territory ? `<button type="button" data-territory-id="${territory.id}"><strong>${escapeHtml(territory.nome)}</strong><span>${escapeHtml(territorySearchMeta(territory))}</span></button>` : `<p class="muted">Territorio non atopado.</p>`}
+        </div>
+      </div>
+      <div class="drawer-section">
+        <h3>Notas</h3>
+        <p class="muted">${notes ? nl2br(notes) : "Sen notas rexistradas."}</p>
+      </div>
+      <div class="drawer-section">
+        <h3>Recursos onde aparece</h3>
+        <div class="melody-resources">
+          ${resources.map(item => `
+            <div class="melody-resource">
+              ${mediaCard(item)}
+              <button class="link-button" type="button" data-unlink-melody-media="${item.id}">Desvincular</button>
+            </div>
+          `).join("") || `<p class="muted">Aínda non aparece en ningún recurso.</p>`}
+        </div>
+        <div class="melody-link-existing">
+          <input id="melodyLinkQuery" type="search" placeholder="Vincular un recurso xa gardado (título, fonte...)">
+          <div id="melodyLinkResults" class="territory-results compact"></div>
+          <p id="melodyDrawerFeedback" class="muted"></p>
+        </div>
+      </div>
+      <div class="drawer-actions">
+        <button class="btn" type="button" data-edit-melody="${melody.id}">Editar</button>
+        <button class="btn danger" type="button" data-delete-melody="${melody.id}">Borrar</button>
+        <button class="btn primary" type="button" data-new-melody-media="${melody.id}">+ Novo recurso con esta melodía</button>
+      </div>
+    </aside>
+  `;
+  bindMediaCards(drawer);
+  bindResultButtons(drawer);
+  $("#melodyLinkQuery", drawer)?.addEventListener("input", event => renderMelodyLinkResults(melody, event.target.value));
+}
+
+function closeMelodyDrawer() {
+  const drawer = $("#melodyDrawer");
+  if (!drawer) return;
+  drawer.hidden = true;
+  drawer.innerHTML = "";
+  delete drawer.dataset.melodyId;
+}
+
+function renderMelodyLinkResults(melody, rawQuery) {
+  const results = $("#melodyLinkResults");
+  if (!results) return;
+  const query = normalizeText(rawQuery || "");
+  if (!query) {
+    results.innerHTML = "";
+    return;
+  }
+  const linked = new Set(melodyMedia(melody).map(item => Number(item.id)));
+  const matches = state.media
+    .filter(item => !linked.has(Number(item.id)))
+    .filter(item => normalizeText([item.title, item.author_or_source, item.description, item.url].join(" ")).includes(query))
+    .slice(0, 8);
+  results.innerHTML = matches.map(item => `
+    <button type="button" data-link-melody-media="${item.id}">
+      <strong>${escapeHtml(item.title || "Recurso sen título")}</strong>
+      <span>${escapeHtml([mediaLabel(mediaKind(item)), item.author_or_source].filter(Boolean).join(" · "))}</span>
+    </button>
+  `).join("") || `<p class="muted">Sen resultados.</p>`;
+}
+
+async function linkMediaToMelody(mediaId, melodyId) {
+  const media = state.media.find(item => Number(item.id) === Number(mediaId));
+  if (!media) return;
+  if ((media.links || []).some(link => link.entity_type === "melody" && String(link.entity_id) === String(melodyId))) return;
+  const relation = media.links?.[0]?.relation_type || "melody";
+  const links = [...(media.links || []), { entity_type: "melody", entity_id: melodyId, relation_type: relation }];
+  await postMediaUpdate(mediaFullPayload(media, links));
+}
+
+async function unlinkMediaFromMelody(mediaId, melody) {
+  const media = state.media.find(item => Number(item.id) === Number(mediaId));
+  if (!media) return;
+  let links = (media.links || []).filter(link => !(link.entity_type === "melody" && String(link.entity_id) === String(melody.id)));
+  // Un recurso non pode quedar sen ningunha ligazón: se esta era a única,
+  // ligámolo ao lugar da melodía para que non desapareza do arquivo.
+  if (!links.length) links = [{ entity_type: "territory", entity_id: melody.territory_id, relation_type: media.links?.[0]?.relation_type || "direct" }];
+  await postMediaUpdate(mediaFullPayload(media, links));
+}
+
+function startMediaForMelody(melodyId) {
+  const melody = state.melodias.find(item => Number(item.id) === Number(melodyId));
+  if (!melody) return;
+  closeMelodyDrawer();
+  setView("media");
+  openMediaModal("melody", { territoryIds: [melody.territory_id], melodyIds: [melody.id] });
+}
+
+// --- Alta e edición de melodías --------------------------------------
+
+function openMelodyModal({ id = null, territoryId = "" } = {}) {
+  const existing = id ? state.melodias.find(item => Number(item.id) === Number(id)) : null;
+  state.melodyModal = {
+    id: existing ? existing.id : null,
+    territoryId: existing ? existing.territory_id : territoryId,
+    rhythm: existing ? existing.rhythm : "",
+    notes: existing ? existing.notes || "" : "",
+    picking: false,
+  };
+  renderMelodyModal();
+  window.setTimeout(() => $("#melodyRhythm")?.focus(), 30);
+}
+
+function closeMelodyModal() {
+  state.melodyModal = null;
+  renderMelodyModal();
+}
+
+function melodyNamePreview() {
+  const modal = state.melodyModal;
+  const territory = state.territorios.find(item => item.id === modal?.territoryId);
+  const rhythm = canonicalRhythm(modal?.rhythm || "");
+  if (!territory || !rhythm) return "Escolle o ritmo para ver como se vai chamar.";
+  return `Chamarase: ${rhythm} número ${nextMelodyNumberFor(territory.id, rhythm, modal.id)} de ${territory.nome}`;
+}
+
+function renderMelodyModal() {
+  const host = $("#melodyModal");
+  if (!host) return;
+  const modal = state.melodyModal;
+  if (!modal) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  const territory = state.territorios.find(item => item.id === modal.territoryId);
+  host.hidden = false;
+  host.innerHTML = `
+    <div class="media-modal melody-modal" role="dialog" aria-modal="true" aria-label="${modal.id ? "Editar melodía" : "Nova melodía"}">
+      <div class="media-modal-backdrop" data-close-melody-modal></div>
+      <div class="media-modal-panel">
+        <div class="media-modal-head">
+          <div>
+            <div class="eyebrow">${modal.id ? "Edición de melodía" : "Alta de melodía"}</div>
+            <h2>${modal.id ? "Editar melodía" : "Nova melodía"}</h2>
+          </div>
+          <button class="card-close" type="button" data-close-melody-modal aria-label="Pechar">×</button>
+        </div>
+        <div class="melody-modal-body">
+          <div class="formgrid">
+            <div class="field">
+              <label for="melodyRhythm">Ritmo</label>
+              <input id="melodyRhythm" type="text" list="melodyRhythmList" autocomplete="off" value="${escapeHtml(modal.rhythm)}" placeholder="Xota, muiñeira, pandeirada...">
+              ${rhythmDatalist("melodyRhythmList")}
+            </div>
+            <div class="field">
+              <label>Lugar</label>
+              <div class="melody-place">
+                ${territory ? `<span class="selected-chip">${escapeHtml(territory.nome)} <small class="level-badge level-${territory.tipo}">${escapeHtml(territoryLabel(territory))}</small></span>` : `<span class="muted">Sen lugar.</span>`}
+                <button class="link-button" type="button" id="melodyChangeTerritory">${territory ? "Cambiar" : "Escoller"}</button>
+              </div>
+              <input id="melodyTerritoryQuery" type="search" placeholder="Buscar parroquia, concello, comarca..." ${modal.picking ? "" : "hidden"}>
+              <div id="melodyTerritoryResults" class="territory-results compact"></div>
+            </div>
+            <div class="field full"><p class="melody-name-preview" id="melodyNamePreview">${escapeHtml(melodyNamePreview())}</p></div>
+            <div class="field full">
+              <label for="melodyNotes">Notas (opcional)</label>
+              <textarea id="melodyNotes" rows="3" placeholder="Como se toca, quen a canta, como se recoñece...">${escapeHtml(modal.notes)}</textarea>
+            </div>
+          </div>
+          <div class="gallery-actions">
+            <button class="btn primary" type="button" id="saveMelody">${modal.id ? "Gardar cambios" : "Crear melodía"}</button>
+            <p id="melodyFeedback" class="muted"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  const updatePreview = () => {
+    const preview = $("#melodyNamePreview");
+    if (preview) preview.textContent = melodyNamePreview();
+  };
+  $("#melodyRhythm", host)?.addEventListener("input", event => {
+    modal.rhythm = event.target.value;
+    updatePreview();
+  });
+  $("#melodyNotes", host)?.addEventListener("input", event => {
+    modal.notes = event.target.value;
+  });
+  $("#melodyChangeTerritory", host)?.addEventListener("click", () => {
+    modal.picking = true;
+    const input = $("#melodyTerritoryQuery", host);
+    if (input) {
+      input.hidden = false;
+      input.focus();
+    }
+  });
+  $("#melodyTerritoryQuery", host)?.addEventListener("input", event => {
+    const query = event.target.value.trim();
+    const results = $("#melodyTerritoryResults", host);
+    if (!query) {
+      results.innerHTML = "";
+      return;
+    }
+    const matches = searchTerritories(state.territorios, query).slice(0, 10);
+    results.innerHTML = matches.map(item => `
+      <button type="button" data-pick-melody-territory="${item.id}">
+        <strong>${escapeHtml(item.nome)}</strong>
+        <span>${escapeHtml(territorySearchMeta(item))}</span>
+      </button>
+    `).join("") || `<p class="muted">Sen resultados.</p>`;
+  });
+  $("#melodyTerritoryResults", host)?.addEventListener("click", event => {
+    const button = event.target.closest("[data-pick-melody-territory]");
+    if (!button) return;
+    modal.territoryId = button.dataset.pickMelodyTerritory;
+    modal.picking = false;
+    renderMelodyModal();
+  });
+  $("#saveMelody", host)?.addEventListener("click", saveMelodyForm);
+}
+
+async function saveMelodyForm() {
+  const modal = state.melodyModal;
+  if (!modal) return;
+  const feedback = $("#melodyFeedback");
+  const rhythm = (modal.rhythm || "").trim();
+  if (!rhythm) {
+    feedback.textContent = "Indica o ritmo (xota, muiñeira...).";
+    return;
+  }
+  if (!modal.territoryId) {
+    feedback.textContent = "Escolle o lugar da melodía.";
+    return;
+  }
+  feedback.textContent = "Gardando...";
+  const entry = { territory_id: modal.territoryId, rhythm, notes: (modal.notes || "").trim() || null };
+  if (modal.id) entry.id = modal.id;
+  try {
+    const [id] = await postMelodies([entry]);
+    state.melodyModal = null;
+    renderMelodyModal();
+    rerenderMelodyViews();
+    openMelodyDrawer(id);
+  } catch (error) {
+    feedback.textContent = error.message;
+  }
+}
+
+// --- Selector de melodías no formulario de recursos -------------------
+
+function mediaMelodyScope() {
+  const scope = new Set();
+  state.mediaTerritoryIds.forEach(id => {
+    const territory = state.territorios.find(item => item.id === id);
+    if (territory) getDescendantIds(territory, state.territorios).forEach(descendant => scope.add(descendant));
+  });
+  return scope;
+}
+
+function mediaMelodyCandidates() {
+  const scope = mediaMelodyScope();
+  const selected = new Set(state.mediaMelodyIds.map(Number));
+  return state.melodias.filter(melody => scope.has(melody.territory_id) || selected.has(Number(melody.id))).sort(compareMelodies);
+}
+
+function mediaMelodyOptionsMarkup() {
+  if (!state.mediaTerritoryIds.length && !state.mediaMelodyIds.length) {
+    return `<p class="muted">Escolle un territorio para ver as melodías que ten inventariadas.</p>`;
+  }
+  const candidates = mediaMelodyCandidates();
+  if (!candidates.length) {
+    return `<p class="muted">Os lugares escollidos aínda non teñen melodías inventariadas. Podes crear a primeira aquí embaixo.</p>`;
+  }
+  const byTerritory = new Map();
+  candidates.forEach(melody => {
+    if (!byTerritory.has(melody.territory_id)) byTerritory.set(melody.territory_id, []);
+    byTerritory.get(melody.territory_id).push(melody);
+  });
+  const selected = new Set(state.mediaMelodyIds.map(Number));
+  return `
+    ${[...byTerritory.entries()].map(([territoryId, melodies]) => {
+      const territory = state.territorios.find(item => item.id === territoryId);
+      return `
+        <div class="melody-picker-group">
+          ${byTerritory.size > 1 ? `<div class="melody-picker-place">${escapeHtml(territory?.nome || territoryId)}</div>` : ""}
+          <div class="melody-picker-chips">
+            ${melodies.map(melody => `
+              <label class="melody-chip ${selected.has(Number(melody.id)) ? "is-on" : ""}" title="${escapeHtml(melodyName(melody))}">
+                <input type="checkbox" data-media-melody="${melody.id}" ${selected.has(Number(melody.id)) ? "checked" : ""}>
+                <span>${escapeHtml(melodyShortName(melody))}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }).join("")}
+    <div class="melody-picker-actions">
+      <button class="link-button" type="button" data-media-melody-all>Marcar todas</button>
+      <button class="link-button" type="button" data-media-melody-none>Desmarcar todas</button>
+    </div>
+  `;
+}
+
+function mediaMelodyFieldMarkup() {
+  const territories = state.mediaTerritoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
+  return `
+    <div class="field full melody-field">
+      <label>Melodías que aparecen neste recurso (opcional)</label>
+      <div id="mediaMelodyOptions" class="melody-picker">${mediaMelodyOptionsMarkup()}</div>
+      <details class="melody-new">
+        <summary>+ Nova melodía</summary>
+        <div class="melody-new-row">
+          <input id="mediaNewMelodyRhythm" type="text" list="mediaNewMelodyRhythmList" autocomplete="off" placeholder="Ritmo (xota, muiñeira...)">
+          ${rhythmDatalist("mediaNewMelodyRhythmList")}
+          <select id="mediaNewMelodyTerritory" aria-label="Lugar da nova melodía">${territories.map(territory => `<option value="${territory.id}">${escapeHtml(territory.nome)}</option>`).join("")}</select>
+          <button class="btn" type="button" id="mediaNewMelodyCreate">Crear e marcar</button>
+        </div>
+        <p id="mediaNewMelodyFeedback" class="muted"></p>
+      </details>
+    </div>
+  `;
+}
+
+function refreshMediaMelodyOptions() {
+  const box = $("#mediaMelodyOptions");
+  if (!box) return;
+  box.innerHTML = mediaMelodyOptionsMarkup();
+  const select = $("#mediaNewMelodyTerritory");
+  if (select) {
+    const previous = select.value;
+    select.innerHTML = state.mediaTerritoryIds
+      .map(id => state.territorios.find(item => item.id === id))
+      .filter(Boolean)
+      .map(territory => `<option value="${territory.id}">${escapeHtml(territory.nome)}</option>`)
+      .join("");
+    if (previous && state.mediaTerritoryIds.includes(previous)) select.value = previous;
+  }
+}
+
+function bindMediaMelodyPicker() {
+  const box = $("#mediaMelodyOptions");
+  if (!box) return;
+  box.addEventListener("change", event => {
+    const input = event.target.closest("[data-media-melody]");
+    if (!input) return;
+    const id = Number(input.dataset.mediaMelody);
+    state.mediaMelodyIds = state.mediaMelodyIds.filter(existing => Number(existing) !== id);
+    if (input.checked) state.mediaMelodyIds.push(id);
+    input.closest(".melody-chip")?.classList.toggle("is-on", input.checked);
+  });
+  box.addEventListener("click", event => {
+    if (event.target.closest("[data-media-melody-all]")) {
+      mediaMelodyCandidates().forEach(melody => {
+        if (!state.mediaMelodyIds.some(existing => Number(existing) === Number(melody.id))) state.mediaMelodyIds.push(melody.id);
+      });
+      refreshMediaMelodyOptions();
+    } else if (event.target.closest("[data-media-melody-none]")) {
+      const visible = new Set(mediaMelodyCandidates().map(melody => Number(melody.id)));
+      state.mediaMelodyIds = state.mediaMelodyIds.filter(id => !visible.has(Number(id)));
+      refreshMediaMelodyOptions();
+    }
+  });
+  $("#mediaNewMelodyCreate")?.addEventListener("click", async () => {
+    const feedback = $("#mediaNewMelodyFeedback");
+    const rhythm = $("#mediaNewMelodyRhythm").value.trim();
+    const territoryId = $("#mediaNewMelodyTerritory")?.value;
+    if (!territoryId) {
+      feedback.textContent = "Escolle antes un territorio para este recurso.";
+      return;
+    }
+    if (!rhythm) {
+      feedback.textContent = "Indica o ritmo da melodía.";
+      return;
+    }
+    feedback.textContent = "Creando...";
+    try {
+      const [id] = await postMelodies([{ territory_id: territoryId, rhythm }]);
+      state.mediaMelodyIds.push(id);
+      $("#mediaNewMelodyRhythm").value = "";
+      const created = state.melodias.find(melody => Number(melody.id) === Number(id));
+      feedback.textContent = created ? `Creada: ${melodyName(created)}.` : "Creada.";
+      refreshMediaMelodyOptions();
+    } catch (error) {
+      feedback.textContent = error.message;
+    }
+  });
+}
+
+// --- Eventos delegados (fichas, botóns e tarxetas) --------------------
+
+function bindMelodyEvents() {
+  document.addEventListener("click", async event => {
+    const target = event.target;
+    const card = target.closest("[data-open-melody]");
+    if (card) {
+      openMelodyDrawer(card.dataset.openMelody);
+      return;
+    }
+    if (target.closest("[data-close-melody-drawer]")) {
+      closeMelodyDrawer();
+      return;
+    }
+    if (target.closest("[data-close-melody-modal]")) {
+      closeMelodyModal();
+      return;
+    }
+    const create = target.closest("[data-new-melody]");
+    if (create) {
+      openMelodyModal({ territoryId: create.dataset.newMelody });
+      return;
+    }
+    const edit = target.closest("[data-edit-melody]");
+    if (edit) {
+      const id = Number(edit.dataset.editMelody);
+      closeMelodyDrawer();
+      openMelodyModal({ id });
+      return;
+    }
+    const remove = target.closest("[data-delete-melody]");
+    if (remove) {
+      if (remove.dataset.confirming !== "true") {
+        remove.dataset.confirming = "true";
+        remove.textContent = "Confirmar borrado";
+        window.setTimeout(() => {
+          if (remove.isConnected) {
+            delete remove.dataset.confirming;
+            remove.textContent = "Borrar";
+          }
+        }, 4000);
+        return;
+      }
+      remove.disabled = true;
+      try {
+        await removeMelody(Number(remove.dataset.deleteMelody));
+        closeMelodyDrawer();
+        rerenderMelodyViews();
+      } catch (error) {
+        remove.disabled = false;
+        const feedback = $("#melodyDrawerFeedback");
+        if (feedback) feedback.textContent = error.message;
+      }
+      return;
+    }
+    const withMedia = target.closest("[data-new-melody-media]");
+    if (withMedia) {
+      startMediaForMelody(Number(withMedia.dataset.newMelodyMedia));
+      return;
+    }
+    const link = target.closest("[data-link-melody-media]");
+    const unlink = target.closest("[data-unlink-melody-media]");
+    if (link || unlink) {
+      const drawer = $("#melodyDrawer");
+      const melodyId = Number(drawer?.dataset.melodyId);
+      const melody = state.melodias.find(item => Number(item.id) === melodyId);
+      if (!melody) return;
+      const feedback = $("#melodyDrawerFeedback");
+      try {
+        if (link) await linkMediaToMelody(Number(link.dataset.linkMelodyMedia), melodyId);
+        else await unlinkMediaFromMelody(Number(unlink.dataset.unlinkMelodyMedia), melody);
+        openMelodyDrawer(melodyId);
+        rerenderMelodyViews();
+      } catch (error) {
+        if (feedback) feedback.textContent = error.message;
+      }
+    }
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest?.("[data-open-melody]");
+    if (!card || event.target !== card) return;
+    event.preventDefault();
+    openMelodyDrawer(card.dataset.openMelody);
   });
 }
 
@@ -787,6 +1443,7 @@ function bindResultButtons(root = document) {
       if (territory) {
         if (button.closest("#territorySearchResults")) state.territoryQuery = "";
         closeCoplaDrawer();
+        closeMelodyDrawer();
         selectTerritory(territory);
         setView("territory");
       }
@@ -2711,6 +3368,7 @@ function renderTerritoryView() {
             <div class="stat"><b>${ctx.coplas.length}</b><span>coplas</span></div>
             <div class="stat"><b>${ctx.pezas.length}</b><span>pezas</span></div>
             <div class="stat"><b>${ctx.media.length}</b><span>media</span></div>
+            <div class="stat"><b>${ctx.melodias.length}</b><span>melodías</span></div>
           </div>
         </section>
         <div class="territory-silhouette" id="territorySilhouette" data-silhouette-hero="${territory ? territory.id : "galiza"}"></div>
@@ -2877,7 +3535,8 @@ function renderTerritoryTab(territory, ctx) {
         <div id="territoryCoplaList" class="${coplaStreamClass()}${state.coplaViewMode === "gallery" ? " territory-copla-grid" : ""}">${renderCoplaItems(sample)}</div>
       `;
     }
-    if (["pieces", "melodies", "media"].includes(state.territoryTab)) {
+    if (state.territoryTab === "melodies") return melodiesTabMarkup(null, ctx);
+    if (["pieces", "media"].includes(state.territoryTab)) {
       return `
         <section class="panel territory-limit-panel">
           <h2>Escolle un territorio menor</h2>
@@ -2916,13 +3575,7 @@ function renderTerritoryTab(territory, ctx) {
       <div class="media-grid">${media.map(mediaCard).join("") || `<article class="panel"><p class="muted">Aínda non hai media documental neste territorio.</p></article>`}</div>
     `;
   }
-  if (state.territoryTab === "melodies") {
-    const melodies = ctx.media.filter(item => ["melody", "mixed"].includes(mediaRole(item)));
-    return `
-      <div class="section-title"><h2>Melodías</h2><button class="btn" type="button" data-view="media" data-media-role="melody">+ Novo recurso</button><span class="muted">${melodies.length} recursos sonoros</span></div>
-      <div class="media-grid">${melodies.map(mediaCard).join("") || `<article class="panel"><p class="muted">Sen melodías rexistradas.</p></article>`}</div>
-    `;
-  }
+  if (state.territoryTab === "melodies") return melodiesTabMarkup(territory, ctx);
   return territorySummaryCard(territory, ctx);
 }
 
@@ -3244,6 +3897,7 @@ function mediaFormMarkup(selectedMediaTerritories, selectedMediaCoplas) {
         <div class="field full"><label>Coplas vinculadas (opcional)</label><input id="mediaCoplaQuery" type="search" placeholder="Buscar coplas polo texto..."></div>
         <div class="field full"><div id="mediaCoplaResults" class="territory-results compact"></div></div>
         <div class="field full"><div id="selectedMediaCoplaChips" class="selected-chips">${selectedMediaCoplas.map(item => selectedCoplaChip(item)).join("") || `<p class="muted">Sen coplas seleccionadas.</p>`}</div></div>
+        ${mediaMelodyFieldMarkup()}
       </div>
       <div class="gallery-actions">
         <button class="btn primary" type="button" id="saveMediaDirect">${editing ? "Gardar cambios" : "Gardar media na base local"}</button>
@@ -3273,13 +3927,14 @@ function mediaModalMarkup(selectedMediaTerritories, selectedMediaCoplas) {
   `;
 }
 
-function openMediaModal(role = "") {
+function openMediaModal(role = "", preset = {}) {
   state.mediaDefaultRole = role || "";
   state.mediaEditingId = null;
   state.mediaEditingSnapshot = null;
   state.mediaEditingPieceLinks = [];
-  state.mediaTerritoryIds = [];
+  state.mediaTerritoryIds = [...(preset.territoryIds || [])];
   state.mediaCoplaIds = [];
+  state.mediaMelodyIds = [...(preset.melodyIds || [])];
   state.mediaModalOpen = true;
   renderMediaView();
 }
@@ -3292,6 +3947,7 @@ function startEditMedia(mediaId) {
   state.mediaEditingPieceLinks = (media.links || []).filter(link => link.entity_type === "piece");
   state.mediaTerritoryIds = mediaTerritories(media).map(item => item.id);
   state.mediaCoplaIds = mediaCoplas(media).map(item => item.id);
+  state.mediaMelodyIds = mediaMelodies(media).map(item => item.id);
   state.mediaDefaultRole = "";
   state.mediaModalOpen = true;
   renderMediaView();
@@ -3305,6 +3961,7 @@ function closeMediaModal() {
   state.mediaEditingPieceLinks = [];
   state.mediaTerritoryIds = [];
   state.mediaCoplaIds = [];
+  state.mediaMelodyIds = [];
   renderMediaView();
 }
 
@@ -3329,6 +3986,7 @@ function refreshSelectedTerritoryChips() {
     const selectedCoplas = state.mediaCoplaIds.map(id => state.coplas.find(item => Number(item.id) === Number(id))).filter(Boolean);
     mediaCoplaChips.innerHTML = selectedCoplas.map(selectedCoplaChip).join("") || `<p class="muted">Sen coplas seleccionadas.</p>`;
   }
+  refreshMediaMelodyOptions();
   bindSelectedTerritoryChips();
 }
 
@@ -3538,11 +4196,12 @@ function buildMediaPayloadFromForm() {
   const territoryIds = Array.from(new Set(state.mediaTerritoryIds));
   const coplaIds = Array.from(new Set(state.mediaCoplaIds.map(Number)));
   const preservedPieceLinks = state.mediaEditingPieceLinks || [];
+  const melodyIds = Array.from(new Set((state.mediaMelodyIds || []).map(Number)));
   if (!title || !url) {
     feedback.textContent = "Indica título e URL.";
     return null;
   }
-  if (!territoryIds.length && !coplaIds.length && !preservedPieceLinks.length) {
+  if (!territoryIds.length && !coplaIds.length && !preservedPieceLinks.length && !melodyIds.length) {
     feedback.textContent = "Selecciona polo menos un territorio ou unha copla para vincular este recurso.";
     return null;
   }
@@ -3558,6 +4217,7 @@ function buildMediaPayloadFromForm() {
     links: [
       ...territoryIds.map(id => ({ entity_type: "territory", entity_id: id, relation_type: role })),
       ...coplaIds.map(id => ({ entity_type: "copla", entity_id: id, relation_type: role })),
+      ...melodyIds.map(id => ({ entity_type: "melody", entity_id: id, relation_type: role })),
       ...preservedPieceLinks.map(link => ({ entity_type: "piece", entity_id: link.entity_id, relation_type: link.relation_type || "documental" })),
     ],
   };
@@ -3941,6 +4601,7 @@ async function saveMediaDirect() {
     state.mediaEditingPieceLinks = [];
     state.mediaTerritoryIds = [];
     state.mediaCoplaIds = [];
+    state.mediaMelodyIds = [];
     state.mediaQuery = "";
     state.mediaKindFilter = "";
     state.mediaRoleFilter = "";
@@ -4005,6 +4666,7 @@ function renderMediaView() {
   all("[data-close-media-modal]", view).forEach(item => item.addEventListener("click", closeMediaModal));
   bindMediaTerritoryPicker();
   bindMediaCoplaPicker();
+  bindMediaMelodyPicker();
   bindSelectedTerritoryChips(view);
   bindMediaCards(view);
   $("#saveMediaDirect")?.addEventListener("click", saveMediaDirect);
@@ -4034,6 +4696,7 @@ function filteredMediaItems() {
       mediaLabel(mediaKind(item)),
       territoryContext.join(" "),
       (item.links || []).map(link => `${link.entity_type} ${link.entity_id} ${link.relation_type}`).join(" "),
+      mediaMelodies(item).map(melodyName).join(" "),
     ].join(" ")).includes(query);
     return matchesKind && matchesRole && matchesText;
   });
@@ -4211,6 +4874,7 @@ function renderView() {
 }
 
 function bindGlobalEvents() {
+  bindMelodyEvents();
   document.addEventListener("click", event => {
     const nav = event.target.closest("[data-view]");
     if (nav) {
@@ -4265,6 +4929,14 @@ function bindGlobalEvents() {
   if (window.matchMedia?.("(max-width: 920px)").matches) setMapCardCollapsed(true);
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") {
+      if (state.melodyModal) {
+        closeMelodyModal();
+        return;
+      }
+      if (!$("#melodyDrawer")?.hidden) {
+        closeMelodyDrawer();
+        return;
+      }
       if (state.mediaModalOpen) {
         closeMediaModal();
         return;
@@ -4286,16 +4958,19 @@ async function init() {
   updateCartBadges();
   setView(normalizeView(new URL(window.location.href).searchParams.get("mode") || new URL(window.location.href).searchParams.get("view") || "map"));
 
-  const [territorios, coplas, pezas, media] = await Promise.allSettled([
+  const [territorios, coplas, pezas, media, melodias] = await Promise.allSettled([
     getTerritorios(),
     getCoplas(),
     getPezas(),
     getMedia(),
+    getMelodias(),
   ]);
   state.territorios = territorios.status === "fulfilled" ? territorios.value : [];
   state.coplas = coplas.status === "fulfilled" ? coplas.value : [];
   state.pezas = pezas.status === "fulfilled" ? pezas.value : [];
   state.media = media.status === "fulfilled" ? media.value : [];
+  state.melodias = melodias.status === "fulfilled" ? melodias.value : [];
+  initPdfThumbs();
 
   if (window.L) {
     state.map = L.map("map", { zoomControl: false, attributionControl: false, zoomSnap: 0.25 }).setView([42.8, -8.2], 8);

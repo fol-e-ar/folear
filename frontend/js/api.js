@@ -40,6 +40,7 @@ function buildPaths() {
     coplas: `${dataBase}data/exports/coplas/coplas.json`,
     pezas: `${dataBase}data/exports/pezas/pezas.json`,
     media: `${dataBase}data/exports/media/media.json`,
+    melodias: `${dataBase}data/exports/melodias/melodias.json`,
     geo: {
       prov: `${assetsBase}assets/web/provincias.web.geojson`,
       com: `${assetsBase}assets/web/comarcas.web.geojson`,
@@ -122,6 +123,17 @@ export async function getPezas() {
 export async function getMedia() {
   const paths = buildPaths();
   return fetchJson(paths.media);
+}
+
+export async function getMelodias() {
+  // O inventario de melodías é novo: se o ficheiro aínda non existe (base
+  // sen migrar) a aplicación segue funcionando coma antes, só sen melodías.
+  try {
+    const data = await fetchJson(buildPaths().melodias);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
 }
 
 export function clearApiCache() {

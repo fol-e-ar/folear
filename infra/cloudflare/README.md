@@ -135,6 +135,24 @@ seguindo o mesmo patrón que `backend/schema/00N_*.sql` no proxecto Python.
 `wrangler d1 migrations apply` lévalles a conta. (A migración `0001` xa
 inclúe todo o esquema real coñecido a día de hoxe, ver "Estado actual".)
 
+### 0002 · inventario de melodías
+
+`migrations/0002_melodies.sql` crea a táboa `melodies` (espello de
+`backend/schema/008_melodies.sql`). É aditiva e idempotente. Para levala á D1
+de produción:
+
+```bash
+cd infra/cloudflare
+npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0002_melodies.sql
+npx wrangler deploy
+```
+
+Mentres a migración non estea aplicada, o Worker segue funcionando coma antes
+(`melodias.json` devolve `[]`); só falla gardar melodías. Rutas novas:
+`GET /data/exports/melodias/melodias.json`, `POST /api/melodies` e
+`DELETE /api/melodies`. Os recursos ligan coas melodías cunha ligazón
+`entity_type = "melody"` en `media_links`.
+
 ## Acceso e secrets
 
 O plan orixinal (2026-09-27) era Cloudflare Access, pero require un plan

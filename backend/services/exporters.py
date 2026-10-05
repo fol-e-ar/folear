@@ -6,6 +6,8 @@ from .db_paths import (
     COPLAS_EXPORT_JSON,
     MEDIA_EXPORT_DIR,
     MEDIA_EXPORT_JSON,
+    MELODIES_EXPORT_DIR,
+    MELODIES_EXPORT_JSON,
     PIECES_EXPORT_DIR,
     PIECES_EXPORT_JSON,
     TERRITORIES_EXPORT_DIR,
@@ -18,6 +20,7 @@ def ensure_export_dirs() -> None:
     COPLAS_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     PIECES_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     MEDIA_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    MELODIES_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def export_territories(conn: sqlite3.Connection) -> list[dict]:
@@ -274,6 +277,42 @@ def export_media(conn: sqlite3.Connection) -> list[dict]:
     return result
 
 
+def melody_name(rhythm: str, number: int, territory_name: str) -> str:
+    return f"{rhythm} número {number} de {territory_name}"
+
+
+def export_melodies(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT
+          m.id,
+          m.territory_id,
+          m.rhythm,
+          m.number,
+          m.notes,
+          m.created_at,
+          m.updated_at,
+          t.nome AS territory_nome
+        FROM melodies m
+        JOIN territories t ON t.id = m.territory_id
+        ORDER BY t.nome, m.rhythm_key, m.number
+        """
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "territory_id": row["territory_id"],
+            "rhythm": row["rhythm"],
+            "number": row["number"],
+            "name": melody_name(row["rhythm"], row["number"], row["territory_nome"]),
+            "notes": row["notes"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
 def write_json(path, payload) -> None:
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -288,15 +327,18 @@ def export_web(conn: sqlite3.Connection) -> dict[str, int]:
     coplas = export_coplas(conn)
     pieces = export_pieces(conn)
     media = export_media(conn)
+    melodies = export_melodies(conn)
 
     write_json(TERRITORIES_EXPORT_JSON, territories)
     write_json(COPLAS_EXPORT_JSON, coplas)
     write_json(PIECES_EXPORT_JSON, pieces)
     write_json(MEDIA_EXPORT_JSON, media)
+    write_json(MELODIES_EXPORT_JSON, melodies)
 
     return {
         "territories": len(territories),
         "coplas": len(coplas),
         "pieces": len(pieces),
         "media": len(media),
+        "melodies": len(melodies),
     }

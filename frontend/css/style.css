@@ -4018,7 +4018,7 @@ label {
 }
 
 .map-card h2 {
-  padding-right: 92px;
+  padding-right: 124px;
 }
 
 .map-card.is-collapsed h2 {
@@ -4027,10 +4027,10 @@ label {
 
 .map-card-sil {
   position: absolute;
-  top: 58px;
-  right: 24px;
-  width: 78px;
-  height: 78px;
+  top: 16px;
+  right: 56px;
+  width: 64px;
+  height: 58px;
   color: var(--ink);
   pointer-events: none;
 }
@@ -4165,4 +4165,299 @@ label {
     flex-flow: row wrap;
     gap: 8px 28px;
   }
+}
+
+/* Modal de recurso: marxes interiores, cabeceira sólida e campos que non desbordan */
+
+.media-modal-panel {
+  overflow-x: hidden;
+}
+
+.media-modal-head {
+  background: var(--float-bg);
+  padding: 22px 28px 12px;
+}
+
+.media-modal .submit-media-panel {
+  padding: 4px 28px 28px;
+}
+
+.media-modal .formgrid > *,
+.media-modal .input-action > * {
+  min-width: 0;
+}
+
+.media-modal .submit-media-panel .gallery-actions {
+  margin-top: 22px;
+}
+
+@media (max-width: 720px) {
+  .media-modal-head {
+    padding: 18px 18px 8px;
+  }
+
+  .media-modal .submit-media-panel {
+    padding: 4px 18px 24px;
+  }
+}
+
+/* Melodías: inventario, ficha e selector no formulario de recursos */
+
+.melody-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0 22px;
+}
+
+.melody-group {
+  margin-top: 26px;
+}
+
+.melody-group-title {
+  margin: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.melody-group-title .muted {
+  margin-left: 6px;
+}
+
+.melody-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.melody-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  cursor: pointer;
+  background: var(--tint);
+  border-radius: 18px;
+  transition: background 0.15s ease;
+}
+
+.melody-card:hover,
+.melody-card:focus-visible {
+  outline: 0;
+  background: var(--tint-strong);
+}
+
+.melody-card h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.melody-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.melody-card .meta {
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.melody-empty {
+  margin-top: 18px;
+}
+
+.melody-drawer .melody-resources {
+  display: grid;
+  gap: 18px;
+}
+
+.melody-resource {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.melody-resource .media-card {
+  width: 100%;
+}
+
+.melody-link-existing {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.melody-link-existing input {
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  outline: none;
+}
+
+.melody-link-existing input:focus-visible {
+  border-bottom-color: var(--accent);
+}
+
+.melody-modal .media-modal-panel {
+  width: min(560px, calc(100vw - 40px));
+}
+
+.melody-modal-body {
+  padding: 4px 28px 28px;
+}
+
+.melody-modal-body .formgrid > * {
+  min-width: 0;
+}
+
+.melody-place {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.melody-name-preview {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.melody-field .melody-picker {
+  display: grid;
+  gap: 12px;
+  margin: 6px 0 10px;
+}
+
+.melody-picker-place {
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.melody-picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.melody-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  background: var(--tint);
+  border-radius: 999px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.melody-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.melody-chip.is-on {
+  color: #fff;
+  background: var(--ink);
+}
+
+.melody-chip:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.melody-picker-actions {
+  display: flex;
+  gap: 16px;
+}
+
+.melody-new {
+  margin-top: 6px;
+}
+
+.melody-new summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.melody-new-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.melody-new-row input,
+.melody-new-row select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  outline: none;
+}
+
+.tag.is-melody {
+  color: var(--ink);
+  background: var(--tint-strong);
+}
+
+@media (max-width: 720px) {
+  .melody-modal-body {
+    padding: 4px 18px 24px;
+  }
+
+  .melody-new-row {
+    grid-template-columns: 1fr;
+  }
+
+  .melody-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.melody-drawer .media-preview {
+  aspect-ratio: 16 / 6;
+}
+
+.melody-modal-body .gallery-actions {
+  margin-top: 22px;
+}
+
+/* Miniatura da primeira páxina dos PDFs */
+
+.media-preview.has-thumb {
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  background: #fff;
+}
+
+.media-preview.has-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
 }

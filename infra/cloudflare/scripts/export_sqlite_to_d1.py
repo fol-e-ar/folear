@@ -86,7 +86,15 @@ TABLES = [
         "id", "territory_id", "trait", "category", "notes",
         "created_at", "updated_at",
     ]),
+    # Inventario de melodías (migración 0002 / backend 008). Só se exporta se
+    # a SQLite orixe xa a ten (as bases anteriores á 008 non teñen a táboa).
+    ("13_melodies", "melodies", [
+        "id", "territory_id", "rhythm", "rhythm_key", "number", "notes",
+        "created_at", "updated_at",
+    ]),
 ]
+
+OPTIONAL_TABLES = {"melodies"}
 
 
 def sql_literal(value) -> str:
@@ -106,6 +114,13 @@ def connect_readonly(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
+    ).fetchone()
+    return row is not None
 
 
 def known_ids(conn: sqlite3.Connection, table: str, id_col: str = "id") -> set:
@@ -137,6 +152,8 @@ def find_orphans(conn: sqlite3.Connection) -> dict[str, list[dict]]:
         ("copla_version_territories", "territory_id", territory_ids, "territories"),
         ("territory_traits", "territory_id", territory_ids, "territories"),
     ]
+    if table_exists(conn, "melodies"):
+        checks.append(("melodies", "territory_id", territory_ids, "territories"))
 
     for table, col, valid_ids, parent in checks:
         rows = conn.execute(f"SELECT rowid AS _rowid_, * FROM {table}").fetchall()
@@ -171,6 +188,9 @@ def export() -> None:
     manifest = {"tables": {}, "excluded_orphans": {}}
 
     for filename, table, columns in TABLES:
+        if table in OPTIONAL_TABLES and not table_exists(conn, table):
+            print(f"{table}: a SQLite orixe aínda non ten esta táboa, omítese.")
+            continue
         rows = conn.execute(f"SELECT rowid AS _rowid_, * FROM {table}").fetchall()
         skip_rowids = orphan_rowids.get(table, set())
 

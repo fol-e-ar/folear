@@ -316,6 +316,40 @@ async function exportMediaJson(env) {
   return mediaRows.map(media => ({ ...media, links: linksByMedia.get(media.id) || [] }));
 }
 
+// Melodías (inventario). Se a migración 0002 aínda non se aplicou na D1, a
+// táboa non existe: nese caso devólvese [] e o resto da aplicación segue a
+// funcionar igual que antes.
+async function loadMelodiesOrEmpty(env, sql) {
+  try {
+    const { results } = await env.DB.prepare(sql).all();
+    return results;
+  } catch (err) {
+    if (/no such table: melodies/i.test(String(err && err.message))) return [];
+    throw err;
+  }
+}
+
+async function exportMelodiasJson(env) {
+  const rows = await loadMelodiesOrEmpty(
+    env,
+    `SELECT m.id, m.territory_id, m.rhythm, m.number, m.notes, m.created_at, m.updated_at,
+            t.nome AS territory_nome
+     FROM melodies m
+     JOIN territories t ON t.id = m.territory_id
+     ORDER BY t.nome, m.rhythm_key, m.number`
+  );
+  return rows.map(row => ({
+    id: row.id,
+    territory_id: row.territory_id,
+    rhythm: row.rhythm,
+    number: row.number,
+    name: `${row.rhythm} número ${row.number} de ${row.territory_nome}`,
+    notes: row.notes,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
+}
+
 // ---------------------------------------------------------------------
 // Validación (espello de backend/services/importers.py)
 // ---------------------------------------------------------------------
@@ -441,6 +475,8 @@ async function validateMediaPayload(env, payload) {
   const knownCoplas = new Set(coplaRows.map(row => row.id));
   const { results: pieceRows } = await env.DB.prepare("SELECT id FROM pieces").all();
   const knownPieces = new Set(pieceRows.map(row => row.id));
+  const melodyRows = await loadMelodiesOrEmpty(env, "SELECT id FROM melodies");
+  const knownMelodies = new Set(melodyRows.map(row => row.id));
   const { results: mediaRows } = await env.DB.prepare("SELECT id FROM media").all();
   const knownMediaIds = new Set(mediaRows.map(row => row.id));
 
@@ -482,7 +518,7 @@ async function validateMediaPayload(env, payload) {
       }
       const entityType = link.entity_type;
       const entityId = link.entity_id;
-      if (!["territory", "copla", "piece"].includes(entityType)) {
+      if (!["territory", "copla", "piece", "melody"].includes(entityType)) {
         errors.push(`${label}: entity_type non válido: ${entityType}`);
         continue;
       }
@@ -503,6 +539,14 @@ async function validateMediaPayload(env, payload) {
           errors.push(`${label}: piece_id non válido: ${entityId}`);
         } else if (!knownPieces.has(numericId)) {
           errors.push(`${label}: peza descoñecida: ${entityId}`);
+        }
+      }
+      if (entityType === "melody") {
+        const numericId = Number(entityId);
+        if (!Number.isInteger(numericId)) {
+          errors.push(`${label}: melody_id non válido: ${entityId}`);
+        } else if (!knownMelodies.has(numericId)) {
+          errors.push(`${label}: melodía descoñecida: ${entityId}`);
         }
       }
     }
@@ -685,6 +729,212 @@ async function deleteMedia(env, mediaIds) {
     await env.DB.prepare("DELETE FROM media WHERE id = ?").bind(mediaId).run();
   }
   return ids;
+}
+
+
+// ---------------------------------------------------------------------
+// Melodías (espello de import_melodies / delete_melodies en Python)
+// ---------------------------------------------------------------------
+
+const MAX_RHYTHM_LENGTH = 60;
+
+async function validateMelodiesPayload(env, payload) {
+  if (!payload || !Array.isArray(payload.melodies)) {
+    return ["O JSON debe ser un obxecto con clave 'melodies' en forma de lista."];
+  }
+  const { results: territoryRows } = await env.DB.prepare("SELECT id FROM territories").all();
+  const knownTerritories = new Set(territoryRows.map(row => row.id));
+  const knownMelodies = new Set((await env.DB.prepare("SELECT id FROM melodies").all()).results.map(row => row.id));
+  const errors = [];
+  payload.melodies.forEach((melody, index) => {
+    const label = `Melodía #${index + 1}`;
+    if (typeof melody !== "object" || melody === null) {
+      errors.push(`${label}: debe ser un obxecto.`);
+      return;
+    }
+    const melodyId = melody.id;
+    if (melodyId !== undefined && melodyId !== null) {
+      if (!Number.isInteger(melodyId)) {
+        errors.push(`${label}: 'id' debe ser enteiro cando existe.`);
+        return;
+      }
+      if (!knownMelodies.has(melodyId)) {
+        errors.push(`${label}: non existe unha melodía co id ${melodyId}.`);
+        return;
+      }
+    }
+    if (melody._delete) {
+      if (melodyId === undefined || melodyId === null) errors.push(`${label}: falta 'id' para borrar.`);
+      return;
+    }
+    if (typeof melody.territory_id !== "string" || !knownTerritories.has(melody.territory_id)) {
+      errors.push(`${label}: territorio descoñecido: ${melody.territory_id}`);
+    }
+    if (typeof melody.rhythm !== "string" || !melody.rhythm.trim()) {
+      errors.push(`${label}: falta 'rhythm' ou está baleiro.`);
+    } else if (melody.rhythm.trim().length > MAX_RHYTHM_LENGTH) {
+      errors.push(`${label}: o ritmo é demasiado longo.`);
+    }
+    if (melody.number !== undefined && melody.number !== null && (!Number.isInteger(melody.number) || melody.number < 1)) {
+      errors.push(`${label}: 'number' debe ser un enteiro maior ca 0.`);
+    }
+    if (melody.notes !== undefined && melody.notes !== null && typeof melody.notes !== "string") {
+      errors.push(`${label}: 'notes' debe ser texto.`);
+    }
+  });
+  return errors;
+}
+
+async function canonicalMelodyRhythm(db, rhythm, rhythmKey) {
+  const row = await db.prepare(
+    "SELECT rhythm FROM melodies WHERE rhythm_key = ? ORDER BY id LIMIT 1"
+  ).bind(rhythmKey).first();
+  if (row) return row.rhythm;
+  return rhythm.charAt(0).toUpperCase() + rhythm.slice(1);
+}
+
+async function nextMelodyNumber(db, territoryId, rhythmKey) {
+  const row = await db.prepare(
+    "SELECT COALESCE(MAX(number), 0) + 1 AS next FROM melodies WHERE territory_id = ? AND rhythm_key = ?"
+  ).bind(territoryId, rhythmKey).first();
+  return Number(row.next);
+}
+
+async function deleteMelodyRows(db, melodyId) {
+  const melody = await db.prepare("SELECT territory_id FROM melodies WHERE id = ?").bind(melodyId).first();
+  const { results: links } = await db.prepare(
+    "SELECT media_id, relation_type FROM media_links WHERE entity_type = 'melody' AND entity_id = ?"
+  ).bind(String(melodyId)).all();
+  await db.prepare("DELETE FROM media_links WHERE entity_type = 'melody' AND entity_id = ?").bind(String(melodyId)).run();
+  for (const link of links) {
+    const remaining = await db.prepare("SELECT COUNT(*) AS total FROM media_links WHERE media_id = ?").bind(link.media_id).first();
+    if (remaining.total === 0 && melody) {
+      await db.prepare(
+        "INSERT OR IGNORE INTO media_links (media_id, entity_type, entity_id, relation_type) VALUES (?, 'territory', ?, ?)"
+      ).bind(link.media_id, melody.territory_id, link.relation_type || "direct").run();
+    }
+  }
+  await db.prepare("DELETE FROM melodies WHERE id = ?").bind(melodyId).run();
+}
+
+async function importMelodies(env, payload) {
+  const errors = await validateMelodiesPayload(env, payload);
+  if (errors.length) throw new Error(errors.join("\n"));
+
+  const db = env.DB;
+  const affectedIds = [];
+  for (const melody of payload.melodies) {
+    let melodyId = Number.isInteger(melody.id) ? melody.id : null;
+
+    if (melody._delete) {
+      await deleteMelodyRows(db, melodyId);
+      affectedIds.push(melodyId);
+      continue;
+    }
+
+    const territoryId = melody.territory_id;
+    let rhythm = melody.rhythm.trim().split(/\s+/).join(" ");
+    const rhythmKey = normalizeText(rhythm);
+    rhythm = await canonicalMelodyRhythm(db, rhythm, rhythmKey);
+    const notes = (melody.notes || "").trim() || null;
+    let number = Number.isInteger(melody.number) ? melody.number : null;
+
+    let current = null;
+    if (melodyId !== null) {
+      current = await db.prepare(
+        "SELECT territory_id, rhythm_key, number FROM melodies WHERE id = ?"
+      ).bind(melodyId).first();
+      const sameGroup = current.territory_id === territoryId && current.rhythm_key === rhythmKey;
+      if (number === null) number = sameGroup ? current.number : await nextMelodyNumber(db, territoryId, rhythmKey);
+    } else if (number === null) {
+      number = await nextMelodyNumber(db, territoryId, rhythmKey);
+    }
+
+    const clash = await db.prepare(
+      `SELECT id FROM melodies
+       WHERE territory_id = ? AND rhythm_key = ? AND number = ? AND id IS NOT ?`
+    ).bind(territoryId, rhythmKey, number, melodyId).first();
+    if (clash) throw new Error(`Xa existe a melodía ${rhythm} número ${number} neste territorio.`);
+
+    if (current) {
+      await db.prepare(
+        `UPDATE melodies
+         SET territory_id = ?, rhythm = ?, rhythm_key = ?, number = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
+      ).bind(territoryId, rhythm, rhythmKey, number, notes, melodyId).run();
+    } else {
+      const result = await db.prepare(
+        `INSERT INTO melodies (territory_id, rhythm, rhythm_key, number, notes, updated_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+      ).bind(territoryId, rhythm, rhythmKey, number, notes).run();
+      melodyId = result.meta.last_row_id;
+    }
+    affectedIds.push(melodyId);
+  }
+  return affectedIds;
+}
+
+async function deleteMelodies(env, melodyIds) {
+  if (!Array.isArray(melodyIds) || melodyIds.length === 0) {
+    throw new Error("Cómpre indicar polo menos un ID de melodía para borrar.");
+  }
+  const ids = melodyIds.map(id => {
+    if (!Number.isInteger(id)) throw new Error(`ID de melodía non válido: ${JSON.stringify(id)}.`);
+    return id;
+  });
+  const known = new Set((await env.DB.prepare("SELECT id FROM melodies").all()).results.map(row => row.id));
+  const missing = ids.filter(id => !known.has(id));
+  if (missing.length) throw new Error(`Non existe ningunha melodía con estes IDs: [${missing.join(", ")}].`);
+  for (const id of ids) await deleteMelodyRows(env.DB, id);
+  return ids;
+}
+
+
+// ---------------------------------------------------------------------
+// Pasarela de PDFs para a miniatura da primeira páxina (pdf.js no
+// navegador non pode ler a maioría dos PDFs alleos por CORS). Só serve
+// URLs que xa están rexistradas como recurso, e só http/https públicos.
+// ---------------------------------------------------------------------
+
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
+
+function isInternalHost(hostname) {
+  const host = hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return true;
+  if (host.includes(":")) return true; // IPv6 literal
+  const parts = host.split(".").map(Number);
+  if (parts.length === 4 && parts.every(n => Number.isInteger(n) && n >= 0 && n <= 255)) {
+    const [a, b] = parts;
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  return false;
+}
+
+async function handlePdfProxy(env, url) {
+  const target = url.searchParams.get("url") || "";
+  if (!isValidUrl(target)) return errorResponse("URL non válida.", { env });
+  if (isInternalHost(new URL(target).hostname)) return errorResponse("Enderezo non permitido.", { status: 403, env });
+  const known = await env.DB.prepare("SELECT 1 AS ok FROM media WHERE url = ? LIMIT 1").bind(target).first();
+  if (!known) return errorResponse("Só se poden previsualizar PDFs rexistrados.", { status: 403, env });
+
+  const upstream = await fetch(target, {
+    headers: { "User-Agent": "Fol-e-ar-pdf-preview/1.0", Accept: "application/pdf,*/*" },
+    redirect: "follow",
+  });
+  if (!upstream.ok) return errorResponse(`O servidor do PDF respondeu ${upstream.status}.`, { status: 502, env });
+  const declared = Number(upstream.headers.get("content-length") || 0);
+  if (declared > MAX_PDF_BYTES) return errorResponse("O PDF é demasiado grande para previsualizalo.", { env });
+  const body = await upstream.arrayBuffer();
+  if (body.byteLength > MAX_PDF_BYTES) return errorResponse("O PDF é demasiado grande para previsualizalo.", { env });
+  const head = new TextDecoder("latin1").decode(body.slice(0, 1024));
+  if (!head.includes("%PDF")) return errorResponse("O recurso non é un PDF.", { env });
+  return new Response(body, {
+    headers: {
+      "content-type": "application/pdf",
+      "cache-control": "private, max-age=86400",
+      ...corsHeaders(env),
+    },
+  });
 }
 
 
@@ -1205,6 +1455,23 @@ export default {
       }
       if (request.method === "GET" && url.pathname === "/data/exports/media/media.json") {
         return jsonResponse(await exportMediaJson(env), { env });
+      }
+
+      if (request.method === "GET" && url.pathname === "/data/exports/melodias/melodias.json") {
+        return jsonResponse(await exportMelodiasJson(env), { env });
+      }
+      if (request.method === "GET" && url.pathname === "/api/pdf-proxy") {
+        return await handlePdfProxy(env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/melodies") {
+        const payload = await request.json();
+        const ids = await importMelodies(env, payload);
+        return jsonResponse({ ok: true, ids }, { env });
+      }
+      if (request.method === "DELETE" && url.pathname === "/api/melodies") {
+        const payload = await request.json().catch(() => ({}));
+        const ids = await deleteMelodies(env, payload.ids);
+        return jsonResponse({ ok: true, ids }, { env });
       }
 
       if (request.method === "POST" && url.pathname === "/api/coplas") {

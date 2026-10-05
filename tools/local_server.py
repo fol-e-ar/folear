@@ -17,11 +17,14 @@ from backend.services.exporters import export_web
 from backend.services.importers import (
     delete_coplas,
     delete_media,
+    delete_melodies,
     import_coplas,
     import_media,
+    import_melodies,
     import_pieces,
     import_territory_traits,
 )
+from backend.services.pdf_proxy import PdfProxyError, fetch_registered_pdf
 from backend.services.pdf import (
     PdfRenderError,
     render_piece_draft_pdf,
@@ -94,7 +97,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 self._send_json(500, {"ok": False, "error": str(exc)})
             return
 
-        if self.path not in {"/api/coplas", "/api/media", "/api/pieces", "/api/territory-traits"}:
+        if self.path not in {"/api/coplas", "/api/media", "/api/pieces", "/api/territory-traits", "/api/melodies"}:
             self._send_json(404, {"error": "Endpoint non atopado."})
             return
 
@@ -110,6 +113,8 @@ class LocalHandler(SimpleHTTPRequestHandler):
                     ids = import_media(conn, payload)
                 elif self.path == "/api/territory-traits":
                     ids = import_territory_traits(conn, payload)
+                elif self.path == "/api/melodies":
+                    ids = import_melodies(conn, payload)
                 else:
                     ids = import_pieces(conn, payload)
                 conn.commit()
@@ -121,7 +126,7 @@ class LocalHandler(SimpleHTTPRequestHandler):
             self._send_json(400, {"ok": False, "error": str(exc)})
 
     def do_DELETE(self) -> None:
-        if self.path not in {"/api/coplas", "/api/media"}:
+        if self.path not in {"/api/coplas", "/api/media", "/api/melodies"}:
             self._send_json(404, {"error": "Endpoint non atopado."})
             return
 
@@ -134,6 +139,8 @@ class LocalHandler(SimpleHTTPRequestHandler):
             try:
                 if self.path == "/api/coplas":
                     deleted = delete_coplas(conn, ids)
+                elif self.path == "/api/melodies":
+                    deleted = delete_melodies(conn, ids)
                 else:
                     deleted = delete_media(conn, ids)
                 conn.commit()
@@ -176,6 +183,21 @@ class LocalHandler(SimpleHTTPRequestHandler):
                 self._send_json(400, {"ok": False, "error": str(exc)})
             except Exception as exc:
                 self._send_json(500, {"ok": False, "error": str(exc)})
+            return
+
+        if path == "/api/pdf-proxy":
+            try:
+                target = parse_qs(parsed.query).get("url", [""])[0]
+                conn = connect(DB_PATH)
+                try:
+                    body = fetch_registered_pdf(conn, target)
+                finally:
+                    conn.close()
+                self._send_pdf(200, body, "preview.pdf")
+            except PdfProxyError as exc:
+                self._send_json(400, {"ok": False, "error": str(exc)})
+            except Exception as exc:
+                self._send_json(502, {"ok": False, "error": f"Non se puido ler o PDF: {exc}"})
             return
 
         if not path == "/api/link-preview":
@@ -230,9 +252,12 @@ def main() -> int:
     print("API local: POST /api/media")
     print("API local: POST /api/pieces")
     print("API local: POST /api/territory-traits")
+    print("API local: POST /api/melodies")
+    print("API local: DELETE /api/melodies")
     print("API local: POST /api/pdf/piece-draft")
     print("API local: GET /api/pieces/{id}/pdf")
     print("API local: GET /api/territories/{id}/pdf")
+    print("API local: GET /api/pdf-proxy?url=... (miniaturas de PDFs)")
     print()
     print("Para parar: Ctrl+C")
     server.serve_forever()

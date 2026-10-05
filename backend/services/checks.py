@@ -5,10 +5,11 @@ from urllib.parse import urlparse
 from .db_paths import (
     COPLAS_EXPORT_JSON,
     MEDIA_EXPORT_JSON,
+    MELODIES_EXPORT_JSON,
     PIECES_EXPORT_JSON,
     TERRITORIES_EXPORT_JSON,
 )
-from .exporters import export_coplas, export_media, export_pieces, export_territories
+from .exporters import export_coplas, export_media, export_melodies, export_pieces, export_territories
 
 
 def valid_url(url: str) -> bool:
@@ -22,6 +23,7 @@ def run_checks(conn: sqlite3.Connection) -> list[str]:
     territory_ids = {row["id"] for row in conn.execute("SELECT id FROM territories").fetchall()}
     copla_ids = {row["id"] for row in conn.execute("SELECT id FROM coplas").fetchall()}
     piece_ids = {row["id"] for row in conn.execute("SELECT id FROM pieces").fetchall()}
+    melody_ids = {row["id"] for row in conn.execute("SELECT id FROM melodies").fetchall()}
 
     copla_state_rows = conn.execute(
         "SELECT id, territory_state FROM coplas"
@@ -89,6 +91,19 @@ def run_checks(conn: sqlite3.Connection) -> list[str]:
             f"Trazo de territorio {row['id']} referencia territory inexistente: {row['territory_id']}"
         )
 
+    orphan_melodies = conn.execute(
+        """
+        SELECT m.id, m.territory_id
+        FROM melodies m
+        LEFT JOIN territories t ON t.id = m.territory_id
+        WHERE t.id IS NULL
+        """
+    ).fetchall()
+    for row in orphan_melodies:
+        issues.append(
+            f"Melodía {row['id']} referencia territory inexistente: {row['territory_id']}"
+        )
+
     piece_positions = conn.execute(
         """
         SELECT piece_id, position, COUNT(*) AS total
@@ -154,6 +169,14 @@ def run_checks(conn: sqlite3.Connection) -> list[str]:
             else:
                 if numeric_id not in piece_ids:
                     issues.append(f"Media {row['media_id']} referencia peza inexistente: {entity_id}")
+        elif entity_type == "melody":
+            try:
+                numeric_id = int(entity_id)
+            except (TypeError, ValueError):
+                issues.append(f"Media {row['media_id']} referencia melodía non numérica: {entity_id}")
+            else:
+                if numeric_id not in melody_ids:
+                    issues.append(f"Media {row['media_id']} referencia melodía inexistente: {entity_id}")
         else:
             issues.append(f"Media {row['media_id']} usa entity_type non soportado: {entity_type}")
 
@@ -173,6 +196,7 @@ def run_checks(conn: sqlite3.Connection) -> list[str]:
         COPLAS_EXPORT_JSON: export_coplas(conn),
         PIECES_EXPORT_JSON: export_pieces(conn),
         MEDIA_EXPORT_JSON: export_media(conn),
+        MELODIES_EXPORT_JSON: export_melodies(conn),
     }
     for path, expected in expected_payloads.items():
         if not path.exists():

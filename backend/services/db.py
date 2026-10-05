@@ -11,6 +11,7 @@ MIGRATION_004 = "004_copla_versions"
 MIGRATION_005 = "005_copla_version_territories"
 MIGRATION_006 = "006_piece_inline_text"
 MIGRATION_007 = "007_copla_volta_and_traits"
+MIGRATION_008 = "008_melodies"
 
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -368,6 +369,10 @@ def apply_007_copla_volta_and_traits(conn: sqlite3.Connection) -> None:
     execute_sql_file(conn, SCHEMA_DIR / "007_copla_volta_and_traits.sql")
 
 
+def apply_008_melodies(conn: sqlite3.Connection) -> None:
+    execute_sql_file(conn, SCHEMA_DIR / "008_melodies.sql")
+
+
 def migrate(db_path: Path = DB_PATH) -> list[str]:
     ensure_parent_dir(db_path)
 
@@ -410,6 +415,11 @@ def migrate(db_path: Path = DB_PATH) -> list[str]:
             apply_007_copla_volta_and_traits(conn)
             mark_migration(conn, MIGRATION_007)
             applied_now.append(MIGRATION_007)
+
+        if MIGRATION_008 not in applied:
+            apply_008_melodies(conn)
+            mark_migration(conn, MIGRATION_008)
+            applied_now.append(MIGRATION_008)
 
         conn.commit()
     finally:

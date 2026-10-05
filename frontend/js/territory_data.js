@@ -113,8 +113,9 @@ export function filterPiecesByTerritory(pieces, territoryIds, coplas) {
   });
 }
 
-export function filterMediaByContext(mediaItems, territoryIds, coplas, pieces) {
+export function filterMediaByContext(mediaItems, territoryIds, coplas, pieces, melodyIds = []) {
   const ids = new Set(territoryIds);
+  const melodies = new Set(melodyIds.map(String));
   const coplaIds = new Set(coplas.map(item => String(item.id)));
   const pieceIds = new Set(pieces.map(item => String(item.id)));
 
@@ -123,6 +124,7 @@ export function filterMediaByContext(mediaItems, territoryIds, coplas, pieces) {
       if (link.entity_type === "territory") return ids.has(link.entity_id);
       if (link.entity_type === "copla") return coplaIds.has(String(link.entity_id));
       if (link.entity_type === "piece") return pieceIds.has(String(link.entity_id));
+      if (link.entity_type === "melody") return melodies.has(String(link.entity_id));
       return false;
     })
   );

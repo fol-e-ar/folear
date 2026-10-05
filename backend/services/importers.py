@@ -468,6 +468,7 @@ def validate_media_payload(conn: sqlite3.Connection, payload) -> list[str]:
     known_territories = load_known_territories(conn)
     known_coplas = load_known_coplas(conn)
     known_pieces = {row["id"] for row in conn.execute("SELECT id FROM pieces").fetchall()}
+    known_melodies = {row["id"] for row in conn.execute("SELECT id FROM melodies").fetchall()}
     known_media_ids = {row["id"] for row in conn.execute("SELECT id FROM media").fetchall()}
 
     if not isinstance(payload, dict) or not isinstance(payload.get("media"), list):
@@ -506,7 +507,7 @@ def validate_media_payload(conn: sqlite3.Connection, payload) -> list[str]:
                 continue
             entity_type = link.get("entity_type")
             entity_id = link.get("entity_id")
-            if entity_type not in {"territory", "copla", "piece"}:
+            if entity_type not in {"territory", "copla", "piece", "melody"}:
                 errors.append(f"Media #{index}: entity_type non válido: {entity_type}")
                 continue
             if entity_type == "territory" and entity_id not in known_territories:
@@ -527,6 +528,14 @@ def validate_media_payload(conn: sqlite3.Connection, payload) -> list[str]:
                 else:
                     if numeric_id not in known_pieces:
                         errors.append(f"Media #{index}: peza descoñecida: {entity_id}")
+            if entity_type == "melody":
+                try:
+                    numeric_id = int(entity_id)
+                except (TypeError, ValueError):
+                    errors.append(f"Media #{index}: melody_id non válido: {entity_id}")
+                else:
+                    if numeric_id not in known_melodies:
+                        errors.append(f"Media #{index}: melodía descoñecida: {entity_id}")
 
     return errors
 
@@ -666,6 +675,196 @@ def import_media(conn: sqlite3.Connection, payload) -> list[int]:
             )
 
     return imported_ids
+
+
+MAX_RHYTHM_LENGTH = 60
+
+
+def load_known_melodies(conn: sqlite3.Connection) -> set[int]:
+    rows = conn.execute("SELECT id FROM melodies").fetchall()
+    return {row["id"] for row in rows}
+
+
+def canonical_rhythm(conn: sqlite3.Connection, rhythm: str, rhythm_key: str) -> str:
+    """Mesma grafía para o mesmo ritmo en todo o inventario.
+
+    Se xa hai melodías con ese ritmo (sen contar maiúsculas nin acentos),
+    reutilízase a súa grafía; se non, ponse a primeira letra en maiúscula.
+    """
+    row = conn.execute(
+        "SELECT rhythm FROM melodies WHERE rhythm_key = ? ORDER BY id LIMIT 1",
+        (rhythm_key,),
+    ).fetchone()
+    if row:
+        return row["rhythm"]
+    return rhythm[:1].upper() + rhythm[1:]
+
+
+def next_melody_number(conn: sqlite3.Connection, territory_id: str, rhythm_key: str) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(MAX(number), 0) + 1 AS next FROM melodies WHERE territory_id = ? AND rhythm_key = ?",
+        (territory_id, rhythm_key),
+    ).fetchone()
+    return int(row["next"])
+
+
+def validate_melodies_payload(conn: sqlite3.Connection, payload) -> list[str]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("melodies"), list):
+        return ["O JSON debe ser un obxecto con clave 'melodies' en forma de lista."]
+    known_territories = load_known_territories(conn)
+    known_melodies = load_known_melodies(conn)
+    errors: list[str] = []
+    for index, melody in enumerate(payload["melodies"], start=1):
+        if not isinstance(melody, dict):
+            errors.append(f"Melodía #{index}: debe ser un obxecto.")
+            continue
+        melody_id = melody.get("id")
+        if melody_id is not None:
+            if not isinstance(melody_id, int) or isinstance(melody_id, bool):
+                errors.append(f"Melodía #{index}: 'id' debe ser enteiro cando existe.")
+                continue
+            if melody_id not in known_melodies:
+                errors.append(f"Melodía #{index}: non existe unha melodía co id {melody_id}.")
+                continue
+        if melody.get("_delete"):
+            if melody_id is None:
+                errors.append(f"Melodía #{index}: falta 'id' para borrar.")
+            continue
+        territory_id = melody.get("territory_id")
+        if not isinstance(territory_id, str) or territory_id not in known_territories:
+            errors.append(f"Melodía #{index}: territorio descoñecido: {territory_id}")
+        rhythm = melody.get("rhythm")
+        if not isinstance(rhythm, str) or not rhythm.strip():
+            errors.append(f"Melodía #{index}: falta 'rhythm' ou está baleiro.")
+        elif len(rhythm.strip()) > MAX_RHYTHM_LENGTH:
+            errors.append(f"Melodía #{index}: o ritmo é demasiado longo.")
+        number = melody.get("number")
+        if number is not None and (not isinstance(number, int) or isinstance(number, bool) or number < 1):
+            errors.append(f"Melodía #{index}: 'number' debe ser un enteiro maior ca 0.")
+        notes = melody.get("notes")
+        if notes is not None and not isinstance(notes, str):
+            errors.append(f"Melodía #{index}: 'notes' debe ser texto.")
+    return errors
+
+
+def delete_melody_rows(conn: sqlite3.Connection, melody_id: int) -> None:
+    """Borra unha melodía e as súas ligazóns con media.
+
+    media_links é polimórfica (sen FK cara a melodies), así que hai que limpala
+    á man. Se algún recurso quedase sen ningunha ligazón, ábrelle unha cara ao
+    territorio da melodía para que non quede orfo e invisible.
+    """
+    melody = conn.execute(
+        "SELECT territory_id FROM melodies WHERE id = ?", (melody_id,)
+    ).fetchone()
+    links = conn.execute(
+        "SELECT media_id, relation_type FROM media_links WHERE entity_type = 'melody' AND entity_id = ?",
+        (str(melody_id),),
+    ).fetchall()
+    conn.execute(
+        "DELETE FROM media_links WHERE entity_type = 'melody' AND entity_id = ?",
+        (str(melody_id),),
+    )
+    for link in links:
+        remaining = conn.execute(
+            "SELECT COUNT(*) AS total FROM media_links WHERE media_id = ?",
+            (link["media_id"],),
+        ).fetchone()["total"]
+        if remaining == 0 and melody:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO media_links (media_id, entity_type, entity_id, relation_type)
+                VALUES (?, 'territory', ?, ?)
+                """,
+                (link["media_id"], melody["territory_id"], link["relation_type"] or "direct"),
+            )
+    conn.execute("DELETE FROM melodies WHERE id = ?", (melody_id,))
+
+
+def import_melodies(conn: sqlite3.Connection, payload) -> list[int]:
+    errors = validate_melodies_payload(conn, payload)
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    affected_ids: list[int] = []
+    for melody in payload["melodies"]:
+        melody_id = melody.get("id")
+
+        if melody.get("_delete"):
+            delete_melody_rows(conn, melody_id)
+            affected_ids.append(melody_id)
+            continue
+
+        territory_id = melody["territory_id"]
+        rhythm = " ".join(melody["rhythm"].split())
+        rhythm_key = normalize_text(rhythm)
+        rhythm = canonical_rhythm(conn, rhythm, rhythm_key)
+        notes = (melody.get("notes") or "").strip() or None
+        number = melody.get("number")
+
+        current = None
+        if isinstance(melody_id, int):
+            current = conn.execute(
+                "SELECT territory_id, rhythm_key, number FROM melodies WHERE id = ?",
+                (melody_id,),
+            ).fetchone()
+            same_group = (
+                current["territory_id"] == territory_id and current["rhythm_key"] == rhythm_key
+            )
+            if number is None:
+                number = current["number"] if same_group else next_melody_number(conn, territory_id, rhythm_key)
+        elif number is None:
+            number = next_melody_number(conn, territory_id, rhythm_key)
+
+        clash = conn.execute(
+            """
+            SELECT id FROM melodies
+            WHERE territory_id = ? AND rhythm_key = ? AND number = ? AND id IS NOT ?
+            """,
+            (territory_id, rhythm_key, number, melody_id),
+        ).fetchone()
+        if clash:
+            raise ValueError(
+                f"Xa existe a melodía {rhythm} número {number} neste territorio."
+            )
+
+        if current is not None:
+            conn.execute(
+                """
+                UPDATE melodies
+                SET territory_id = ?, rhythm = ?, rhythm_key = ?, number = ?, notes = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (territory_id, rhythm, rhythm_key, number, notes, melody_id),
+            )
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO melodies (territory_id, rhythm, rhythm_key, number, notes, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (territory_id, rhythm, rhythm_key, number, notes),
+            )
+            melody_id = cur.lastrowid
+        affected_ids.append(melody_id)
+
+    return affected_ids
+
+
+def delete_melodies(conn: sqlite3.Connection, melody_ids) -> list[int]:
+    if not isinstance(melody_ids, list) or not melody_ids:
+        raise ValueError("Cómpre indicar polo menos un ID de melodía para borrar.")
+    known = load_known_melodies(conn)
+    for raw_id in melody_ids:
+        if not isinstance(raw_id, int) or isinstance(raw_id, bool):
+            raise ValueError(f"ID de melodía non válido: {raw_id!r}.")
+    missing = [melody_id for melody_id in melody_ids if melody_id not in known]
+    if missing:
+        raise ValueError(f"Non existe ningunha melodía con estes IDs: {missing}.")
+    for melody_id in melody_ids:
+        delete_melody_rows(conn, melody_id)
+    return melody_ids
 
 
 def import_territories(conn: sqlite3.Connection, payload) -> int:
