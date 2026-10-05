@@ -4065,9 +4065,41 @@ label {
   gap: 8px;
 }
 
+.chip-row {
+  position: relative;
+}
+
 .territory-children.is-collapsed .chip-row {
-  max-height: 88px;
+  max-height: 136px;
   overflow: hidden;
+}
+
+.chip-more {
+  height: 40px;
+  padding: 0 20px;
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--tint);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip-more[hidden] {
+  display: none;
+}
+
+.chip-more:hover {
+  color: var(--bg);
+  background: var(--ink);
+}
+
+@media (max-width: 720px) {
+  .territory-children.is-collapsed .chip-row {
+    max-height: 88px;
+  }
 }
 
 .chip-territory {
@@ -4124,7 +4156,7 @@ label {
   .territory-silhouette {
     order: -1;
     justify-content: flex-start;
-    height: 150px;
+    height: 120px;
   }
 }
 

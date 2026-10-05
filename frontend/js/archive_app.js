@@ -2641,20 +2641,42 @@ function bindTerritoryTabs(root = $("#view-territory")) {
 }
 
 const CHILD_LABELS = { prov: "Comarcas", com: "Concellos", con: "Parroquias" };
-const CHILD_CHIP_LIMIT = 36;
 
 function territoryChildrenMarkup(territory, ctx) {
   const children = [...ctx.children].sort((a, b) => Number(territoryHasCoplas(b)) - Number(territoryHasCoplas(a)) || a.nome.localeCompare(b.nome, "gl"));
   if (!children.length) return "";
   const label = territory ? (CHILD_LABELS[territory.tipo] || "Subterritorios") : "Provincias";
-  const long = children.length > CHILD_CHIP_LIMIT;
   return `
-    <section class="territory-children ${long ? "is-collapsed" : ""}" id="territoryChildren" aria-label="${label}">
-      <div class="territory-children-head"><span class="eyebrow">${label} · ${children.length}</span>${long ? `<button class="link-button" type="button" id="toggleTerritoryChildren" aria-expanded="false">Ver todos</button>` : ""}</div>
+    <section class="territory-children is-collapsed" id="territoryChildren" aria-label="${label}">
+      <div class="territory-children-head"><span class="eyebrow">${label} · ${children.length}</span></div>
       <div class="chip-row">${children.map(territoryChipMarkup).join("")}</div>
+      <button class="chip-more" type="button" id="toggleTerritoryChildren" aria-expanded="false" hidden></button>
     </section>
   `;
 }
+
+/* Recolle os chips en 2 filas (móbil) ou 3 (escritorio) e engade «Ver máis» só se non caben. */
+function fitTerritoryChildren(root = $("#view-territory")) {
+  const box = $("#territoryChildren", root);
+  const row = box && $(".chip-row", box);
+  const more = box && $("#toggleTerritoryChildren", box);
+  if (!box || !row || !more) return;
+  const open = box.dataset.open === "true";
+  box.classList.add("is-collapsed");
+  const limit = row.clientHeight;
+  const overflow = row.scrollHeight > limit + 2;
+  const hidden = overflow ? all(".chip-territory", row).filter(chip => chip.offsetTop >= limit - 4).length : 0;
+  more.hidden = !overflow;
+  box.classList.toggle("is-collapsed", overflow && !open);
+  more.textContent = open ? "Ver menos" : `Ver máis · ${hidden}`;
+  more.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+let childrenResizeTimer = null;
+window.addEventListener("resize", () => {
+  window.clearTimeout(childrenResizeTimer);
+  childrenResizeTimer = window.setTimeout(() => fitTerritoryChildren(), 120);
+});
 
 function renderTerritoryView() {
   const view = $("#view-territory");
@@ -2704,11 +2726,10 @@ function renderTerritoryView() {
     state.territoryQuery = event.target.value;
     renderTerritorySearchResults(view);
   });
-  $("#toggleTerritoryChildren")?.addEventListener("click", event => {
+  $("#toggleTerritoryChildren")?.addEventListener("click", () => {
     const box = $("#territoryChildren", view);
-    const collapsed = box.classList.toggle("is-collapsed");
-    event.currentTarget.textContent = collapsed ? "Ver todos" : "Ver menos";
-    event.currentTarget.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    box.dataset.open = box.dataset.open === "true" ? "false" : "true";
+    fitTerritoryChildren(view);
   });
   bindTerritoryTabs(view);
   bindResultButtons(view);
@@ -2717,6 +2738,8 @@ function renderTerritoryView() {
   bindTerritoryCoplaViewToggle(view);
   bindTerritorySummaryCard(view);
   renderTerritorySearchResults(view);
+  fitTerritoryChildren(view);
+  document.fonts?.ready.then(() => fitTerritoryChildren(view));
   hydrateSilhouettes(view);
 }
 
