@@ -891,6 +891,142 @@ async function deleteMelodies(env, melodyIds) {
 
 
 // ---------------------------------------------------------------------
+// Vista previa de ligazóns ("Obter datos" no formulario de recursos).
+// Espello de /api/link-preview de tools/local_server.py: le as etiquetas
+// og:/twitter:/title da páxina e devolve título, descrición, miniatura,
+// proveedor e autoría. Para YouTube, Spotify e SoundCloud, se a páxina non
+// dá datos útiles (os servidores de Cloudflare reciben pantallas de
+// consentimento ou bloqueos que o teu ordenador non), usa o seu oEmbed.
+// ---------------------------------------------------------------------
+
+const PREVIEW_MAX_BYTES = 512000;
+
+function decodeHtmlEntities(text) {
+  const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", middot: "·", ndash: "–", mdash: "—", hellip: "…", laquo: "«", raquo: "»", copy: "©" };
+  return String(text).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, entity) => {
+    if (entity[0] === "#") {
+      const code = entity[1].toLowerCase() === "x" ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+      try {
+        return String.fromCodePoint(code);
+      } catch {
+        return match;
+      }
+    }
+    const value = named[entity.toLowerCase()];
+    return value !== undefined ? value : match;
+  });
+}
+
+function parseLinkPreviewHtml(html) {
+  const meta = {};
+  for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+    const attrs = {};
+    for (const found of tag.matchAll(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+      attrs[found[1].toLowerCase()] = decodeHtmlEntities(found[2] ?? found[3] ?? "");
+    }
+    const key = attrs.property || attrs.name;
+    if (key && attrs.content) meta[key] = attrs.content;
+  }
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return { meta, title: titleMatch ? decodeHtmlEntities(titleMatch[1]).trim() : "" };
+}
+
+async function readLimitedText(response, limit) {
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (total < limit) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.length;
+  }
+  await reader.cancel().catch(() => {});
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new TextDecoder("utf-8").decode(merged);
+}
+
+const CONSENT_TITLES = /before you continue|antes de continuar|just a moment|access denied|attention required/i;
+
+function oembedEndpoint(target) {
+  const host = new URL(target).hostname.replace(/^www\./, "").replace(/^m\./, "");
+  const encoded = encodeURIComponent(target);
+  if (host === "youtube.com" || host === "youtu.be") return `https://www.youtube.com/oembed?format=json&url=${encoded}`;
+  if (host === "open.spotify.com") return `https://open.spotify.com/oembed?url=${encoded}`;
+  if (host === "soundcloud.com") return `https://soundcloud.com/oembed?format=json&url=${encoded}`;
+  return null;
+}
+
+async function handleLinkPreview(env, url) {
+  const target = url.searchParams.get("url") || "";
+  if (!isValidUrl(target)) return errorResponse("URL non válida.", { env });
+  if (isInternalHost(new URL(target).hostname)) return errorResponse("Enderezo non permitido.", { status: 403, env });
+
+  const result = { title: null, description: null, thumbnail_url: null, provider: null, author_or_source: null };
+  let pageError = null;
+
+  try {
+    const response = await fetch(target, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Fol-e-ar-preview/1.0)",
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "gl,es;q=0.9,en;q=0.8",
+        Cookie: "CONSENT=YES+1; SOCS=CAI",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!response.ok) throw new Error(`O servidor respondeu ${response.status}.`);
+    const { meta, title: pageTitle } = parseLinkPreviewHtml(await readLimitedText(response, PREVIEW_MAX_BYTES));
+    const description = meta["og:description"] || meta.description || meta["twitter:description"] || null;
+    const title = meta["og:title"] || meta["twitter:title"] || pageTitle || null;
+    if (title && !CONSENT_TITLES.test(title)) {
+      result.title = title;
+      result.description = description;
+      result.thumbnail_url = meta["og:image"] || meta["twitter:image"] || null;
+      result.provider = meta["og:site_name"] || null;
+      if ((meta["og:type"] || "").startsWith("music") && description && description.includes(" · ")) {
+        // As paxinas de faixa de Spotify formatan a descrición coma
+        // "Artista · Cancion · Ano": o primeiro segmento é a autoría.
+        const first = description.split(" · ")[0].trim();
+        if (first && first.toLowerCase() !== title.trim().toLowerCase()) result.author_or_source = first;
+      }
+    }
+  } catch (error) {
+    pageError = error instanceof Error ? error.message : String(error);
+  }
+
+  if (!result.title || !result.thumbnail_url) {
+    const endpoint = oembedEndpoint(target);
+    if (endpoint) {
+      try {
+        const response = await fetch(endpoint, { signal: AbortSignal.timeout(7000) });
+        if (response.ok) {
+          const data = await response.json();
+          result.title = result.title || data.title || null;
+          result.thumbnail_url = result.thumbnail_url || data.thumbnail_url || null;
+          result.provider = result.provider || data.provider_name || null;
+          result.author_or_source = result.author_or_source || data.author_name || null;
+        }
+      } catch {
+        // Se o oEmbed tamén falla, quedamos co que haxa.
+      }
+    }
+  }
+
+  if (!result.title && !result.thumbnail_url) {
+    return errorResponse(pageError || "A páxina non ofrece título nin miniatura.", { env });
+  }
+  return jsonResponse({ ok: true, ...result }, { env });
+}
+
+
+// ---------------------------------------------------------------------
 // Pasarela de PDFs para a miniatura da primeira páxina (pdf.js no
 // navegador non pode ler a maioría dos PDFs alleos por CORS). Só serve
 // URLs que xa están rexistradas como recurso, e só http/https públicos.
@@ -1459,6 +1595,9 @@ export default {
 
       if (request.method === "GET" && url.pathname === "/data/exports/melodias/melodias.json") {
         return jsonResponse(await exportMelodiasJson(env), { env });
+      }
+      if (request.method === "GET" && url.pathname === "/api/link-preview") {
+        return await handleLinkPreview(env, url);
       }
       if (request.method === "GET" && url.pathname === "/api/pdf-proxy") {
         return await handlePdfProxy(env, url);
