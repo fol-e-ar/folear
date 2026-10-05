@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": 1,
+    "territory_id": "par:3603705",
+    "rhythm": "Xota",
+    "number": 1,
+    "name": "Xota número 1 de Moscoso (San Paio)",
+    "notes": null,
+    "created_at": "2026-10-05 11:54:55",
+    "updated_at": "2026-10-05 11:54:55"
+  }
+]
