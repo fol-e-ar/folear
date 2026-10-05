@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fol e ar</title>
   <meta name="description" content="Atlas textual, musical e editorial de coplas galegas.">
+  <link rel="icon" href="./assets/marca/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="./assets/marca/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="./assets/marca/apple-touch-icon.png">
+  <meta name="theme-color" content="#F7F7F2">
+  <link rel="manifest" href="./manifest.webmanifest">
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="./css/style.css">
@@ -33,14 +38,15 @@
 </head>
 <body class="fol-shell">
   <div id="global-loading" class="global-loading" role="status" aria-live="polite">
-    <div class="global-loading-spinner" aria-hidden="true"></div>
-    <p>Cargando o atlas de fol e ar…</p>
+    <svg class="global-loading-mark isotipo" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path pathLength="100" d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg>
+    <p>Cargando o arquivo…</p>
   </div>
   <div class="app">
     <aside class="sidebar" id="sidebar" aria-label="Navegación principal">
-      <a class="brand" href="./index.html" aria-label="Fol e ar">
+      <a class="brand" href="./index.html" aria-label="Fol e ar, inicio">
+        <svg class="brand-iso isotipo" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg>
         <span class="brandtext">
-          <strong class="brandtitle">Fol e ar</strong>
+          <strong class="brandtitle wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true" focusable="false"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="7.4"/></svg>l e ar</strong>
           <small class="brandsub">arquivo e repertorio</small>
         </span>
       </a>
@@ -127,6 +133,7 @@
         <button type="button" role="menuitem" data-view="pieces"><i>♪</i>Pezas<b class="cart-count" data-cart-count hidden>0</b></button>
         <button type="button" role="menuitem" data-view="media"><i>◧</i>Media</button>
         <button type="button" role="menuitem" data-view="melodies"><i>♫</i>Melodías</button>
+        <button type="button" role="menuitem" data-view="about"><i><svg class="isotipo" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg></i>Sobre o arquivo</button>
       </div>
     </div>
   </nav>

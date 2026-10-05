@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>.t{stroke:#171717}.a{fill:#C24330}@media (prefers-color-scheme:dark){.t{stroke:#F7F7F2}.a{fill:#E0644F}}</style>
+  <g transform="translate(32 32) scale(1.26) translate(-32.3 -33.7)">
+    <path class="t" d="M50.79 27.16A20 20 0 1 1 38.84 15.21" fill="none" stroke-width="7" stroke-linecap="round"/>
+    <circle class="a" cx="51.1" cy="14.9" r="5"/>
+  </g>
+</svg>

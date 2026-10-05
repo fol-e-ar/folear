@@ -4565,3 +4565,213 @@ label {
 .melody-grid-title:first-child {
   margin-top: 0;
 }
+
+/* ==========================================================
+   MARCA — fol e ar
+   Isotipo: anel aberto (o fol) e punto vermello (o ar).
+   Logotipo: DM Mono en minúsculas co «o» substituído polo anel.
+   Ficheiros en assets/marca/.
+   ========================================================== */
+
+:root {
+  --accent-on-dark: #E0644F;
+}
+
+.isotipo {
+  flex: none;
+  overflow: visible;
+  fill: none;
+}
+
+.isotipo path {
+  stroke: currentColor;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.isotipo circle {
+  fill: var(--accent);
+}
+
+.wordmark {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.wordmark-o {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.54em;
+  overflow: visible;
+  vertical-align: -0.02em;
+}
+
+.wordmark-o path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 8.4;
+  stroke-linecap: round;
+}
+
+.wordmark-o circle {
+  fill: var(--accent);
+}
+
+/* Cabeceira da barra lateral */
+
+.brand {
+  position: relative;
+  min-height: 34px;
+}
+
+.brandtitle.wordmark {
+  font-size: 23px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.brandsub {
+  margin-top: 7px;
+}
+
+.brand-iso {
+  display: none;
+  width: 20px;
+  height: 21px;
+}
+
+.sidebar.collapsed .brand-iso {
+  display: block;
+}
+
+.sidebar.collapsed .brand {
+  gap: 0;
+}
+
+.mobile-nav .mobile-menu button {
+  white-space: nowrap;
+}
+
+.mobile-nav .mobile-menu .isotipo {
+  width: 15px;
+  height: 16px;
+  vertical-align: -2px;
+}
+
+.mobile-nav .mobile-menu .isotipo circle {
+  fill: var(--accent-on-dark);
+}
+
+/* Carga: o fol baleirándose e enchéndose sobre a trama */
+
+.global-loading {
+  background-color: var(--bg);
+  background-image: url("../assets/marca/filigrana-trama.svg");
+  background-position: center;
+  background-size: 640px 640px;
+}
+
+.global-loading-mark {
+  box-sizing: content-box;
+  width: 46px;
+  height: 48px;
+  padding: 26px;
+  color: var(--ink);
+  background: var(--bg);
+  border-radius: 50%;
+}
+
+.global-loading-mark path {
+  stroke-dasharray: 100 200;
+  animation: fol-respira 1.8s ease-in-out infinite alternate;
+}
+
+.global-loading-mark circle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ar-escapa 1.8s ease-in-out infinite alternate;
+}
+
+.global-loading p {
+  margin: 0;
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg);
+  border-radius: 999px;
+}
+
+@keyframes fol-respira {
+  from { stroke-dasharray: 100 200; }
+  to { stroke-dasharray: 80 200; }
+}
+
+@keyframes ar-escapa {
+  from { transform: translate(0, 0); opacity: 1; }
+  to { transform: translate(5px, -5px); opacity: 0.35; }
+}
+
+/* Sobre o arquivo: logotipo grande e ondas de ar */
+
+.about-hero {
+  position: relative;
+  isolation: isolate;
+}
+
+.about-hero::after {
+  content: "";
+  position: absolute;
+  top: -40px;
+  right: 0;
+  bottom: -16px;
+  left: 45%;
+  z-index: -1;
+  pointer-events: none;
+  background: url("../assets/marca/filigrana-ondas.svg") no-repeat left bottom / auto 100%;
+}
+
+.about-hero h1.wordmark {
+  margin: 6px 0 18px;
+  font-size: clamp(56px, 9vw, 112px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.about-hero p {
+  max-width: 560px;
+}
+
+@media (max-width: 720px) {
+  .about-hero::after {
+    display: none;
+  }
+}
+
+/* Estados baleiros: o anel en lapis */
+
+.empty-panel::before,
+.melody-empty::before {
+  content: "";
+  display: block;
+  width: 26px;
+  height: 27px;
+  margin-bottom: 12px;
+  background: var(--line-strong);
+  -webkit-mask: url("../assets/marca/isotipo.svg") no-repeat center / contain;
+  mask: url("../assets/marca/isotipo.svg") no-repeat center / contain;
+}
+
+.melody-empty[hidden]::before {
+  display: none;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}

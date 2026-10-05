@@ -1,0 +1,15 @@
+{
+  "name": "Fol e ar",
+  "short_name": "Fol e ar",
+  "description": "Arquivo e repertorio de coplas galegas.",
+  "lang": "gl",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F7F7F2",
+  "theme_color": "#F7F7F2",
+  "icons": [
+    { "src": "./assets/marca/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "./assets/marca/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./assets/marca/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

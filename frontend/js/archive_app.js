@@ -5038,10 +5038,10 @@ function submitAboutCopla(event) {
 function renderAboutView() {
   $("#view-about").innerHTML = `
     <div class="page">
-      <div class="page-head">
+      <div class="page-head about-hero">
         <div>
-          <div class="eyebrow">Proxecto</div>
-          <h1>Sobre Fol e ar</h1>
+          <div class="eyebrow">Sobre o arquivo</div>
+          <h1 class="wordmark" aria-label="Fol e ar">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true" focusable="false"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</h1>
           <p>Arquivo dixital para conservar, consultar e montar repertorio tradicional galego desde o territorio e desde o texto.</p>
         </div>
       </div>

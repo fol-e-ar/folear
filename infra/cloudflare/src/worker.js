@@ -1089,15 +1089,18 @@ async function handlePdfProxy(env, url) {
 
 const PDF_TYPE_LABELS = { prov: "Provincia", com: "Comarca", con: "Concello", par: "Parroquia" };
 
-const PRINT_CSS = `@page {
+const PRINT_CSS = `@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500&display=swap");
+
+@page {
   size: A4;
   margin: 18mm 16mm 18mm;
 }
 
 @page {
   @bottom-right {
-    content: "Fol e Ar \\\\ " counter(page);
-    color: #8a8d86;
+    content: "fol e ar \\\\ " counter(page);
+    color: #6B6B64;
+    font-family: "DM Mono", "Courier New", monospace;
     font-size: 8pt;
   }
 }
@@ -1107,54 +1110,102 @@ const PRINT_CSS = `@page {
 }
 
 body {
-  color: #22261f;
-  font-family: "Arial", "Helvetica", sans-serif;
+  color: #171717;
+  font-family: "Inter", "Arial", "Helvetica", sans-serif;
   font-size: 10.5pt;
   line-height: 1.45;
   margin: 0;
 }
 
+/* Filigrana: ondas de ar na esquina de cada páxina */
+.filigrana {
+  position: fixed;
+  right: -16mm;
+  bottom: -18mm;
+  z-index: -1;
+  width: 110mm;
+  height: 110mm;
+  fill: none;
+  stroke: #E6E6DF;
+  stroke-width: 0.5;
+  stroke-linecap: round;
+}
+
 .document-header {
-  border-bottom: 0.4pt solid #d7d9d2;
+  border-bottom: 0.4pt solid #D8D8D0;
   margin-bottom: 8mm;
   padding-bottom: 5mm;
 }
 
 .brand {
-  color: #6f7668;
+  align-items: baseline;
+  color: #171717;
+  display: flex;
+  gap: 4mm;
+  margin-bottom: 7mm;
+}
+
+.wordmark {
+  font-family: "DM Mono", "Courier New", monospace;
+  font-size: 15pt;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.wordmark-o {
+  display: inline-block;
+  height: 0.54em;
+  overflow: visible;
+  vertical-align: -0.02em;
+  width: 0.6em;
+}
+
+.wordmark-o path {
+  fill: none;
+  stroke: #171717;
+  stroke-linecap: round;
+  stroke-width: 8.4;
+}
+
+.wordmark-o circle {
+  fill: #C24330;
+}
+
+.brand-sub {
+  color: #6B6B64;
   font-size: 8pt;
-  letter-spacing: 0.12em;
-  margin-bottom: 5mm;
-  text-transform: uppercase;
 }
 
 h1 {
-  color: #151814;
-  font-family: "Georgia", "Times New Roman", serif;
-  font-size: 26pt;
+  color: #171717;
+  font-family: "DM Mono", "Courier New", monospace;
+  font-size: 24pt;
   font-weight: 400;
-  line-height: 1.05;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
   margin: 0 0 3mm;
 }
 
 .meta-row {
-  color: #5d6458;
+  color: #6B6B64;
   display: flex;
   flex-wrap: wrap;
-  font-size: 9pt;
+  font-family: "DM Mono", "Courier New", monospace;
+  font-size: 8.5pt;
   gap: 3mm;
   margin-bottom: 3mm;
 }
 
 .meta-row span + span::before {
-  color: #a2a79f;
+  color: #8C8C84;
   content: "\\\\";
   margin-right: 3mm;
 }
 
 .description,
 .notes {
-  color: #545a50;
+  color: #4A4A45;
   margin: 2mm 0 0;
 }
 
@@ -1182,10 +1233,11 @@ h1 {
 
 .part-title {
   break-after: avoid;
-  color: #305946;
-  font-size: 9.5pt;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: #C24330;
+  font-family: "DM Mono", "Courier New", monospace;
+  font-size: 8.5pt;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   margin: 0 0 4mm;
   text-transform: uppercase;
 }
@@ -1197,21 +1249,20 @@ h1 {
 }
 
 .copla-text {
-  font-family: "Georgia", "Times New Roman", serif;
-  font-size: 11.2pt;
-  line-height: 1.38;
+  font-family: "DM Mono", "Courier New", monospace;
+  font-size: 10pt;
+  line-height: 1.5;
   white-space: pre-line;
 }
 
 .copla.retrouso .copla-text {
-  color: #3f463c;
-  font-style: italic;
+  color: #4A4A45;
   margin-left: 8mm;
 }
 
 .copla-meta,
 .copla-notes {
-  color: #737a70;
+  color: #6B6B64;
   font-size: 8pt;
   margin-top: 1.8mm;
 }
@@ -1221,7 +1272,7 @@ h1 {
 }
 
 .empty {
-  color: #6c7368;
+  color: #6B6B64;
   font-style: italic;
 }
 `;
@@ -1478,8 +1529,9 @@ function renderPiecePdfHtml(document) {
   <style>${PRINT_CSS}</style>
 </head>
 <body>
+  <svg class="filigrana" viewBox="0 0 100 100" aria-hidden="true"><path d="M93.5 93.3A8 8 0 1 1 88.7 88.5"/><path d="M102.0 90.2A17 17 0 1 1 91.8 80.0"/><path d="M112.3 86.4A28 28 0 1 1 95.6 69.7"/><path d="M124.5 82.0A41 41 0 1 1 100.0 57.5"/><path d="M138.6 76.8A56 56 0 1 1 105.2 43.4"/><path d="M154.6 71.0A73 73 0 1 1 111.0 27.4"/><path d="M172.5 64.5A92 92 0 1 1 117.5 9.5"/></svg>
   <header class="document-header">
-    <div class="brand">Fol e Ar</div>
+    <div class="brand"><span class="wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</span><span class="brand-sub">arquivo e repertorio</span></div>
     <h1>${pdfHtmlEscape(document.title)}</h1>
     <div class="meta-row">${renderPdfMeta(document)}</div>
     <p class="description">${pdfHtmlEscape(document.description)}</p>
@@ -1504,8 +1556,9 @@ function renderTerritoryPdfHtml(document) {
   <style>${PRINT_CSS}</style>
 </head>
 <body>
+  <svg class="filigrana" viewBox="0 0 100 100" aria-hidden="true"><path d="M93.5 93.3A8 8 0 1 1 88.7 88.5"/><path d="M102.0 90.2A17 17 0 1 1 91.8 80.0"/><path d="M112.3 86.4A28 28 0 1 1 95.6 69.7"/><path d="M124.5 82.0A41 41 0 1 1 100.0 57.5"/><path d="M138.6 76.8A56 56 0 1 1 105.2 43.4"/><path d="M154.6 71.0A73 73 0 1 1 111.0 27.4"/><path d="M172.5 64.5A92 92 0 1 1 117.5 9.5"/></svg>
   <header class="document-header">
-    <div class="brand">Fol e Ar</div>
+    <div class="brand"><span class="wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</span><span class="brand-sub">arquivo e repertorio</span></div>
     <h1>${pdfHtmlEscape(document.title)}</h1>
     <div class="meta-row">${meta}</div>
     <p class="description">${pdfHtmlEscape(document.context)}</p>
