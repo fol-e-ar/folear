@@ -1,0 +1,395 @@
+/* Espazo persoal: perfil, directorio de persoas e favoritos. Ver js/profile.js. */
+
+/* "Persoas" só ten sentido con login (en local e sen API non hai perfís). */
+body:not([data-auth-mode="google"]) [data-people-nav] {
+  display: none !important;
+}
+
+/* Conta na barra lateral: a liña do nome é un botón cara ao perfil. */
+.sidebar-foot button.account-line.is-link {
+  gap: 10px;
+  width: 100%;
+  padding: 6px 0;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-foot button.account-line.is-link:hover .account-text strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sidebar-foot button.account-line.is-link.active::after {
+  display: none;
+}
+
+.sidebar-foot a.account-privacy {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.sidebar-foot a.account-privacy:hover {
+  color: var(--ink);
+}
+
+.sidebar.collapsed .sidebar-foot a.account-privacy span:not(.nav-icon) {
+  display: none;
+}
+
+.mobile-nav .mobile-menu a.mobile-privacy {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: #bdbdbd;
+  text-decoration: none;
+}
+
+.mobile-nav .mobile-menu a.mobile-privacy i {
+  width: 20px;
+  font-style: normal;
+  text-align: center;
+  opacity: 0.8;
+}
+
+/* Estrelas de favorito */
+
+.fav-btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.fav-btn:hover,
+.fav-btn:focus-visible {
+  color: var(--accent);
+  background: var(--tint);
+  outline: 0;
+}
+
+.fav-btn.is-on {
+  color: var(--accent);
+}
+
+.fav-btn.has-label {
+  height: auto;
+  padding: 7px 12px;
+  font-size: 14px;
+  border: 1px solid var(--line);
+}
+
+.fav-btn.has-label .fav-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.fav-row {
+  margin: 8px 0 2px;
+}
+
+.fav-slot {
+  display: inline-flex;
+}
+
+.fav-slot.is-float {
+  position: absolute;
+  top: 12px;
+  right: 52px;
+  z-index: 1;
+}
+
+.fav-slot.in-top {
+  flex: 0 0 auto;
+}
+
+.incipit-row .fav-slot {
+  align-self: center;
+  margin-left: 6px;
+}
+
+#coplaDrawer .drawer-actions .fav-btn.has-label {
+  margin-right: auto;
+}
+
+/* O meu espazo e persoas */
+
+.profile-page,
+.people-page {
+  max-width: 880px;
+  padding-bottom: 80px;
+}
+
+.profile-page .panel,
+.people-page .panel {
+  margin-top: 18px;
+}
+
+.profile-id {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.account-avatar.is-large {
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  font-size: 22px;
+}
+
+.profile-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+}
+
+.profile-form .field {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.profile-form .field.full,
+.profile-form .check-row,
+.profile-form .form-actions {
+  grid-column: 1 / -1;
+}
+
+.profile-form label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.profile-form small,
+.small-print {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.profile-form code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.check-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.profile-form .check-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-weight: 400;
+}
+
+.profile-form .check-row input[type="checkbox"] {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 3px 0 0;
+  accent-color: var(--ink);
+}
+
+.profile-form .check-row span {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+
+.profile-form .check-row strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.place-pick {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.place-pick input {
+  flex: 1;
+  min-width: 0;
+}
+
+.place-results {
+  display: grid;
+  overflow: hidden;
+  background: var(--float-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.place-results[hidden] {
+  display: none;
+}
+
+.place-results button {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 9px 12px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.place-results button:hover,
+.place-results button:focus-visible {
+  background: var(--tint);
+  outline: 0;
+}
+
+.place-results span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.fav-list {
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.fav-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.fav-open {
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 10px 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.fav-open strong {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fav-open span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.fav-open:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.people-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.person-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px;
+  color: var(--ink);
+  text-decoration: none;
+  background: var(--panel);
+  border-radius: var(--radius);
+  transition: background 120ms ease;
+}
+
+.person-card:hover,
+.person-card:focus-visible {
+  background: var(--tint);
+  outline: 0;
+}
+
+.person-card-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.person-place {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.person-bio {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.person-bio-full {
+  margin: 0;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+@media (max-width: 720px) {
+  .profile-form {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-page,
+  .people-page {
+    padding-bottom: 110px;
+  }
+}

@@ -1748,7 +1748,19 @@ function publicViewer(viewer) {
 
 async function handleAuthMe(request, env) {
   const viewer = await getViewer(request, env);
-  return jsonNoStore({ ok: true, mode: authMode(env), user: publicViewer(viewer) }, { env });
+  const user = publicViewer(viewer);
+  if (user && viewer.id > 0 && !viewer.open) {
+    try {
+      const row = await env.DB.prepare("SELECT handle, display_name, is_public FROM profiles WHERE user_id = ?").bind(viewer.id).first();
+      if (row) {
+        user.profile = { handle: row.handle || "", display_name: row.display_name || "", is_public: Boolean(row.is_public) };
+        if (row.display_name) user.name = row.display_name;
+      }
+    } catch (err) {
+      // Sen migración 0004 segue valendo o nome de Google.
+    }
+  }
+  return jsonNoStore({ ok: true, mode: authMode(env), user }, { env });
 }
 
 async function handleGoogleStart(request, env, url) {
@@ -1902,11 +1914,322 @@ async function handleUserRole(request, env, url) {
 }
 
 // ---------------------------------------------------------------------
+// Caché dos exportes públicos
+//
+// Cada visita carga catro exportes que se constrúen lendo milleiros de
+// filas de D1 (a cota gratuíta é de 5 M de filas lidas ao día). Para non
+// repetilo en cada visita, `site_meta.data_version` sobe con cada escritura
+// de coplas/recursos/melodías e o exporte cachéase por versión:
+//   - ETag = versión -> o navegador recibe 304 sen que se lea nada máis.
+//   - Caché do bordo de Cloudflare (Cache API, só con dominio propio) por
+//     versión -> o exporte constrúese unha vez por versión e centro de datos.
+// Se a migración 0004 non está aplicada, calcúlase sempre coma antes.
+// ---------------------------------------------------------------------
+
+async function readDataVersion(env) {
+  try {
+    const row = await env.DB.prepare("SELECT value FROM site_meta WHERE key = 'data_version'").first();
+    return row && row.value != null ? String(row.value) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+async function bumpDataVersion(env) {
+  try {
+    await env.DB.prepare(
+      "UPDATE site_meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'data_version'"
+    ).run();
+  } catch (err) {
+    // Sen migración 0004 non hai caché que invalidar.
+  }
+}
+
+async function cachedExport(request, env, ctx, url, name, build) {
+  const version = await readDataVersion(env);
+  if (version === null) return jsonResponse(await build(), { env });
+
+  const etag = `"v${version}-${name}"`;
+  const headers = {
+    ...JSON_HEADERS,
+    ...corsHeaders(env),
+    etag,
+    "cache-control": "public, max-age=0, must-revalidate",
+  };
+  const sent = String(request.headers.get("if-none-match") || "")
+    .split(",")
+    .map(item => item.trim().replace(/^W\//, ""));
+  if (sent.includes(etag)) return new Response(null, { status: 304, headers });
+
+  const edge = typeof caches !== "undefined" ? caches.default : null;
+  const cacheKey = new Request(`${url.origin}/__export-cache/${name}/${version}`);
+  if (edge) {
+    try {
+      const hit = await edge.match(cacheKey);
+      if (hit) return new Response(hit.body, { status: 200, headers });
+    } catch (err) {
+      // A caché é opcional.
+    }
+  }
+
+  const body = JSON.stringify(await build());
+  if (edge && ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(
+      edge
+        .put(cacheKey, new Response(body, { headers: { ...JSON_HEADERS, "cache-control": "public, max-age=86400" } }))
+        .catch(() => {})
+    );
+  }
+  return new Response(body, { status: 200, headers });
+}
+
+// ---------------------------------------------------------------------
+// Perfís e favoritos (espazo persoal). Calquera persoa con sesión pode usalo;
+// só pode tocar o que é seu. Os datos persoais (correo, foto de Google) nunca
+// saen nas rutas públicas.
+// ---------------------------------------------------------------------
+
+const FAVORITE_KINDS = ["copla", "territory", "tag", "media", "melody"];
+const MAX_FAVORITES_PER_USER = 3000;
+const RESERVED_HANDLES = new Set([
+  "admin", "api", "data", "perfil", "persoa", "persoas", "privacidade", "entrar",
+  "login", "logout", "sair", "folear", "fol-e-ar", "arquivo", "ajuda", "sobre",
+]);
+
+function cleanText(value, max) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+async function requirePersonalSpace(request, env, url) {
+  assertSameOrigin(request, url);
+  const viewer = await getViewer(request, env);
+  if (!viewer) throw new HttpError(401, "Tes que entrar con Google para usar o teu espazo.");
+  if (viewer.open || !(viewer.id > 0)) throw new HttpError(403, "O espazo persoal só existe con conta de Google.");
+  return viewer;
+}
+
+async function personalTables(env, run) {
+  try {
+    return await run();
+  } catch (err) {
+    if (/no such table/i.test(String(err && err.message))) {
+      throw new HttpError(503, "Falta aplicar a migración 0004 (perfís e favoritos) na base de datos.");
+    }
+    throw err;
+  }
+}
+
+function profileRowToJson(row) {
+  return {
+    handle: row?.handle || "",
+    display_name: row?.display_name || "",
+    bio: row?.bio || "",
+    territory_id: row?.territory_id || "",
+    territory_name: row?.territory_name || "",
+    is_public: Boolean(row?.is_public),
+    show_favorites: Boolean(row?.show_favorites),
+  };
+}
+
+async function loadProfile(env, userId) {
+  return env.DB.prepare(
+    `SELECT p.handle, p.display_name, p.bio, p.territory_id, p.is_public, p.show_favorites, t.nome AS territory_name
+     FROM profiles p LEFT JOIN territories t ON t.id = p.territory_id
+     WHERE p.user_id = ?`
+  ).bind(userId).first();
+}
+
+async function handleMyProfile(request, env, url) {
+  const viewer = await requirePersonalSpace(request, env, url);
+  const row = await personalTables(env, () => loadProfile(env, viewer.id));
+  const count = await personalTables(env, () =>
+    env.DB.prepare("SELECT COUNT(*) AS n FROM favorites WHERE user_id = ?").bind(viewer.id).first()
+  );
+  return jsonNoStore({
+    ok: true,
+    profile: profileRowToJson(row),
+    account: { google_name: viewer.name, picture: viewer.picture, role: viewer.role },
+    favorites_count: Number(count?.n || 0),
+  }, { env });
+}
+
+async function handleSaveProfile(request, env, url) {
+  const viewer = await requirePersonalSpace(request, env, url);
+  const payload = await request.json().catch(() => ({}));
+
+  const displayName = cleanText(payload.display_name, 60);
+  const bio = cleanText(payload.bio, 280);
+  const handleRaw = String(payload.handle ?? "").trim().toLowerCase();
+  let handle = null;
+  if (handleRaw) {
+    if (!/^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/.test(handleRaw) || handleRaw.includes("--")) {
+      throw new HttpError(400, "O enderezo ten que ter 3-30 caracteres: letras sen acentos, números e guións.");
+    }
+    if (RESERVED_HANDLES.has(handleRaw)) throw new HttpError(400, "Ese enderezo está reservado; elixe outro.");
+    handle = handleRaw;
+  }
+  const isPublic = payload.is_public === true || payload.is_public === 1;
+  const showFavorites = payload.show_favorites === true || payload.show_favorites === 1;
+  if (isPublic && (!handle || !displayName)) {
+    throw new HttpError(400, "Para ter perfil público fai falta un nome e un enderezo.");
+  }
+
+  let territoryId = null;
+  const territoryRaw = String(payload.territory_id ?? "").trim();
+  if (territoryRaw) {
+    const found = await env.DB.prepare("SELECT id FROM territories WHERE id = ?").bind(territoryRaw).first();
+    if (!found) throw new HttpError(400, "Ese lugar non existe.");
+    territoryId = found.id;
+  }
+
+  try {
+    await personalTables(env, () => env.DB.prepare(
+      `INSERT INTO profiles (user_id, handle, display_name, bio, territory_id, is_public, show_favorites)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         handle = excluded.handle,
+         display_name = excluded.display_name,
+         bio = excluded.bio,
+         territory_id = excluded.territory_id,
+         is_public = excluded.is_public,
+         show_favorites = excluded.show_favorites,
+         updated_at = CURRENT_TIMESTAMP`
+    ).bind(viewer.id, handle, displayName, bio, territoryId, isPublic ? 1 : 0, showFavorites ? 1 : 0).run());
+  } catch (err) {
+    if (/UNIQUE/i.test(String(err && err.message))) throw new HttpError(409, "Ese enderezo xa está collido; elixe outro.");
+    throw err;
+  }
+  const row = await loadProfile(env, viewer.id);
+  return jsonNoStore({ ok: true, profile: profileRowToJson(row) }, { env });
+}
+
+async function handleMyFavorites(request, env, url) {
+  const viewer = await requirePersonalSpace(request, env, url);
+  const { results } = await personalTables(env, () =>
+    env.DB.prepare("SELECT kind, ref FROM favorites WHERE user_id = ? ORDER BY created_at DESC, rowid DESC").bind(viewer.id).all()
+  );
+  const grouped = Object.fromEntries(FAVORITE_KINDS.map(kind => [kind, []]));
+  for (const row of results) if (grouped[row.kind]) grouped[row.kind].push(row.ref);
+  return jsonNoStore({ ok: true, favorites: grouped }, { env });
+}
+
+async function favoriteTargetExists(env, kind, ref) {
+  const queries = {
+    copla: ["SELECT 1 AS ok FROM coplas WHERE id = ?", Number(ref)],
+    territory: ["SELECT 1 AS ok FROM territories WHERE id = ?", ref],
+    tag: ["SELECT 1 AS ok FROM tags WHERE name = ?", ref],
+    media: ["SELECT 1 AS ok FROM media WHERE id = ?", Number(ref)],
+    melody: ["SELECT 1 AS ok FROM melodies WHERE id = ?", Number(ref)],
+  };
+  const [sql, value] = queries[kind];
+  if (typeof value === "number" && !Number.isFinite(value)) return false;
+  return Boolean(await env.DB.prepare(sql).bind(value).first());
+}
+
+async function handleToggleFavorite(request, env, url) {
+  const viewer = await requirePersonalSpace(request, env, url);
+  const payload = await request.json().catch(() => ({}));
+  const kind = String(payload.kind || "");
+  const ref = String(payload.ref ?? "").trim().slice(0, 200);
+  if (!FAVORITE_KINDS.includes(kind) || !ref) throw new HttpError(400, "Favorito non válido.");
+  const on = payload.on !== false;
+  if (on) {
+    if (!(await favoriteTargetExists(env, kind, ref))) throw new HttpError(404, "Iso xa non existe.");
+    const count = await personalTables(env, () =>
+      env.DB.prepare("SELECT COUNT(*) AS n FROM favorites WHERE user_id = ?").bind(viewer.id).first()
+    );
+    if (Number(count?.n || 0) >= MAX_FAVORITES_PER_USER) throw new HttpError(400, "Chegaches ao límite de favoritos.");
+    await env.DB.prepare("INSERT OR IGNORE INTO favorites (user_id, kind, ref) VALUES (?, ?, ?)").bind(viewer.id, kind, ref).run();
+  } else {
+    await personalTables(env, () =>
+      env.DB.prepare("DELETE FROM favorites WHERE user_id = ? AND kind = ? AND ref = ?").bind(viewer.id, kind, ref).run()
+    );
+  }
+  return jsonNoStore({ ok: true, kind, ref, on }, { env });
+}
+
+async function handleDeleteAccount(request, env, url) {
+  const viewer = await requirePersonalSpace(request, env, url);
+  const payload = await request.json().catch(() => ({}));
+  if (payload.confirm !== true) throw new HttpError(400, "Falta confirmar o borrado da conta.");
+  await personalTables(env, () => env.DB.batch([
+    env.DB.prepare("DELETE FROM favorites WHERE user_id = ?").bind(viewer.id),
+    env.DB.prepare("DELETE FROM profiles WHERE user_id = ?").bind(viewer.id),
+    env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(viewer.id),
+    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(viewer.id),
+  ]));
+  return jsonNoStore({ ok: true }, { env, cookies: [buildCookie(SESSION_COOKIE, "", url, { maxAge: 0 })] });
+}
+
+function publicJson(data, env, maxAge = 60) {
+  return new Response(JSON.stringify(data), {
+    headers: { ...JSON_HEADERS, ...corsHeaders(env), "cache-control": `public, max-age=${maxAge}` },
+  });
+}
+
+async function handlePeopleList(env) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT p.handle, p.display_name, p.bio, p.territory_id, t.nome AS territory_name
+       FROM profiles p LEFT JOIN territories t ON t.id = p.territory_id
+       WHERE p.is_public = 1 AND p.handle IS NOT NULL AND p.display_name <> ''
+       ORDER BY p.display_name COLLATE NOCASE
+       LIMIT 500`
+    ).all();
+    return publicJson({ ok: true, people: results }, env);
+  } catch (err) {
+    if (/no such table/i.test(String(err && err.message))) return publicJson({ ok: true, people: [] }, env, 0);
+    throw err;
+  }
+}
+
+async function handlePersonPage(env, handle) {
+  const clean = String(handle || "").toLowerCase();
+  let row;
+  try {
+    row = await env.DB.prepare(
+      `SELECT p.user_id, p.handle, p.display_name, p.bio, p.territory_id, p.show_favorites, t.nome AS territory_name
+       FROM profiles p LEFT JOIN territories t ON t.id = p.territory_id
+       WHERE p.handle = ? AND p.is_public = 1`
+    ).bind(clean).first();
+  } catch (err) {
+    if (/no such table/i.test(String(err && err.message))) row = null;
+    else throw err;
+  }
+  if (!row) return jsonResponse({ ok: false, error: "Non existe ese perfil." }, { status: 404, env });
+
+  let favorites = null;
+  if (row.show_favorites) {
+    const { results } = await env.DB.prepare(
+      "SELECT kind, ref FROM favorites WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1500"
+    ).bind(row.user_id).all();
+    favorites = Object.fromEntries(FAVORITE_KINDS.map(kind => [kind, []]));
+    for (const item of results) if (favorites[item.kind]) favorites[item.kind].push(item.ref);
+  }
+  return publicJson({
+    ok: true,
+    person: {
+      handle: row.handle,
+      display_name: row.display_name,
+      bio: row.bio,
+      territory_id: row.territory_id || "",
+      territory_name: row.territory_name || "",
+      show_favorites: Boolean(row.show_favorites),
+    },
+    favorites,
+  }, env);
+}
+
+// ---------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (!checkSitePassword(request, env)) {
       return authRequiredResponse();
     }
@@ -1933,17 +2256,17 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/data/exports/territorios/territorios.json") {
-        return jsonResponse(await exportTerritoriosJson(env), { env });
+        return await cachedExport(request, env, ctx, url, "territorios", () => exportTerritoriosJson(env));
       }
       if (request.method === "GET" && url.pathname === "/data/exports/coplas/coplas.json") {
-        return jsonResponse(await exportCoplasJson(env), { env });
+        return await cachedExport(request, env, ctx, url, "coplas", () => exportCoplasJson(env));
       }
       if (request.method === "GET" && url.pathname === "/data/exports/media/media.json") {
-        return jsonResponse(await exportMediaJson(env), { env });
+        return await cachedExport(request, env, ctx, url, "media", () => exportMediaJson(env));
       }
 
       if (request.method === "GET" && url.pathname === "/data/exports/melodias/melodias.json") {
-        return jsonResponse(await exportMelodiasJson(env), { env });
+        return await cachedExport(request, env, ctx, url, "melodias", () => exportMelodiasJson(env));
       }
       if (request.method === "GET" && url.pathname === "/api/auth/me") {
         return await handleAuthMe(request, env);
@@ -1960,6 +2283,26 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/users") {
         return await handleUsersList(request, env, url);
       }
+      if (url.pathname === "/api/me/profile") {
+        if (request.method === "GET") return await handleMyProfile(request, env, url);
+        if (request.method === "POST") return await handleSaveProfile(request, env, url);
+      }
+      if (request.method === "GET" && url.pathname === "/api/me/favorites") {
+        return await handleMyFavorites(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/me/favorites") {
+        return await handleToggleFavorite(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/me/delete") {
+        return await handleDeleteAccount(request, env, url);
+      }
+      if (request.method === "GET" && url.pathname === "/api/people") {
+        return await handlePeopleList(env);
+      }
+      const personMatch = url.pathname.match(/^\/api\/people\/([a-z0-9-]{3,30})$/);
+      if (request.method === "GET" && personMatch) {
+        return await handlePersonPage(env, personMatch[1]);
+      }
       if (request.method === "POST" && url.pathname === "/api/users/role") {
         return await handleUserRole(request, env, url);
       }
@@ -1974,12 +2317,14 @@ export default {
         await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json();
         const ids = await importMelodies(env, payload);
+        await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "DELETE" && url.pathname === "/api/melodies") {
         await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json().catch(() => ({}));
         const ids = await deleteMelodies(env, payload.ids);
+        await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });
       }
 
@@ -1987,24 +2332,28 @@ export default {
         await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json();
         const ids = await importCoplas(env, payload);
+        await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "DELETE" && url.pathname === "/api/coplas") {
         await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json().catch(() => ({}));
         const ids = await deleteCoplas(env, payload.ids);
+        await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "POST" && url.pathname === "/api/media") {
         await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json();
         const ids = await importMedia(env, payload);
+        await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "DELETE" && url.pathname === "/api/media") {
         await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json().catch(() => ({}));
         const ids = await deleteMedia(env, payload.ids);
+        await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });
       }
 

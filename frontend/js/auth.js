@@ -81,21 +81,26 @@ function sidebarMarkup() {
   const { mode, user } = session;
   if (user && !user.open && mode === "google") {
     return `
-      <div class="account-line" title="${escapeText(user.email)}">
+      <button type="button" class="account-line is-link" data-view="profile" title="O meu espazo">
         ${avatarMarkup(user)}
         <span class="account-text"><strong>${escapeText(user.name || user.email)}</strong><small>${ROLE_LABELS[user.role] || user.role}</small></span>
-      </div>
-      ${isAdmin() ? `<button type="button" data-account="people"><span class="nav-icon">☷</span><span>Persoas</span></button>` : ""}
+      </button>
+      ${isAdmin() ? `<button type="button" data-account="people"><span class="nav-icon">☷</span><span>Xestionar roles</span></button>` : ""}
       <button type="button" data-account="logout"><span class="nav-icon">↗</span><span>Saír</span></button>
+      ${privacyLink()}
     `;
   }
   if (mode === "google") {
-    return `<button type="button" data-account="login"><span class="nav-icon">→</span><span>Entrar con Google</span></button>`;
+    return `<button type="button" data-account="login"><span class="nav-icon">→</span><span>Entrar con Google</span></button>${privacyLink()}`;
   }
   if (mode === "local" || mode === "open") {
     return `<div class="account-line is-note"><span class="account-text"><small>${mode === "local" ? "Modo local" : "Acceso aberto"}</small></span></div>`;
   }
   return "";
+}
+
+function privacyLink() {
+  return `<a class="account-privacy" href="./privacidade.html" target="_blank" rel="noopener"><span class="nav-icon">§</span><span>Privacidade</span></a>`;
 }
 
 function mobileMarkup() {
@@ -104,12 +109,14 @@ function mobileMarkup() {
     return `
       <div class="mobile-menu-sep" role="separator"></div>
       <div class="mobile-menu-note">${escapeText(user.name || user.email)}<small>${ROLE_LABELS[user.role] || user.role}</small></div>
-      ${isAdmin() ? `<button type="button" role="menuitem" data-account="people"><i>☷</i>Persoas</button>` : ""}
+      <button type="button" role="menuitem" data-view="profile"><i>☆</i>O meu espazo</button>
+      ${isAdmin() ? `<button type="button" role="menuitem" data-account="people"><i>☷</i>Xestionar roles</button>` : ""}
       <button type="button" role="menuitem" data-account="logout"><i>↗</i>Saír</button>
+      <a class="mobile-privacy" role="menuitem" href="./privacidade.html" target="_blank" rel="noopener"><i>§</i>Privacidade</a>
     `;
   }
   if (mode === "google") {
-    return `<div class="mobile-menu-sep" role="separator"></div><button type="button" role="menuitem" data-account="login"><i>→</i>Entrar con Google</button>`;
+    return `<div class="mobile-menu-sep" role="separator"></div><button type="button" role="menuitem" data-account="login"><i>→</i>Entrar con Google</button><a class="mobile-privacy" role="menuitem" href="./privacidade.html" target="_blank" rel="noopener"><i>§</i>Privacidade</a>`;
   }
   return "";
 }
@@ -288,9 +295,19 @@ async function init() {
   window.dispatchEvent(new CustomEvent("folear:auth", { detail: { mode: session.mode, user: session.user } }));
 }
 
+async function refresh() {
+  const me = await fetchMe();
+  session.mode = me.mode;
+  session.user = me.user;
+  render();
+}
+
 window.folearAuth = {
   get mode() { return session.mode; },
   get user() { return session.user; },
+  get ready() { return session.ready; },
+  toast,
+  refresh,
   canEdit,
   isAdmin,
   loginUrl,

@@ -165,6 +165,11 @@ class LocalHandler(SimpleHTTPRequestHandler):
             })
             return
 
+        if path == "/api/people":
+            # Modo local: non hai perfís (viven na base de datos de produción).
+            self._send_json(200, {"ok": True, "people": []})
+            return
+
         if path.startswith("/api/pieces/") and path.endswith("/pdf"):
             piece_id = path.removeprefix("/api/pieces/").removesuffix("/pdf").strip("/")
             try:

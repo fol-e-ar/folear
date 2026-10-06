@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="./css/style.css">
   <link rel="stylesheet" href="./css/auth.css">
+  <link rel="stylesheet" href="./css/profile.css">
   <script>
     window.FOL_E_AR_FILE_MODE = location.protocol === "file:";
     if (window.FOL_E_AR_FILE_MODE) {
@@ -59,6 +60,7 @@
         <button type="button" data-view="melodies"><span class="nav-icon">♫</span><span class="nav-label">Melodías</span></button>
         <button type="button" data-view="pieces"><span class="nav-icon">♪</span><span class="nav-label">Pezas <b class="cart-count" data-cart-count hidden>0</b></span></button>
         <button type="button" data-view="media"><span class="nav-icon">◧</span><span class="nav-label">Media</span></button>
+        <button type="button" data-view="people" data-people-nav><span class="nav-icon">☻</span><span class="nav-label">Persoas</span></button>
       </nav>
 
       <div class="sidebar-spacer"></div>
@@ -116,6 +118,8 @@
       <section class="view" id="view-submit" aria-label="Alta"></section>
       <section class="view" id="view-media" aria-label="Media"></section>
       <section class="view" id="view-about" aria-label="Sobre Fol e ar"></section>
+      <section class="view" id="view-profile" aria-label="O meu espazo"></section>
+      <section class="view" id="view-people" aria-label="Persoas"></section>
       <div id="coplaDrawer" class="copla-drawer" hidden></div>
       <div id="pieceDrawer" class="copla-drawer" hidden></div>
       <div id="melodyDrawer" class="copla-drawer" hidden></div>
@@ -135,6 +139,7 @@
         <button type="button" role="menuitem" data-view="pieces"><i>♪</i>Pezas<b class="cart-count" data-cart-count hidden>0</b></button>
         <button type="button" role="menuitem" data-view="media"><i>◧</i>Media</button>
         <button type="button" role="menuitem" data-view="melodies"><i>♫</i>Melodías</button>
+        <button type="button" role="menuitem" data-view="people" data-people-nav><i>☻</i>Persoas</button>
         <button type="button" role="menuitem" data-view="about"><i><svg class="isotipo" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg></i>Sobre o arquivo</button>
       </div>
     </div>
@@ -146,5 +151,6 @@
     if (!window.FOL_E_AR_FILE_MODE) import("./js/archive_app.js");
   </script>
   <script type="module" src="./js/auth.js"></script>
+  <script type="module" src="./js/profile.js"></script>
 </body>
 </html>

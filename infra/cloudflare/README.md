@@ -240,6 +240,46 @@ só mostra/agocha botóns; quen manda é sempre o servidor.
   desenvolvemento.
 - En local (`tools/local_server.py`) non hai login: a persoa é sempre admin.
 
+### Perfís, favoritos e caché (migración 0004)
+
+Migración aditiva `migrations/0004_profiles.sql` (non borra nada): táboas
+`profiles`, `favorites` e `site_meta`. Aplícase **antes** de despregar:
+
+```bash
+npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0004_profiles.sql
+npx wrangler deploy
+```
+
+- **O meu espazo** (`frontend/js/profile.js`): nome que se amosa, enderezo
+  curto, lugar (concello/parroquia/comarca), presentación, perfil público
+  (desactivado por defecto) e favoritos de coplas e lugares. A API (`/api/me/*`)
+  só deixa tocar o que é da propia persoa; calquera persoa con sesión pode usala
+  (tamén os foleantes). O correo e a foto de Google non saen en ningunha ruta
+  pública.
+- **Persoas**: `GET /api/people` (directorio) e `GET /api/people/<enderezo>`
+  só devolven perfís con `is_public = 1`; os favoritos só se se activou
+  «amosar os meus favoritos». Hai un botón para borrar a conta (`POST
+  /api/me/delete`).
+- `frontend/privacidade.html` é a política de privacidade (ligada desde o
+  menú). Revísase cando cambie o tratamento de datos.
+- A migración 0004 tamén crea `site_meta.data_version`. Sube con cada escritura
+  de coplas, recursos e melodías e permite **cachear os exportes públicos**
+  (`/data/exports/*.json`): ETag por versión (o navegador recibe 304 sen
+  consultar a base) e caché do bordo de Cloudflare por versión (só funciona co
+  dominio propio, non en `workers.dev`). Sen a migración, os exportes
+  calcúlanse sempre coma antes.
+
+### Escalabilidade (plan gratuíto)
+
+Límites do plan gratuíto de Cloudflare (mirar a documentación oficial antes de
+confiar en cifras): Workers 100.000 peticións/día e 10 ms de CPU por petición;
+D1 5 millóns de filas lidas/día, 100.000 escritas/día e 5 GB. Os ficheiros
+estáticos do frontend non gastan peticións de Worker. O custo que importaba
+eran os exportes (milleiros de filas por visita); coa caché por versión unha
+visita nova adoita gastar unhas poucas filas, así que a cota non é un problema
+para centos de persoas ao día. Se un día se superase, o plan de pago de
+Workers custa uns poucos dólares ao mes e non require cambiar código.
+
 ## Xeración de PDF
 
 Pezas e territorios pódense exportar a PDF dende o propio Worker, usando

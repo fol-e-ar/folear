@@ -37,7 +37,7 @@ const RHYTHMS = [
 ].sort((a, b) => a.localeCompare(b, "gl"));
 const MUSICAL_MEDIA_KINDS = new Set(["audio", "spotify", "soundcloud"]);
 const DRAFT_KEY = "fol-e-ar-piece-cart-v2";
-const VIEWS = ["map", "coplas", "melodies", "pieces", "territory", "submit", "media", "about"];
+const VIEWS = ["map", "coplas", "melodies", "pieces", "territory", "submit", "media", "about", "profile", "people"];
 
 const state = {
   territorios: [],
@@ -5140,6 +5140,8 @@ function renderView() {
   if (state.view === "submit") renderSubmitView();
   if (state.view === "media") renderMediaView();
   if (state.view === "about") renderAboutView();
+  if (state.view === "profile") window.folearProfile?.renderProfile();
+  if (state.view === "people") window.folearProfile?.renderPeople();
 }
 
 function bindGlobalEvents() {
@@ -5270,6 +5272,9 @@ async function init() {
   setView(coplaId ? "coplas" : normalizeView(params.get("mode") || params.get("view") || "map"));
   if (coplaId) openCoplaDrawer(Number(coplaId));
 }
+
+// Ganchos para js/profile.js (espazo persoal): reutiliza o apertado de resultados.
+window.folearApp = { bindResultButtons };
 
 init().catch(error => {
   console.error(error);
