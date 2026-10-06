@@ -40,7 +40,7 @@ with sync_playwright() as p:
     ctx,pg=newpage({"width":1440,"height":900})
     pg.click('.sidebar [data-view="pieces"]'); pg.wait_for_timeout(600)
     pg.click('[data-piece-tab="library"]'); pg.wait_for_timeout(600)
-    ok("directory shown", pg.locator(".creator-note [data-piece-author]").count()==2, pg.locator(".creator-note").inner_text().replace("\n"," | "))
+    ok("directory shown", pg.locator("#authorStrip [data-piece-author]").count()==2, pg.locator("#authorStrip").inner_text().replace("\n"," | "))
     ok("fake text gone", "Páxinas de autoría" not in pg.content())
     pg.screenshot(path=str(OUT/"library.png"))
     # click card author
@@ -63,7 +63,7 @@ with sync_playwright() as p:
         ok("still ficha", pg.locator(".author-ficha").count()==1)
     else: ok("drawer has author button", False)
     pg.click("#clearPieceAuthorFilter"); pg.wait_for_timeout(500)
-    ok("back to directory", pg.locator(".author-ficha").count()==0 and pg.locator(".creator-note").count()==1 and "#/autoria" not in pg.evaluate("location.href"))
+    ok("back to directory", pg.locator(".author-ficha").count()==0 and pg.locator("#authorStrip").count()==1 and "#/autoria" not in pg.evaluate("location.href"))
     ctx.close()
     # deep link
     ctx,pg=newpage({"width":1440,"height":900},"/#/autoria/pandereteiras-soalleira")

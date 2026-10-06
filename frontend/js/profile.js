@@ -216,7 +216,7 @@ function decorate() {
     }
   });
 
-  document.querySelectorAll(".piece-card[data-open-piece]:not([data-fav-done])").forEach(card => {
+  document.querySelectorAll(".piece-card[data-open-piece]:not([data-fav-done]), .piece-row[data-open-piece]:not([data-fav-done])").forEach(card => {
     card.dataset.favDone = "1";
     appendMetaStar(card, "piece", card.dataset.openPiece);
   });

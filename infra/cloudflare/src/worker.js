@@ -1180,6 +1180,7 @@ h1 {
 
 .piece-grid {
   column-count: 2;
+  column-fill: auto;
   column-gap: 9mm;
 }
 

@@ -78,6 +78,8 @@ const state = {
   coplaViewMode: "gallery",
   mediaViewMode: "grid",
   melodyViewMode: "grid",
+  pieceViewMode: "grid",
+  authorStripOpen: false,
   coplaLastSelectedId: null,
   pasteDraft: "",
   pasteFeedback: "",
@@ -1714,13 +1716,13 @@ function updateMapCard() {
   const label = $("#mapCardLabel");
   const coplaCount = $("#mapCoplaCount");
   const pieceCount = $("#mapPieceCount");
-  const territoryCount = $("#mapTerritoryCount");
-  if (!title || !coplaCount || !pieceCount || !territoryCount) return;
+  const melodyCount = $("#mapMelodyCount");
+  if (!title || !coplaCount || !pieceCount || !melodyCount) return;
   title.textContent = territory?.nome || "Galiza";
   if (label) label.textContent = territory ? territoryLabel(territory) : "";
   coplaCount.textContent = territory ? ctx.coplas.length : state.coplas.length;
   pieceCount.textContent = territory ? ctx.pezas.length : state.pezas.length;
-  territoryCount.textContent = territory ? ctx.children.length : state.territorios.length;
+  melodyCount.textContent = territory ? ctx.melodias.length : state.melodias.length;
   const sil = $("#mapCardSil");
   if (sil) {
     sil.dataset.silhouetteHero = territory ? territory.id : "galiza";
@@ -1808,6 +1810,7 @@ const infiniteLists = new Map();
   if (["gallery", "list", "incipits"].includes(prefs.coplas)) state.coplaViewMode = prefs.coplas;
   if (["grid", "rows"].includes(prefs.media)) state.mediaViewMode = prefs.media;
   if (["grid", "rows"].includes(prefs.melodies)) state.melodyViewMode = prefs.melodies;
+  if (["grid", "rows"].includes(prefs.pieces)) state.pieceViewMode = prefs.pieces;
 })();
 
 function resetInfiniteLists() {
@@ -3012,16 +3015,17 @@ function authorFichaMarkup() {
     </section>`;
 }
 
-function authorDirectoryMarkup() {
+// Autorías: unha tira compacta sobre a listaxe (en vez dun bloque aparte ao final).
+function authorStripMarkup() {
   const authors = authorDirectory();
   if (!authors.length) return "";
+  const open = state.authorStripOpen;
   return `
-    <section class="panel creator-note">
-      <div class="eyebrow">Autorías</div>
-      <h2>Quen está detrás das pezas</h2>
-      <p class="muted">Grupos, artistas e persoas que figuran nas pezas. Toca unha para ver todo o que hai dela: pezas e recursos.</p>
-      <div class="people-chips author-chips">${authors.map(entry => `<button type="button" class="chip-link" data-piece-author="${escapeHtml(entry.name)}">${escapeHtml(entry.name)} <span class="muted">${entry.count}</span></button>`).join("")}</div>
-    </section>`;
+    <div class="author-strip-wrap">
+      <span class="author-strip-label">Autorías</span>
+      <div id="authorStrip" class="author-strip${open ? " is-open" : ""}">${authors.map(entry => `<button type="button" class="chip-link" data-piece-author="${escapeHtml(entry.name)}" title="Ver as pezas e recursos de ${escapeHtml(entry.name)}">${escapeHtml(entry.name)} <span class="muted">${entry.count}</span></button>`).join("")}</div>
+      ${authors.length > 6 ? `<button type="button" class="link-button author-strip-toggle" id="authorStripToggle" aria-expanded="${open}">${open ? "Ver menos" : "Ver todas"}</button>` : ""}
+    </div>`;
 }
 
 function pieceOwnerLink(piece) {
@@ -3061,6 +3065,33 @@ function pieceCard(piece) {
       </div>
     </article>
   `;
+}
+
+function pieceRow(piece) {
+  const title = piece.title || piece.titulo || "Peza sen título";
+  const author = pieceAuthorName(piece);
+  const sections = pieceSections(piece);
+  const coplaTotal = piece.copla_count ?? (piece.coplas || []).length;
+  const authorCell = author === "Sen autoría"
+    ? `<span class="muted">${escapeHtml(author)}</span>`
+    : `<button type="button" class="tag place as-link" data-piece-author="${escapeHtml(author)}" title="Ver as pezas de ${escapeHtml(author)}">${escapeHtml(author)}</button>`;
+  const description = piece.description || piece.notes || "";
+  return `
+    <article class="piece-row${piece.mine ? " is-mine" : ""}" tabindex="0" role="button" data-open-piece="${piece.id}" aria-label="${escapeHtml(title)}">
+      <span class="row-title"><strong>${escapeHtml(title)}</strong>${description ? `<small>${escapeHtml(description)}</small>` : ""}</span>
+      <span class="row-author">${authorCell}</span>
+      <span class="row-count">${coplaTotal || 0} coplas${sections.length ? ` \\ ${sections.length} partes` : ""}</span>
+      <span class="row-tags">${pieceOwnerLink(piece)}${pieceStatusTags(piece)}</span>
+    </article>`;
+}
+
+function pieceListClass() {
+  return state.pieceViewMode === "rows" ? "piece-rows" : "piece-grid";
+}
+
+function pieceItemsMarkup(pieces) {
+  if (!pieces.length) return pieceEmptyMarkup();
+  return pieces.map(state.pieceViewMode === "rows" ? pieceRow : pieceCard).join("");
 }
 
 function renderPieceTerritoryResults(root = $("#view-pieces")) {
@@ -3132,7 +3163,8 @@ function updatePieceRepository(root = $("#view-pieces")) {
   const count = $("#pieceRepositoryCount", root);
   if (count) count.textContent = `${repo.length} pezas`;
   if (!list) return;
-  list.innerHTML = repo.map(pieceCard).join("") || pieceEmptyMarkup();
+  list.className = pieceListClass();
+  list.innerHTML = pieceItemsMarkup(repo);
   bindPieceCardActions(list);
 }
 
@@ -3537,20 +3569,19 @@ function renderPiecesView() {
   const workshop = state.pieceTab === "workshop";
   view.innerHTML = `
     <div class="page ${workshop ? "workshop-page" : ""} ${workshop && state.pieceLibraryOpen ? "has-sheet" : ""}">
-      <div class="page-head ${workshop ? "page-head-bare" : ""}">
-        ${workshop ? "" : `<div><h1>Biblioteca de pezas</h1></div>`}
+      <div class="page-head piece-head">
+        <h1 class="visually-hidden">Pezas</h1>
+        <div class="section-tabs piece-tabs">
+          <button class="${state.pieceTab === "library" ? "active" : ""}" type="button" data-piece-tab="library">Biblioteca</button>
+          <button class="${state.pieceTab === "workshop" ? "active" : ""}" type="button" data-piece-tab="workshop">Obradoiro <b class="cart-count" data-cart-count ${total ? "" : "hidden"}>${total}</b></button>
+        </div>
         ${workshop ? `
           <div class="header-actions">
             <button class="btn" type="button" id="clearPiece">Baleirar</button>
-            <button class="btn" type="button" id="downloadPiece">Descargar estrutura</button>
             <button class="btn" type="button" id="savePieceDirect">${draft.editingPieceId && isAccount() ? "Gardar cambios" : "Gardar peza"}</button>
             <button class="btn primary" type="button" id="openA4" ${state.pdfBusy ? "disabled" : ""}>${state.pdfBusy ? loaderHtml("Xerando PDF") : "Exportar PDF"}</button>
           </div>
         ` : ""}
-      </div>
-      <div class="section-tabs piece-tabs">
-        <button class="${state.pieceTab === "library" ? "active" : ""}" type="button" data-piece-tab="library">Biblioteca</button>
-        <button class="${state.pieceTab === "workshop" ? "active" : ""}" type="button" data-piece-tab="workshop">Obradoiro <b class="cart-count" data-cart-count ${total ? "" : "hidden"}>${total}</b></button>
       </div>
       ${state.pieceTab === "library" ? `
         ${authorFichaMarkup()}
@@ -3563,12 +3594,13 @@ function renderPiecesView() {
               <option value="">Todos os ritmos</option>
               ${RHYTHMS.map(value => `<option value="${value}" ${state.pieceRhythmQuery === value ? "selected" : ""}>${value}</option>`).join("")}
             </select>
+            ${listViewToggleMarkup("data-piece-view", state.pieceViewMode)}
           </div>
-          <div id="pieceRepositoryList" class="piece-grid">
-            ${repo.map(pieceCard).join("") || pieceEmptyMarkup()}
+          ${state.pieceAuthorFilter ? "" : authorStripMarkup()}
+          <div id="pieceRepositoryList" class="${pieceListClass()}">
+            ${pieceItemsMarkup(repo)}
           </div>
         </section>
-        ${state.pieceAuthorFilter ? "" : authorDirectoryMarkup()}
       ` : `
         ${workshopNoticeMarkup(draft)}
         <div id="pieceExportStatus" class="export-status" role="status" aria-live="polite">${escapeHtml(state.pieceNotice)}</div>
@@ -3622,6 +3654,18 @@ function renderPiecesView() {
   $("#pieceRepositorySearch")?.addEventListener("input", event => {
     state.pieceRepositoryQuery = event.target.value;
     updatePieceRepository(view);
+  });
+  all("[data-piece-view]", view).forEach(button => button.addEventListener("click", () => {
+    state.pieceViewMode = button.dataset.pieceView;
+    saveViewPref("pieces", state.pieceViewMode);
+    all("[data-piece-view]", view).forEach(item => item.classList.toggle("active", item === button));
+    updatePieceRepository(view);
+  }));
+  $("#authorStripToggle")?.addEventListener("click", () => {
+    state.authorStripOpen = !state.authorStripOpen;
+    $("#authorStrip", view)?.classList.toggle("is-open", state.authorStripOpen);
+    $("#authorStripToggle", view).textContent = state.authorStripOpen ? "Ver menos" : "Ver todas";
+    $("#authorStripToggle", view).setAttribute("aria-expanded", String(state.authorStripOpen));
   });
   $("#pieceRhythmFilter")?.addEventListener("change", event => {
     state.pieceRhythmQuery = event.target.value;
@@ -3706,9 +3750,6 @@ function renderPiecesView() {
   $("#clearPiece")?.addEventListener("click", () => {
     saveDraft(defaultDraft());
     renderPiecesView();
-  });
-  $("#downloadPiece")?.addEventListener("click", () => {
-    downloadText("peza.json", JSON.stringify(buildPiecePayload(), null, 2), "application/json");
   });
   $("#savePieceDirect")?.addEventListener("click", savePieceDirect);
   $("#addPieceLink")?.addEventListener("click", addPieceLink);

@@ -5896,3 +5896,161 @@ label {
 .copla-sheet.is-step-prev .copla-places {
   animation: sheetFromLeft 200ms ease-out;
 }
+
+/* ==========================================================
+   Pezas: a liña de pestanas non se move entre Biblioteca e
+   Obradoiro; autorías en tira; vista de lista das pezas
+   ========================================================== */
+
+.page .piece-head.page-head {
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: 30px;
+}
+
+.page .piece-head .section-tabs {
+  margin: 0;
+}
+
+.workshop-page {
+  max-width: 1440px;
+}
+
+.workshop-page .piece-head.page-head {
+  max-width: none;
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.workshop-page .piece-head .header-actions {
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  .page .piece-head.page-head {
+    gap: 6px;
+    margin-bottom: 18px;
+  }
+
+  .workshop-page .piece-head .header-actions {
+    margin-left: 0;
+  }
+}
+
+/* Autorías: tira horizontal (ou desplegada) sobre a listaxe */
+
+.author-strip-wrap {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 4px 0 18px;
+}
+
+.author-strip-label {
+  flex: none;
+  padding-top: 6px;
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.author-strip {
+  display: flex;
+  flex: 1;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+  padding-bottom: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.author-strip.is-open {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+.author-strip .chip-link {
+  flex: none;
+  white-space: nowrap;
+}
+
+.author-strip-toggle {
+  flex: none;
+  padding-top: 6px;
+  font-size: 12px;
+}
+
+/* Vista de lista das pezas */
+
+.piece-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.piece-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(120px, 1fr) 150px auto auto;
+  grid-template-areas: "title author count tags star";
+  column-gap: 16px;
+  align-items: center;
+  padding: 12px 6px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  transition: border-color 120ms ease;
+}
+
+.piece-row:hover,
+.piece-row:focus-visible {
+  border-color: var(--ink);
+  outline: 0;
+}
+
+.piece-row .row-title {
+  grid-area: title;
+}
+
+.piece-row .row-author {
+  grid-area: author;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.piece-row .row-count {
+  grid-area: count;
+  font: 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.piece-row .row-tags {
+  grid-area: tags;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.piece-row .fav-slot {
+  grid-area: star;
+  margin: 0;
+}
+
+@media (max-width: 920px) {
+  .piece-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title star" "author count" "tags tags";
+    row-gap: 3px;
+  }
+
+  .piece-row .row-tags {
+    justify-content: flex-start;
+  }
+
+  .author-strip-label {
+    display: none;
+  }
+}
