@@ -178,8 +178,12 @@ with sync_playwright() as p:
     # 4 SOBRE
     pv.click('.sidebar [data-view="about"]'); pv.wait_for_timeout(600)
     about=pv.locator("#view-about").inner_text().lower()
-    ok("about: no colour legend", "Código de cores" not in about)
+    ok("about: colour legend", all(t in about for t in ("código de cores","parroquia","concello","comarca","provincia","sen lugar")))
+    ok("about: levels use the level colours", pv.locator("#view-about .about-legend .level-text.level-par, #view-about .about-legend .level-text.level-prov").count()==2)
+    ok("about: explains PDF needs login", "para xerar un pdf pedimos que entres" in about and "15" in about)
+    ok("about: how it works", all(t in about for t in ("copla","lugar","melodía","recurso","peza","persoa","que podes facer")))
     ok("about: sections", all(t in about for t in ("como funciona","como moverse","contas","privacidade")))
+    ok("about: no stale PDF claim", "exportar en pdf está ao alcance" not in about)
     ok("about: no sidebar privacy link", pv.locator(".account-privacy").count()==0)
     pv.screenshot(path=str(OUT/"about.png"), full_page=True)
     pv.click(".about-foot-link"); pv.wait_for_selector(".privacy-doc h2",timeout=5000); pv.wait_for_timeout(300)

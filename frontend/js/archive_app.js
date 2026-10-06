@@ -2206,69 +2206,128 @@ function bindCoplaActions(root = document) {
   }));
 }
 
-function openCoplaDrawer(coplaId) {
+// Lista de coplas pola que se pode navegar coas frechas (a da consulta actual
+// en «Coplas»). Só vale mentres a ficha está aberta.
+let coplaNav = null;
+
+function coplaPlacesMarkup(copla) {
+  const territories = copla.territories || [];
+  if (!territories.length) return `<span class="level-text level-empty">${escapeHtml(coplaPlaceLabel(copla))}</span>`;
+  return territories.map(item => `<button type="button" class="place-link level-text level-${item.tipo}" data-territory-id="${item.id}" title="${escapeHtml(territorySearchMeta(item))}">${escapeHtml(item.nome)}</button>`).join("");
+}
+
+function drawerFold(title, count, body) {
+  return `<details class="drawer-fold"><summary><span>${title}</span>${count ? `<small>${count}</small>` : ""}</summary><div class="drawer-fold-body">${body}</div></details>`;
+}
+
+function openCoplaDrawer(coplaId, options = {}) {
   const copla = state.coplas.find(item => Number(item.id) === Number(coplaId));
   const drawer = $("#coplaDrawer");
   if (!copla || !drawer) return;
-  const territories = (copla.territories || []);
+  if (options.ids) coplaNav = { ids: options.ids };
+  else if (!options.keepNav) coplaNav = state.view === "coplas" ? { ids: filteredCoplas().map(item => Number(item.id)) } : null;
+  const position = coplaNav ? coplaNav.ids.indexOf(Number(copla.id)) : -1;
+  const pager = position === -1 ? "" : `
+      <div class="drawer-pager" role="group" aria-label="Navegar entre coplas">
+        <button type="button" class="icon-btn" data-copla-step="-1" aria-label="Copla anterior" title="Anterior (←)" ${position === 0 ? "disabled" : ""}>‹</button>
+        <span aria-live="polite">${position + 1} / ${coplaNav.ids.length}</span>
+        <button type="button" class="icon-btn" data-copla-step="1" aria-label="Copla seguinte" title="Seguinte (→)" ${position === coplaNav.ids.length - 1 ? "disabled" : ""}>›</button>
+      </div>`;
+  const variants = copla.versions || [];
+  const media = coplaMedia(copla);
+  const variantsHtml = variants.map(version => `
+    <div class="variant">
+      <strong>${escapeHtml(version.label || version.incipit || "Variante")}</strong>
+      <div>${nl2br(version.text || "")}</div>
+      <p class="muted">${version.territory_mode === "custom" && (version.territories || []).length ? escapeHtml(version.territories.map(territoryDisplayName).join(" \\ ")) : "Mesma adscrición territorial ca copla principal"}</p>
+      ${version.notes ? `<p class="muted">${escapeHtml(version.notes)}</p>` : ""}
+    </div>`).join("");
+  const folds = [
+    variants.length ? drawerFold("Variantes", variants.length, variantsHtml) : "",
+    media.length ? drawerFold("Media relacionada", media.length, `<div class="media-grid compact">${media.map(mediaCard).join("")}</div>`) : "",
+    copla.notes ? drawerFold("Notas e fonte", "", `<p class="muted">${nl2br(escapeHtml(copla.notes))}</p>`) : "",
+  ].join("");
+  const stepClass = options.direction ? ` is-step-${options.direction > 0 ? "next" : "prev"}` : "";
   drawer.hidden = false;
   drawer.innerHTML = `
     <div class="drawer-scrim" data-close-drawer></div>
-    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="Ficha da copla">
-      <button class="card-close" type="button" data-close-drawer aria-label="Pechar">×</button>
-      <div class="eyebrow">Ficha textual${copla.is_volta ? ` \\ <span class="tag is-volta">Volta</span>` : ""}</div>
-      <h2>${escapeHtml(coplaTitle(copla))}</h2>
-      <div class="gallery-text">${nl2br(restOfText(copla.text || ""))}</div>
-      <div class="drawer-section">
-        <h3>Territorio</h3>
-        <div class="territory-links">
-          ${territories.map(item => `
-            <button type="button" data-territory-id="${item.id}">
-              <strong>${escapeHtml(item.nome)}</strong>
-              <span>${escapeHtml(territorySearchMeta(item))}</span>
-            </button>
-          `).join("") || `<p class="muted">${escapeHtml(coplaPlaceLabel(copla))}</p>`}
+    <aside class="drawer-panel copla-sheet${stepClass}" role="dialog" aria-modal="true" aria-label="Ficha da copla: ${escapeHtml(coplaTitle(copla))}" data-sheet-copla="${copla.id}">
+      <div class="drawer-bar">
+        ${pager}
+        <div class="drawer-tools">
+          <button class="icon-btn drawer-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir a unha peza" title="Engadir a unha peza">+</button>
+          <button class="card-close" type="button" data-close-drawer aria-label="Pechar">×</button>
         </div>
       </div>
-      <div class="drawer-section">
-        <h3>Variantes</h3>
-        ${(copla.versions || []).map(version => `
-          <div class="variant">
-            <strong>${escapeHtml(version.label || version.incipit || "Variante")}</strong>
-            <div>${nl2br(version.text || "")}</div>
-            <p class="muted">${version.territory_mode === "custom" && (version.territories || []).length ? escapeHtml(version.territories.map(territoryDisplayName).join(" \\ ")) : "Mesma adscrición territorial ca copla principal"}</p>
-            ${version.notes ? `<p class="muted">${escapeHtml(version.notes)}</p>` : ""}
-          </div>
-        `).join("") || `<p class="muted">Sen variantes rexistradas.</p>`}
+      <div class="copla-hero">
+        ${copla.is_volta ? `<span class="tag is-volta">Volta</span>` : ""}
+        <div class="copla-hero-text">${nl2br(String(copla.text || "").trim())}</div>
       </div>
-      <div class="drawer-section">
-        <h3>Media relacionada</h3>
-        <div class="media-grid compact">${coplaMedia(copla).map(mediaCard).join("") || `<p class="muted">Sen recursos multimedia vinculados a esta copla.</p>`}</div>
-      </div>
-      <div class="drawer-section">
-        <h3>Notas e fonte</h3>
-        <p class="muted">${escapeHtml(copla.notes || "Sen notas rexistradas.")}</p>
-      </div>
+      <div class="copla-places">${coplaPlacesMarkup(copla)}</div>
       <div class="meta">${(copla.tags || []).map(tag => `<span class="tag" data-tag-name="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`).join("")}</div>
-      <div class="drawer-actions">
+      ${folds ? `<div class="drawer-folds">${folds}</div>` : ""}
+      <div class="drawer-actions edit-only">
         <button class="btn" type="button" data-edit-copla="${copla.id}">Editar copla</button>
         <button class="btn danger" type="button" data-delete-copla="${copla.id}">Borrar copla</button>
-        <button class="btn primary drawer-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir á peza">+</button>
       </div>
+      ${pager ? `<p class="drawer-hint" aria-hidden="true">← → para cambiar de copla</p>` : ""}
     </aside>
   `;
   all("[data-close-drawer]", drawer).forEach(item => item.addEventListener("click", closeCoplaDrawer));
+  all("[data-copla-step]", drawer).forEach(button => button.addEventListener("click", () => stepCoplaDrawer(Number(button.dataset.coplaStep))));
   $("[data-edit-copla]", drawer)?.addEventListener("click", () => startEditCopla(copla.id));
   $("[data-delete-copla]", drawer)?.addEventListener("click", () => openDeleteConfirm([copla.id]));
   bindResultButtons(drawer);
   bindCoplaActions(drawer);
 }
 
+function stepCoplaDrawer(delta) {
+  if (!coplaNav) return false;
+  const drawer = $("#coplaDrawer");
+  const current = Number(drawer?.querySelector("[data-sheet-copla]")?.dataset.sheetCopla);
+  const index = coplaNav.ids.indexOf(current) + delta;
+  if (!current || index < 0 || index >= coplaNav.ids.length) return false;
+  openCoplaDrawer(coplaNav.ids[index], { keepNav: true, direction: delta });
+  // Deixa a lista de fondo na copla actual, para cando se peche a ficha.
+  document.querySelector(`#coplaList [data-open-copla="${coplaNav.ids[index]}"]`)?.scrollIntoView?.({ block: "nearest" });
+  return true;
+}
+
 function closeCoplaDrawer() {
   const drawer = $("#coplaDrawer");
   if (!drawer) return;
+  coplaNav = null;
   drawer.hidden = true;
   drawer.innerHTML = "";
+}
+
+// Frechas do teclado e deslizamento táctil (esquerda = seguinte, dereita = anterior).
+function bindCoplaDrawerNav() {
+  document.addEventListener("keydown", event => {
+    if (!coplaNav || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const drawer = $("#coplaDrawer");
+    if (!drawer || drawer.hidden) return;
+    if (event.target.closest?.("input, textarea, select, [contenteditable='true']")) return;
+    const dialogs = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].filter(node => node.getClientRects().length);
+    const top = dialogs[dialogs.length - 1];
+    if (top && !drawer.contains(top)) return;
+    if (stepCoplaDrawer(event.key === "ArrowRight" ? 1 : -1)) event.preventDefault();
+  });
+  let start = null;
+  document.addEventListener("touchstart", event => {
+    const panel = event.target.closest?.("#coplaDrawer .copla-sheet");
+    if (!panel || !coplaNav || event.touches.length !== 1 || event.target.closest(".media-grid, iframe, input, textarea")) { start = null; return; }
+    start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }, { passive: true });
+  document.addEventListener("touchend", event => {
+    if (!start || !event.changedTouches.length) return;
+    const dx = event.changedTouches[0].clientX - start.x;
+    const dy = event.changedTouches[0].clientY - start.y;
+    start = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    stepCoplaDrawer(dx < 0 ? 1 : -1);
+  }, { passive: true });
 }
 
 function batchAssignModalMarkup() {
@@ -5832,15 +5891,19 @@ function aboutAccountsMarkup() {
     <section class="about-section">
       <div class="about-section-head"><div class="eyebrow">Contas</div><h2>Para consultar non fai falta conta</h2></div>
       <div class="about-cards">
-        <article class="panel"><h3>Sen conta</h3><p>Podes consultar todo o arquivo e compoñer pezas no obradoiro. Non se che pide ningún dato.</p></article>
-        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo e podes exportar PDFs: favoritos de coplas, lugares, etiquetas, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
+        <article class="panel"><h3>Sen conta</h3><p>Podes consultar todo o arquivo e compoñer pezas no obradoiro. Non se che pide ningún dato. Para descargar un PDF hai que entrar.</p></article>
+        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo e podes descargar PDFs (ata 15 ao día): favoritos de coplas, lugares, etiquetas, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
         <article class="panel"><h3>Roles</h3><p>A maioría das contas son foleantes. As persoas guía axudan a editar o arquivo e a coidar a biblioteca de pezas; a administración xestiona os roles.</p></article>
       </div>
       <p class="about-cta">${cta}</p>
     </section>
     <section class="about-section">
       <div class="about-section-head"><div class="eyebrow">Pezas</div><h2>Gardar unha peza pide conta</h2></div>
-      <p class="about-lead">Compoñer e exportar en PDF está ao alcance de todas as persoas. Gardar require conta, para que a peza quede no teu perfil. Cada peza é <strong>privada</strong> (só a ves ti) ou <strong>pública</strong> (aparece na biblioteca, aberta a calquera). Podes mudala de unha a outra, editala ou borrala cando queiras; se unha peza pública dá problemas, unha persoa guía pode agochala.</p>
+      <p class="about-lead">Compoñer está ao alcance de todas as persoas. Gardar unha peza require conta, para que quede no teu perfil. Cada peza é <strong>privada</strong> (só a ves ti) ou <strong>pública</strong> (aparece na biblioteca, aberta a calquera). Podes mudala de unha a outra, editala ou borrala cando queiras; se unha peza pública dá problemas, unha persoa guía pode agochala.</p>
+    </section>
+    <section class="about-section">
+      <div class="about-section-head"><div class="eyebrow">PDF</div><h2>Para xerar un PDF pedimos que entres</h2></div>
+      <p class="about-lead">Os PDFs de pezas e de lugares fanse cun servizo que ten unha cota diaria gratuíta. Pedir que a persoa estea logueada protexe esa cota de abusos e permite manter o arquivo aberto e gratuíto. Cada persoa pode descargar ata 15 PDFs ao día; consultar, buscar e compoñer non teñen límite nin piden conta.</p>
     </section>`;
 }
 
@@ -5858,7 +5921,38 @@ function aboutMarkup() {
 
       <section class="about-section">
         <div class="about-section-head"><div class="eyebrow">Como funciona</div><h2>Entrar polo lugar, polo texto ou polo son</h2></div>
-        <p class="about-lead">O arquivo reúne coplas e repertorio tradicional galego. Cada copla pode estar ligada a un ou varios lugares, a etiquetas, a recursos (gravacións, vídeos, partituras) e a melodías. Esas ligazóns son o que permite ir de un a outro: dun lugar ás súas coplas, dunha copla á súa melodía, dunha melodía ao recurso onde se escoita.</p>
+        <p class="about-lead">O arquivo reúne coplas e repertorio tradicional galego e ligaos entre si. Podes comezar por onde che pete (un lugar no mapa, un verso, unha melodía) e ir saltando dunha cousa a outra seguindo esas relacións.</p>
+        <div class="about-cards about-relations">
+          <article class="panel"><h3>Copla</h3><p>É a peza básica: o texto, o seu íncipit (o primeiro verso), notas e etiquetas. Pode ter varias variantes e estar ligada a un ou varios lugares.</p></article>
+          <article class="panel"><h3>Lugar</h3><p>Onde se canta ou se recolleu. Os lugares van en niveis (provincia, comarca, concello e parroquia) e cada un contén os de abaixo: ao abrir un concello ves tamén as coplas, melodías e recursos das súas parroquias.</p></article>
+          <article class="panel"><h3>Melodía</h3><p>O inventario de melodías, agrupadas por ritmo e lugar. Unha melodía pode servir a moitas coplas e levar un ou varios recursos onde escoitala.</p></article>
+          <article class="panel"><h3>Recurso (media)</h3><p>Gravacións, vídeos, imaxes e documentos. Cada recurso pode estar ligado a unha copla, a unha melodía ou a unha peza, e así levarte de unha ao outro.</p></article>
+          <article class="panel"><h3>Peza</h3><p>Unha selección ordenada de coplas, por voltas, para cantar ou ensaiar. Pode ser un repertorio propio ou o arranxo dun grupo ou artista; todas as pezas dunha mesma autoría xúntanse na súa ficha.</p></article>
+          ${accounts ? `<article class="panel"><h3>Persoa</h3><p>Quen usa o arquivo con conta. Pode ter un perfil público co seu username, as súas pezas publicadas e os seus favoritos (se quere amosalos).</p></article>` : ""}
+        </div>
+      </section>
+
+      <section class="about-section">
+        <div class="about-section-head"><div class="eyebrow">Que podes facer</div><h2>Consultar, escoitar e montar repertorio</h2></div>
+        <ul class="about-list">
+          <li><strong>Consultar.</strong> Busca coplas por verso, íncipit, lugar ou etiqueta; filtra por lugar no mapa ou no listado de territorios; abre unha ficha para ver variantes, melodía e recursos.</li>
+          <li><strong>Escoitar.</strong> Desde unha copla, unha melodía ou unha peza chegas aos recursos ligados: gravacións, vídeos e documentos.</li>
+          <li><strong>Montar pezas.</strong> Con «Seleccionar varias» marcas coplas das listas e levas a unha peza; no obradoiro ordénalas por voltas, engade notas e, se queres, pega ou escribe coplas novas.${accounts ? " Sen conta podes compoñer; para gardar a peza hai que entrar." : ""}</li>
+          <li><strong>Levar o repertorio en papel.</strong> Unha peza ou un lugar saen en PDF coas coplas completas, pensado para imprimir.${accounts ? " Para xerar o PDF pedimos que a persoa estea logueada." : ""}</li>
+          <li><strong>Achegar.</strong> Se tes unha copla que falta ou unha corrección, usa o formulario de máis abaixo.</li>
+        </ul>
+      </section>
+
+      <section class="about-section">
+        <div class="about-section-head"><div class="eyebrow">Código de cores</div><h2>A cor di de que nivel é o lugar</h2></div>
+        <p class="about-lead">Nas coplas, listas e fichas, cada lugar aparece cun punto e o seu nome na cor do seu nivel. A cor só indica a escala do lugar, non a cantidade nin a calidade das coplas.</p>
+        <ul class="about-legend">
+          <li><span class="level-text level-par">Parroquia</span><span>O lugar máis concreto: onde se cantou ou se recolleu a copla.</span></li>
+          <li><span class="level-text level-con">Concello</span><span>Agrupa parroquias.</span></li>
+          <li><span class="level-text level-com">Comarca</span><span>Agrupa concellos.</span></li>
+          <li><span class="level-text level-prov">Provincia</span><span>O nivel máis xeral.</span></li>
+          <li><span class="level-text level-empty">Sen lugar</span><span>Unha copla cuxo lugar aínda non se coñece. En gris, sen punto de cor.</span></li>
+        </ul>
       </section>
 
       <section class="about-section">
@@ -6123,6 +6217,7 @@ function bindGlobalEvents() {
 
 async function init() {
   bindGlobalEvents();
+  bindCoplaDrawerNav();
   updateCartBadges();
   setView(normalizeView(new URL(window.location.href).searchParams.get("mode") || new URL(window.location.href).searchParams.get("view") || "map"));
 

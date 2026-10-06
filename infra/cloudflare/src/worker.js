@@ -1075,7 +1075,7 @@ const PRINT_CSS = `@import url("https://fonts.googleapis.com/css2?family=DM+Mono
 
 @page {
   size: A4;
-  margin: 18mm 16mm 18mm;
+  margin: 16mm 12mm 16mm;
 }
 
 @page {
@@ -1095,14 +1095,14 @@ body {
   color: #171717;
   font-family: "Inter", "Arial", "Helvetica", sans-serif;
   font-size: 10.5pt;
-  line-height: 1.45;
+  line-height: 1.4;
   margin: 0;
 }
 
 .document-header {
   border-bottom: 0.4pt solid #D8D8D0;
-  margin-bottom: 8mm;
-  padding-bottom: 5mm;
+  margin-bottom: 6mm;
+  padding-bottom: 4mm;
 }
 
 .brand {
@@ -1110,7 +1110,7 @@ body {
   color: #171717;
   display: flex;
   gap: 4mm;
-  margin-bottom: 7mm;
+  margin-bottom: 5mm;
 }
 
 .wordmark {
@@ -1138,11 +1138,6 @@ body {
 
 .wordmark-o circle {
   fill: #C24330;
-}
-
-.brand-sub {
-  color: #6B6B64;
-  font-size: 8pt;
 }
 
 h1 {
@@ -1184,10 +1179,8 @@ h1 {
 }
 
 .piece-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 11mm;
-  align-items: start;
+  column-count: 2;
+  column-gap: 9mm;
 }
 
 .territory-list {
@@ -1195,8 +1188,8 @@ h1 {
 }
 
 .part {
-  break-inside: avoid;
-  margin: 0 0 8mm;
+  break-inside: auto;
+  margin: 0 0 5mm;
 }
 
 .part-title {
@@ -1206,20 +1199,20 @@ h1 {
   font-size: 8.5pt;
   font-weight: 500;
   letter-spacing: 0.06em;
-  margin: 0 0 4mm;
+  margin: 0 0 3mm;
   text-transform: uppercase;
 }
 
 .copla {
   break-inside: avoid;
   page-break-inside: avoid;
-  margin: 0 0 5.5mm;
+  margin: 0 0 4mm;
 }
 
 .copla-text {
   font-family: "DM Mono", "Courier New", monospace;
   font-size: 10pt;
-  line-height: 1.5;
+  line-height: 1.38;
   white-space: pre-line;
 }
 
@@ -1498,7 +1491,7 @@ function renderPiecePdfHtml(document) {
 </head>
 <body>
   <header class="document-header">
-    <div class="brand"><span class="wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</span><span class="brand-sub">arquivo e repertorio</span></div>
+    <div class="brand"><span class="wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</span></div>
     <h1>${pdfHtmlEscape(document.title)}</h1>
     <div class="meta-row">${renderPdfMeta(document)}</div>
     <p class="description">${pdfHtmlEscape(document.description)}</p>
@@ -1524,7 +1517,7 @@ function renderTerritoryPdfHtml(document) {
 </head>
 <body>
   <header class="document-header">
-    <div class="brand"><span class="wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</span><span class="brand-sub">arquivo e repertorio</span></div>
+    <div class="brand"><span class="wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</span></div>
     <h1>${pdfHtmlEscape(document.title)}</h1>
     <div class="meta-row">${meta}</div>
     <p class="description">${pdfHtmlEscape(document.context)}</p>
@@ -2067,15 +2060,15 @@ async function handleSaveProfile(request, env, url) {
   let handle = null;
   if (handleRaw) {
     if (!/^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/.test(handleRaw) || handleRaw.includes("--")) {
-      throw new HttpError(400, "O enderezo ten que ter 3-30 caracteres: letras sen acentos, números e guións.");
+      throw new HttpError(400, "O username ten que ter 3-30 caracteres: letras sen acentos, números e guións.");
     }
-    if (RESERVED_HANDLES.has(handleRaw)) throw new HttpError(400, "Ese enderezo está reservado; elixe outro.");
+    if (RESERVED_HANDLES.has(handleRaw)) throw new HttpError(400, "Ese username está reservado; elixe outro.");
     handle = handleRaw;
   }
   const isPublic = payload.is_public === true || payload.is_public === 1;
   const showFavorites = payload.show_favorites === true || payload.show_favorites === 1;
   if (isPublic && (!handle || !displayName)) {
-    throw new HttpError(400, "Para ter perfil público fai falta un nome e un enderezo.");
+    throw new HttpError(400, "Para ter perfil público fai falta un nome e un username.");
   }
 
   let territoryId = null;
@@ -2100,7 +2093,7 @@ async function handleSaveProfile(request, env, url) {
          updated_at = CURRENT_TIMESTAMP`
     ).bind(viewer.id, handle, displayName, bio, territoryId, isPublic ? 1 : 0, showFavorites ? 1 : 0).run());
   } catch (err) {
-    if (/UNIQUE/i.test(String(err && err.message))) throw new HttpError(409, "Ese enderezo xa está collido; elixe outro.");
+    if (/UNIQUE/i.test(String(err && err.message))) throw new HttpError(409, "Ese username xa está collido; elixe outro.");
     throw err;
   }
   await bumpDataVersion(env); // a autoría pública das pezas depende do perfil

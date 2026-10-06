@@ -1,7 +1,7 @@
 """E2E: botón Atrás/Adiante do navegador (vistas e rutas #/...), foco en capas modais, skip link."""
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "harness"))
-from common import APP, ok, finish
+from common import APP, OUT, ok, finish
 from playwright.sync_api import sync_playwright
 import shoot_lib as S
 
@@ -99,6 +99,40 @@ with sync_playwright() as p:
     pg.keyboard.press("Escape"); wait(pg, 400)
     ok("Esc pecha o drawer", pg.evaluate("document.getElementById('coplaDrawer').hidden"))
     ok("o foco volve á vista de coplas", pg.evaluate("document.activeElement.closest('#view-coplas') !== null"))
+
+    # --- ficha da copla: texto central, pregos e navegación anterior/seguinte
+    sheet = "document.querySelector('#coplaDrawer [data-sheet-copla]')"
+    card.click(); pg.wait_for_selector("#coplaDrawer .copla-sheet"); wait(pg, 400)
+    ok("ficha: a copla é o centro (texto completo)", pg.locator("#coplaDrawer .copla-hero-text").inner_text().strip().count("\n") >= 1)
+    ok("ficha: sen seccións baleiras 'Sen ...'", "sen variantes" not in pg.locator("#coplaDrawer").inner_text().lower() and "sen recursos" not in pg.locator("#coplaDrawer").inner_text().lower())
+    ok("ficha: os detalles son pregos pechados", pg.locator("#coplaDrawer details[open]").count() == 0)
+    ok("ficha: o + é pequeno e non está nas accións", pg.locator("#coplaDrawer .drawer-actions [data-add-copla]").count() == 0 and pg.locator("#coplaDrawer .drawer-tools [data-add-copla]").count() == 1)
+    ok("ficha: 1 / N", pg.locator("#coplaDrawer .drawer-pager span").inner_text().startswith("1 / "), pg.locator("#coplaDrawer .drawer-pager span").inner_text())
+    pg.screenshot(path=str(OUT / "copla_sheet.png"))
+    first_id = pg.evaluate(sheet + ".dataset.sheetCopla")
+    first_text = pg.locator("#coplaDrawer .copla-hero-text").inner_text()
+    pg.keyboard.press("ArrowRight"); wait(pg, 350)
+    ok("→ pasa á seguinte", pg.locator("#coplaDrawer .drawer-pager span").inner_text().startswith("2 / ") and pg.evaluate(sheet + ".dataset.sheetCopla") != first_id)
+    ok("o foco segue dentro da ficha", pg.evaluate(inside))
+    ok("o texto cambia", pg.locator("#coplaDrawer .copla-hero-text").inner_text() != first_text)
+    pg.keyboard.press("ArrowLeft"); wait(pg, 350)
+    ok("← volve á anterior", pg.evaluate(sheet + ".dataset.sheetCopla") == first_id and pg.locator("#coplaDrawer [data-copla-step='-1']").is_disabled())
+    pg.keyboard.press("ArrowLeft"); wait(pg, 200)
+    ok("← na primeira non fai nada", pg.evaluate(sheet + ".dataset.sheetCopla") == first_id)
+    # deslizamento táctil (esquerda = seguinte, dereita = anterior)
+    swipe = """dx => { const el = document.querySelector('#coplaDrawer .copla-hero-text');
+      const mk = (t, x) => new Touch({identifier: 1, target: el, clientX: x, clientY: 300});
+      el.dispatchEvent(new TouchEvent('touchstart', {bubbles: true, cancelable: true, touches: [mk(0, 300)], targetTouches: [mk(0, 300)], changedTouches: [mk(0, 300)]}));
+      el.dispatchEvent(new TouchEvent('touchend', {bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [mk(0, 300 + dx)]})); }"""
+    pg.evaluate(swipe, -140); wait(pg, 350)
+    ok("deslizar á esquerda: seguinte", pg.evaluate(sheet + ".dataset.sheetCopla") != first_id)
+    pg.evaluate(swipe, 140); wait(pg, 350)
+    ok("deslizar á dereita: anterior", pg.evaluate(sheet + ".dataset.sheetCopla") == first_id)
+    pg.evaluate(swipe, 20); wait(pg, 250)
+    ok("un toque curto non cambia de copla", pg.evaluate(sheet + ".dataset.sheetCopla") == first_id)
+    pg.keyboard.press("Escape"); wait(pg, 400)
+    ok("Esc pecha a ficha navegada", pg.evaluate("document.getElementById('coplaDrawer').hidden"))
+    card.click(); pg.wait_for_selector("#coplaDrawer .copla-sheet"); wait(pg, 400)
 
     # --- contraste do texto dos niveis (parroquia/concello/comarca/provincia) >= 4.5:1 sobre o papel
     pg.goto(APP + "/"); pg.wait_for_selector("#global-loading[hidden]", state="attached"); wait(pg, 1200)

@@ -180,13 +180,13 @@ só mostra/agocha botóns; quen manda é sempre o servidor.
 Migración aditiva `migrations/0004_profiles.sql` (non borra nada): táboas
 `profiles`, `favorites` e `site_meta`.
 
-- **O meu espazo** (`frontend/js/profile.js`): nome que se amosa, enderezo
-  curto, lugar (concello/parroquia/comarca), presentación, perfil público
+- **O meu espazo** (`frontend/js/profile.js`): nome que se amosa, username,
+  lugar (concello/parroquia/comarca), presentación, perfil público
   (desactivado por defecto) e favoritos de coplas e lugares. A API (`/api/me/*`)
   só deixa tocar o que é da propia persoa; calquera persoa con sesión pode usala
   (tamén os foleantes). O correo e a foto de Google non saen en ningunha ruta
   pública.
-- **Persoas**: `GET /api/people` (directorio) e `GET /api/people/<enderezo>`
+- **Persoas**: `GET /api/people` (directorio) e `GET /api/people/<username>`
   só devolven perfís con `is_public = 1`; os favoritos só se se activou
   «amosar os meus favoritos». Hai un botón para borrar a conta (`POST
   /api/me/delete`).

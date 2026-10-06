@@ -5683,3 +5683,216 @@ label {
     min-height: 44px;
   }
 }
+
+/* ==========================================================
+   Ficha da copla: a copla é o centro; o resto, en pregos
+   ========================================================== */
+
+.copla-sheet:focus {
+  outline: none;
+}
+
+.drawer-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+}
+
+.drawer-pager {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.drawer-pager .icon-btn,
+.drawer-tools .icon-btn,
+.drawer-bar .card-close {
+  position: static;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--tint);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+.drawer-pager .icon-btn {
+  font-size: 22px;
+}
+
+.drawer-pager .icon-btn:hover:not(:disabled),
+.drawer-tools .icon-btn:hover,
+.drawer-bar .card-close:hover {
+  color: var(--ink);
+  background: var(--tint-strong);
+}
+
+.drawer-pager .icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.drawer-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.drawer-tools .fav-btn {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--tint);
+}
+
+.copla-hero {
+  padding: 22px 2px 6px;
+}
+
+.copla-hero .tag {
+  margin-bottom: 10px;
+}
+
+.copla-hero-text {
+  font-family: var(--font-mono);
+  font-size: clamp(17px, 1.7vw, 20px);
+  line-height: 1.62;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.copla-places {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin-top: 18px;
+}
+
+.copla-places .place-link {
+  padding: 4px 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.copla-places .place-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.copla-places .level-text.level-empty {
+  font-size: 14px;
+}
+
+.drawer-folds {
+  margin-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.drawer-fold {
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-fold summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 2px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+
+.drawer-fold summary::-webkit-details-marker {
+  display: none;
+}
+
+.drawer-fold summary small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.drawer-fold summary::after {
+  content: "+";
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.drawer-fold[open] summary::after {
+  content: "\2212";
+}
+
+.drawer-fold-body {
+  padding: 0 2px 14px;
+}
+
+.copla-sheet .drawer-actions {
+  margin-top: 22px;
+}
+
+.drawer-hint {
+  display: none;
+  margin: 16px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .drawer-hint {
+    display: block;
+  }
+}
+
+@media (pointer: coarse) {
+  .drawer-pager .icon-btn,
+  .drawer-tools .icon-btn,
+  .drawer-tools .fav-btn,
+  .drawer-bar .card-close {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+@keyframes sheetFromRight {
+  from { opacity: 0; transform: translateX(28px); }
+}
+
+@keyframes sheetFromLeft {
+  from { opacity: 0; transform: translateX(-28px); }
+}
+
+.copla-sheet.is-step-next .copla-hero,
+.copla-sheet.is-step-next .copla-places {
+  animation: sheetFromRight 200ms ease-out;
+}
+
+.copla-sheet.is-step-prev .copla-hero,
+.copla-sheet.is-step-prev .copla-places {
+  animation: sheetFromLeft 200ms ease-out;
+}

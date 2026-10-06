@@ -103,8 +103,10 @@ function mobileMarkup() {
   if (user && !user.open && mode === "google") {
     return `
       <div class="mobile-menu-sep" role="separator"></div>
-      <div class="mobile-menu-note">${escapeText(user.name || user.email)}<small>${ROLE_LABELS[user.role] || user.role}</small></div>
-      <button type="button" role="menuitem" data-view="profile"><i>☆</i>O meu espazo</button>
+      <button type="button" role="menuitem" class="mobile-menu-account" data-view="profile" title="O meu espazo">
+        ${avatarMarkup(user)}
+        <span class="account-text"><strong>${escapeText(user.name || user.email)}</strong><small>${ROLE_LABELS[user.role] || user.role}</small></span>
+      </button>
       ${isAdmin() ? `<button type="button" role="menuitem" data-account="people"><i>☷</i>Xestionar roles</button>` : ""}
       <button type="button" role="menuitem" data-account="logout"><i>↗</i>Saír</button>
     `;

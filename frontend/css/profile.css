@@ -735,6 +735,48 @@ body:not([data-auth-mode="google"]) [data-people-nav] {
   color: var(--muted);
 }
 
+.about-relations {
+  margin-top: 14px;
+}
+
+.about-list,
+.about-legend {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.about-list li {
+  padding: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.about-list li strong {
+  color: var(--ink);
+}
+
+.about-legend li {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 14px;
+  align-items: baseline;
+  padding: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.about-legend .level-text {
+  font-size: 15px;
+  font-weight: 500;
+}
+
 .about-cta {
   margin: 18px 0 0;
 }
@@ -829,6 +871,11 @@ body:not([data-auth-mode="google"]) [data-people-nav] {
 @media (max-width: 720px) {
   .about-cards {
     grid-template-columns: 1fr;
+  }
+
+  .about-legend li {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   .about-nav-row {

@@ -1,10 +1,10 @@
 // Espazo persoal: perfil, directorio de persoas e favoritos.
 //
 // Módulo autónomo (ver index.html), no mesmo estilo ca js/auth.js:
-//   - "O meu espazo" (vista `profile`): nome que se amosa, enderezo curto,
+//   - "O meu espazo" (vista `profile`): nome que se amosa, username,
 //     lugar, presentación, perfil público opcional e lista de favoritos.
 //   - "Persoas" (vista `people`): directorio dos perfís públicos e páxina de
-//     cada persoa (#/persoa/<enderezo>).
+//     cada persoa (#/persoa/<username>).
 //   - Estrelas de favorito en coplas e lugares, inxectadas no DOM sen tocar
 //     o resto da aplicación.
 //
@@ -239,10 +239,10 @@ function decorate() {
     if (id) actions.insertAdjacentHTML("afterbegin", favButtonMarkup("piece", id, { label: true }));
   });
 
-  document.querySelectorAll("#coplaDrawer .drawer-actions:not([data-fav-done])").forEach(actions => {
-    actions.dataset.favDone = "1";
-    const id = actions.querySelector("[data-add-copla]")?.dataset.addCopla;
-    if (id) actions.insertAdjacentHTML("afterbegin", favButtonMarkup("copla", id, { label: true }));
+  document.querySelectorAll("#coplaDrawer .drawer-tools:not([data-fav-done])").forEach(tools => {
+    tools.dataset.favDone = "1";
+    const id = tools.querySelector("[data-add-copla]")?.dataset.addCopla;
+    if (id) tools.insertAdjacentHTML("afterbegin", favButtonMarkup("copla", id, {}));
   });
 
   const heroId = territoryIdFrom("#territorySilhouette");
@@ -358,9 +358,9 @@ async function renderProfile() {
             <small>Non se usa o teu nome de Google a non ser que o escribas aquí. O teu correo non se amosa nunca.</small>
           </div>
           <div class="field">
-            <label for="pfHandle">Enderezo curto</label>
+            <label for="pfHandle">username</label>
             <input id="pfHandle" name="handle" maxlength="30" value="${esc(profile.handle)}" placeholder="por exemplo: maria-de-lugo" autocapitalize="none" spellcheck="false">
-            <small>Só minúsculas sen acentos, números e guións (3-30). A túa páxina sería <code>#/persoa/<span id="pfHandlePreview">${esc(profile.handle || "o-teu-enderezo")}</span></code>.</small>
+            <small>Só minúsculas sen acentos, números e guións (3-30). A túa páxina sería <code>#/persoa/<span id="pfHandlePreview">${esc(profile.handle || "o-teu-username")}</span></code>.</small>
           </div>
           <div class="field">
             <label for="pfPlace">Lugar (opcional)</label>
@@ -377,7 +377,7 @@ async function renderProfile() {
           </div>
           <label class="check-row">
             <input type="checkbox" name="is_public" ${profile.is_public ? "checked" : ""}>
-            <span><strong>Perfil público</strong><small>Aparece no directorio «Persoas» e calquera pode ver o teu nome, lugar e presentación. Precisa nome e enderezo. Podes desactivalo cando queiras.</small></span>
+            <span><strong>Perfil público</strong><small>Aparece no directorio «Persoas» e calquera pode ver o teu nome, lugar e presentación. Precisa nome e username. Podes desactivalo cando queiras.</small></span>
           </label>
           <label class="check-row">
             <input type="checkbox" name="show_favorites" ${profile.show_favorites ? "checked" : ""}>
@@ -565,7 +565,7 @@ function bindProfileForm(view, profile, data) {
 
   handleInput.addEventListener("input", () => {
     handleInput.value = handleInput.value.toLowerCase().replace(/[^a-z0-9-]/g, "");
-    preview.textContent = handleInput.value || "o-teu-enderezo";
+    preview.textContent = handleInput.value || "o-teu-username";
   });
   bio.addEventListener("input", () => { view.querySelector("#pfBioCount").textContent = String(bio.value.length); });
 
