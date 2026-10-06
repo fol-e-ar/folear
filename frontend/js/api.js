@@ -115,9 +115,36 @@ export async function getGeoLayer(tipo) {
   return fetchJson(path);
 }
 
-export async function getPezas() {
+// Pezas públicas (exporte cacheado) + as da persoa con sesión (privadas e
+// públicas) + as agochadas por moderación para guías/admin. Se algunha das
+// dúas últimas falla (sen sesión, sen migración, modo local), a biblioteca
+// segue funcionando coas públicas.
+async function getJsonOrNull(url) {
+  try {
+    const res = await fetch(url, { cache: "no-store", credentials: "same-origin" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && data.ok !== false ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getPezas({ account = false, moderator = false } = {}) {
   const paths = buildPaths();
-  return fetchJson(paths.pezas);
+  const publicList = await fetchJson(paths.pezas);
+  const base = Array.isArray(publicList) ? publicList : [];
+  if (!account && !moderator) return base;
+  const [mine, hidden] = await Promise.all([
+    account ? getJsonOrNull("../api/me/pieces") : null,
+    moderator ? getJsonOrNull("../api/pieces/hidden") : null,
+  ]);
+  const byId = new Map();
+  base.forEach(piece => byId.set(piece.id, { ...piece }));
+  (hidden?.pieces || []).forEach(piece => byId.set(piece.id, { ...piece, moderation: true }));
+  (mine?.pieces || []).forEach(piece => byId.set(piece.id, { ...piece, mine: true }));
+  return [...byId.values()].sort((a, b) =>
+    String(b.updated_at || "").localeCompare(String(a.updated_at || "")) || Number(b.id) - Number(a.id));
 }
 
 export async function getMedia() {

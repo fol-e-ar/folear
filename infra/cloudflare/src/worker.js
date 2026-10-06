@@ -1989,7 +1989,7 @@ async function cachedExport(request, env, ctx, url, name, build) {
 // saen nas rutas públicas.
 // ---------------------------------------------------------------------
 
-const FAVORITE_KINDS = ["copla", "territory", "tag", "media", "melody"];
+const FAVORITE_KINDS = ["copla", "territory", "tag", "media", "melody", "piece"];
 const MAX_FAVORITES_PER_USER = 3000;
 const RESERVED_HANDLES = new Set([
   "admin", "api", "data", "perfil", "persoa", "persoas", "privacidade", "entrar",
@@ -2103,6 +2103,7 @@ async function handleSaveProfile(request, env, url) {
     if (/UNIQUE/i.test(String(err && err.message))) throw new HttpError(409, "Ese enderezo xa está collido; elixe outro.");
     throw err;
   }
+  await bumpDataVersion(env); // a autoría pública das pezas depende do perfil
   const row = await loadProfile(env, viewer.id);
   return jsonNoStore({ ok: true, profile: profileRowToJson(row) }, { env });
 }
@@ -2117,7 +2118,16 @@ async function handleMyFavorites(request, env, url) {
   return jsonNoStore({ ok: true, favorites: grouped }, { env });
 }
 
-async function favoriteTargetExists(env, kind, ref) {
+async function favoriteTargetExists(env, kind, ref, viewer) {
+  if (kind === "piece") {
+    try {
+      return Boolean(await env.DB.prepare(
+        "SELECT 1 AS ok FROM pieces p WHERE p.id = ? AND ((p.visibility = 'public' AND p.status <> 'hidden') OR p.owner_user_id = ?)"
+      ).bind(Number(ref), viewer.id).first());
+    } catch (err) {
+      return false;
+    }
+  }
   const queries = {
     copla: ["SELECT 1 AS ok FROM coplas WHERE id = ?", Number(ref)],
     territory: ["SELECT 1 AS ok FROM territories WHERE id = ?", ref],
@@ -2138,7 +2148,7 @@ async function handleToggleFavorite(request, env, url) {
   if (!FAVORITE_KINDS.includes(kind) || !ref) throw new HttpError(400, "Favorito non válido.");
   const on = payload.on !== false;
   if (on) {
-    if (!(await favoriteTargetExists(env, kind, ref))) throw new HttpError(404, "Iso xa non existe.");
+    if (!(await favoriteTargetExists(env, kind, ref, viewer))) throw new HttpError(404, "Iso xa non existe.");
     const count = await personalTables(env, () =>
       env.DB.prepare("SELECT COUNT(*) AS n FROM favorites WHERE user_id = ?").bind(viewer.id).first()
     );
@@ -2156,12 +2166,27 @@ async function handleDeleteAccount(request, env, url) {
   const viewer = await requirePersonalSpace(request, env, url);
   const payload = await request.json().catch(() => ({}));
   if (payload.confirm !== true) throw new HttpError(400, "Falta confirmar o borrado da conta.");
-  await personalTables(env, () => env.DB.batch([
-    env.DB.prepare("DELETE FROM favorites WHERE user_id = ?").bind(viewer.id),
-    env.DB.prepare("DELETE FROM profiles WHERE user_id = ?").bind(viewer.id),
-    env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(viewer.id),
-    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(viewer.id),
-  ]));
+  // Borra todo o que é da persoa, incluídas as súas pezas (públicas e privadas).
+  await personalTables(env, async () => {
+    try {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM favorites WHERE kind = 'piece' AND ref IN (SELECT CAST(id AS TEXT) FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
+        env.DB.prepare("DELETE FROM media_links WHERE entity_type = 'piece' AND entity_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
+        env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
+        env.DB.prepare("DELETE FROM pieces WHERE owner_user_id = ?").bind(viewer.id),
+        env.DB.prepare("DELETE FROM follows WHERE follower_id = ? OR followee_id = ?").bind(viewer.id, viewer.id),
+      ]);
+    } catch (err) {
+      if (!/no such (column|table)/i.test(String(err && err.message))) throw err; // sen migración 0005 non hai pezas de persoas
+    }
+    return env.DB.batch([
+      env.DB.prepare("DELETE FROM favorites WHERE user_id = ?").bind(viewer.id),
+      env.DB.prepare("DELETE FROM profiles WHERE user_id = ?").bind(viewer.id),
+      env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(viewer.id),
+      env.DB.prepare("DELETE FROM users WHERE id = ?").bind(viewer.id),
+    ]);
+  });
+  await bumpDataVersion(env);
   return jsonNoStore({ ok: true }, { env, cookies: [buildCookie(SESSION_COOKIE, "", url, { maxAge: 0 })] });
 }
 
@@ -2222,6 +2247,395 @@ async function handlePersonPage(env, handle) {
     },
     favorites,
   }, env);
+}
+
+// ---------------------------------------------------------------------
+// Pezas con dono e visibilidade (biblioteca pública + as miñas pezas)
+//
+//   owner_user_id NULL  -> peza do arquivo (editorial): editable por guías/admin.
+//   owner_user_id = id  -> peza dunha persoa: só ela (e admin) a xestiona.
+//   visibility          -> 'private' (só a dona) ou 'public' (biblioteca).
+//   status 'hidden'     -> peza pública agochada por moderación (guía/admin).
+//
+// As pezas privadas NUNCA saen no exporte público nin no PDF a terceiras.
+// ---------------------------------------------------------------------
+
+const PIECE_VISIBILITIES = ["private", "public"];
+const PUBLIC_PIECE_SQL = "p.visibility = 'public' AND p.status <> 'hidden'";
+const MAX_PIECES_PER_USER = 200;
+const MAX_COPLAS_PER_PIECE = 300;
+
+function cleanMultiline(value, max) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f​-‏‪-‮⁦-⁩]/g, "")
+    .replace(/\r\n?/g, "\n")
+    .trim()
+    .slice(0, max);
+}
+
+function pieceSlugFor(title) {
+  const base = String(title || "peza")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "peza";
+  const suffix = Array.from(crypto.getRandomValues(new Uint8Array(4))).map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return `${base}-${suffix}`;
+}
+
+function piecesMigrationError(err) {
+  if (/no such (column|table)/i.test(String(err && err.message))) {
+    return new HttpError(503, "Falta aplicar a migración 0005 (pezas con dono) na base de datos.");
+  }
+  return err;
+}
+
+async function knownCoplaTexts(env, ids) {
+  const found = new Map();
+  const unique = [...new Set(ids)];
+  for (let i = 0; i < unique.length; i += 80) {
+    const chunk = unique.slice(i, i + 80);
+    const { results } = await env.DB.prepare(`SELECT id, text FROM coplas WHERE id IN (${chunk.map(() => "?").join(",")})`).bind(...chunk).all();
+    results.forEach(row => found.set(row.id, row.text || ""));
+  }
+  return found;
+}
+
+const normalizeCoplaText = value => String(value || "").replace(/\r\n?/g, "\n").trim();
+
+async function cleanPieceInput(env, raw) {
+  if (!raw || typeof raw !== "object") throw new HttpError(400, "Peza non válida.");
+  const title = cleanText(raw.title, 160) || "Peza sen título";
+  const author = cleanText(raw.author, 120) || "Sen autoría";
+  const description = cleanMultiline(raw.description, 1000);
+  const notes = cleanMultiline(raw.notes, 4000);
+  const visibility = PIECE_VISIBILITIES.includes(raw.visibility) ? raw.visibility : "private";
+
+  let territoryId = null;
+  if (raw.context_territory_id) {
+    const found = await env.DB.prepare("SELECT id FROM territories WHERE id = ?").bind(String(raw.context_territory_id)).first();
+    if (!found) throw new HttpError(400, "O territorio de contexto da peza non existe.");
+    territoryId = found.id;
+  }
+
+  const coplas = Array.isArray(raw.coplas) ? raw.coplas : [];
+  if (!coplas.length) throw new HttpError(400, "A peza precisa polo menos unha copla.");
+  if (coplas.length > MAX_COPLAS_PER_PIECE) throw new HttpError(400, `Unha peza non pode ter máis de ${MAX_COPLAS_PER_PIECE} coplas.`);
+  const positions = new Set();
+  const items = coplas.map((item, index) => {
+    if (!item || typeof item !== "object") throw new HttpError(400, `Copla ${index + 1} da peza: non válida.`);
+    const position = Number(item.position);
+    if (!Number.isInteger(position) || position < 1) throw new HttpError(400, `Copla ${index + 1} da peza: posición non válida.`);
+    if (positions.has(position)) throw new HttpError(400, `Copla ${index + 1} da peza: posición repetida.`);
+    positions.add(position);
+    const role = item.role === "retrouso" ? "retrouso" : "copla";
+    const coplaId = item.copla_id == null ? null : Number(item.copla_id);
+    if (coplaId !== null && (!Number.isInteger(coplaId) || coplaId < 1)) throw new HttpError(400, `Copla ${index + 1} da peza: referencia non válida.`);
+    const text = cleanMultiline(item.text, 4000);
+    if (coplaId === null && !text) throw new HttpError(400, `Copla ${index + 1} da peza: falta o texto.`);
+    return {
+      copla_id: coplaId,
+      // O texto garda en liña se non apunta a unha copla do arquivo ou se a persoa o adaptou (ver abaixo).
+      inline_text: text || null,
+      position,
+      section_label: cleanText(item.section_label, 80) || "Parte",
+      role,
+      notes: cleanMultiline(item.notes, 1000) || null,
+    };
+  });
+  const referenced = items.map(item => item.copla_id).filter(id => id !== null);
+  if (referenced.length) {
+    const known = await knownCoplaTexts(env, referenced);
+    const missing = referenced.find(id => !known.has(id));
+    if (missing !== undefined) throw new HttpError(400, `A copla ${missing} xa non existe no arquivo.`);
+    // Se o texto é igual ao do arquivo non o duplicamos: así a peza segue as correccións da copla.
+    for (const item of items) {
+      if (item.copla_id !== null && item.inline_text && normalizeCoplaText(item.inline_text) === normalizeCoplaText(known.get(item.copla_id))) {
+        item.inline_text = null;
+      }
+    }
+  }
+  return { title, author, description, notes, visibility, territoryId, items };
+}
+
+function pieceCoplaStatements(env, pieceId, items) {
+  return items.map(item => env.DB.prepare(
+    `INSERT INTO piece_coplas (piece_id, copla_id, inline_text, position, section_label, role, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).bind(pieceId, item.copla_id, item.inline_text, item.position, item.section_label, item.role, item.notes));
+}
+
+function canManagePiece(viewer, row) {
+  if (viewer.open || viewer.role === "admin") return true;
+  if (row.owner_user_id == null) return EDITOR_ROLES.includes(viewer.role);
+  return row.owner_user_id === viewer.id;
+}
+
+async function requirePieceWriter(request, env, url) {
+  assertSameOrigin(request, url);
+  const viewer = await getViewer(request, env);
+  if (!viewer) {
+    if (authMode(env) === "unconfigured") throw new HttpError(503, "O acceso con Google aínda non está configurado no servidor.");
+    throw new HttpError(401, "Tes que entrar con Google para gardar pezas.");
+  }
+  return viewer;
+}
+
+async function handleSavePiece(request, env, url) {
+  const viewer = await requirePieceWriter(request, env, url);
+  const payload = await request.json().catch(() => null);
+  const list = payload && Array.isArray(payload.pieces) ? payload.pieces : null;
+  if (!list || !list.length) throw new HttpError(400, "O JSON debe levar unha lista 'pieces'.");
+  if (list.length > 20) throw new HttpError(400, "Demasiadas pezas de golpe.");
+
+  const ownerId = viewer.open ? null : viewer.id;
+  const ids = [];
+  for (const raw of list) {
+    const input = await cleanPieceInput(env, raw);
+    const existingId = raw && raw.id != null ? Number(raw.id) : null;
+    try {
+      if (existingId !== null) {
+        const row = await env.DB.prepare("SELECT id, owner_user_id FROM pieces WHERE id = ?").bind(existingId).first();
+        if (!row || !canManagePiece(viewer, row)) throw new HttpError(404, "Non existe esa peza ou non é túa.");
+        await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE pieces SET title = ?, author = ?, context_territory_id = ?, description = ?, notes = ?,
+               visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+          ).bind(input.title, input.author, input.territoryId, input.description, input.notes, input.visibility, existingId),
+          env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id = ?").bind(existingId),
+          ...pieceCoplaStatements(env, existingId, input.items),
+        ]);
+        ids.push(existingId);
+      } else {
+        if (ownerId !== null && viewer.role !== "admin") {
+          const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM pieces WHERE owner_user_id = ?").bind(ownerId).first();
+          if (Number(count?.n || 0) >= MAX_PIECES_PER_USER) throw new HttpError(400, "Chegaches ao límite de pezas gardadas.");
+        }
+        const inserted = await env.DB.prepare(
+          `INSERT INTO pieces (title, slug, author, context_territory_id, description, notes, status, visibility, owner_user_id, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'published', ?, ?, CURRENT_TIMESTAMP)`
+        ).bind(input.title, pieceSlugFor(input.title), input.author, input.territoryId, input.description, input.notes, input.visibility, ownerId).run();
+        const pieceId = inserted.meta.last_row_id;
+        try {
+          await env.DB.batch(pieceCoplaStatements(env, pieceId, input.items));
+        } catch (err) {
+          await env.DB.prepare("DELETE FROM pieces WHERE id = ?").bind(pieceId).run();
+          throw err;
+        }
+        ids.push(pieceId);
+      }
+    } catch (err) {
+      throw piecesMigrationError(err);
+    }
+  }
+  await bumpDataVersion(env);
+  return jsonNoStore({ ok: true, ids }, { env });
+}
+
+async function loadManagedPiece(env, viewer, id) {
+  let row;
+  try {
+    row = await env.DB.prepare("SELECT id, owner_user_id, visibility, status FROM pieces WHERE id = ?").bind(id).first();
+  } catch (err) {
+    throw piecesMigrationError(err);
+  }
+  if (!row || !canManagePiece(viewer, row)) throw new HttpError(404, "Non existe esa peza ou non é túa.");
+  return row;
+}
+
+async function deletePieceRows(env, ids) {
+  for (const id of ids) {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM favorites WHERE kind = 'piece' AND ref = ?").bind(String(id)),
+      env.DB.prepare("DELETE FROM media_links WHERE entity_type = 'piece' AND entity_id = ?").bind(id),
+      env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id = ?").bind(id),
+      env.DB.prepare("DELETE FROM pieces WHERE id = ?").bind(id),
+    ]);
+  }
+}
+
+async function handleDeletePiece(request, env, url) {
+  const viewer = await requirePieceWriter(request, env, url);
+  const payload = await request.json().catch(() => ({}));
+  const id = Number(payload.id);
+  if (!Number.isInteger(id) || id < 1) throw new HttpError(400, "Peza non válida.");
+  await loadManagedPiece(env, viewer, id);
+  await deletePieceRows(env, [id]);
+  await bumpDataVersion(env);
+  return jsonNoStore({ ok: true, id }, { env });
+}
+
+async function handlePieceVisibility(request, env, url) {
+  const viewer = await requirePieceWriter(request, env, url);
+  const payload = await request.json().catch(() => ({}));
+  const id = Number(payload.id);
+  if (!Number.isInteger(id) || id < 1 || !PIECE_VISIBILITIES.includes(payload.visibility)) throw new HttpError(400, "Datos non válidos.");
+  await loadManagedPiece(env, viewer, id);
+  await env.DB.prepare("UPDATE pieces SET visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(payload.visibility, id).run();
+  await bumpDataVersion(env);
+  return jsonNoStore({ ok: true, id, visibility: payload.visibility }, { env });
+}
+
+// Moderación: un guía/admin pode agochar unha peza pública (ou volver amosala)
+// sen borrala. A dona segue vendo a súa peza coa marca de agochada.
+async function handlePieceModerate(request, env, url) {
+  await requireRole(request, env, url, EDITOR_ROLES);
+  const payload = await request.json().catch(() => ({}));
+  const id = Number(payload.id);
+  if (!Number.isInteger(id) || id < 1) throw new HttpError(400, "Peza non válida.");
+  try {
+    const row = await env.DB.prepare("SELECT id FROM pieces WHERE id = ? AND visibility = 'public'").bind(id).first();
+    if (!row) throw new HttpError(404, "Non existe esa peza pública.");
+    await env.DB.prepare("UPDATE pieces SET status = ? WHERE id = ?").bind(payload.hidden ? "hidden" : "published", id).run();
+  } catch (err) {
+    throw piecesMigrationError(err);
+  }
+  await bumpDataVersion(env);
+  return jsonNoStore({ ok: true, id, hidden: Boolean(payload.hidden) }, { env });
+}
+
+async function exportPiecesJson(env, { ownerId = null, hiddenOnly = false } = {}) {
+  const condition = hiddenOnly
+    ? "p.visibility = 'public' AND p.status = 'hidden'"
+    : ownerId === null ? PUBLIC_PIECE_SQL : "p.owner_user_id = ?";
+  const binds = hiddenOnly || ownerId === null ? [] : [ownerId];
+  let pieces;
+  let coplaRows;
+  try {
+    [{ results: pieces }, { results: coplaRows }] = await Promise.all([
+      env.DB.prepare(
+        `SELECT p.id, p.title, p.slug, p.author, p.context_territory_id, p.description, p.notes, p.status, p.visibility,
+                p.created_at, p.updated_at, t.nome AS context_nome, t.tipo AS context_tipo,
+                pr.handle AS owner_handle, pr.display_name AS owner_name, p.owner_user_id
+         FROM pieces p
+         LEFT JOIN territories t ON t.id = p.context_territory_id
+         LEFT JOIN profiles pr ON pr.user_id = p.owner_user_id AND pr.is_public = 1 AND pr.handle IS NOT NULL
+         WHERE ${condition}
+         ORDER BY p.updated_at DESC, p.id DESC`
+      ).bind(...binds).all(),
+      env.DB.prepare(
+        `SELECT pc.piece_id, pc.position, pc.section_label, pc.notes, pc.role, c.id AS id,
+                COALESCE(c.incipit, '') AS incipit, COALESCE(NULLIF(pc.inline_text, ''), c.text) AS text
+         FROM piece_coplas pc
+         JOIN pieces p ON p.id = pc.piece_id
+         LEFT JOIN coplas c ON c.id = pc.copla_id
+         WHERE ${condition}
+         ORDER BY pc.piece_id, pc.position ASC`
+      ).bind(...binds).all(),
+    ]);
+  } catch (err) {
+    if (ownerId !== null || hiddenOnly) throw piecesMigrationError(err);
+    if (!/no such (column|table)/i.test(String(err && err.message))) throw err;
+    // Sen migracións 0004/0005: exporte antigo (todas as pezas son públicas).
+    const legacy = await env.DB.prepare(
+      `SELECT p.id, p.title, p.slug, p.author, p.context_territory_id, p.description, p.notes, p.status,
+              p.created_at, p.updated_at, t.nome AS context_nome, t.tipo AS context_tipo
+       FROM pieces p LEFT JOIN territories t ON t.id = p.context_territory_id
+       ORDER BY p.updated_at DESC, p.id DESC`
+    ).all();
+    const legacyCoplas = await env.DB.prepare(
+      `SELECT pc.piece_id, pc.position, pc.section_label, pc.notes, pc.role, c.id AS id,
+              COALESCE(c.incipit, '') AS incipit, COALESCE(NULLIF(pc.inline_text, ''), c.text) AS text
+       FROM piece_coplas pc LEFT JOIN coplas c ON c.id = pc.copla_id ORDER BY pc.piece_id, pc.position ASC`
+    ).all();
+    pieces = legacy.results;
+    coplaRows = legacyCoplas.results;
+  }
+  const byPiece = new Map();
+  for (const row of coplaRows) {
+    const list = byPiece.get(row.piece_id) || [];
+    list.push({ position: row.position, section_label: row.section_label, notes: row.notes, role: row.role, id: row.id, incipit: row.incipit, text: row.text });
+    byPiece.set(row.piece_id, list);
+  }
+  return pieces.map(piece => {
+    const coplas = byPiece.get(piece.id) || [];
+    return {
+      id: piece.id,
+      title: piece.title,
+      slug: piece.slug,
+      author: piece.author,
+      context_territory: piece.context_territory_id
+        ? { id: piece.context_territory_id, nome: piece.context_nome, tipo: piece.context_tipo }
+        : null,
+      description: piece.description,
+      notes: piece.notes,
+      status: piece.status,
+      visibility: piece.visibility || "public",
+      owner: piece.owner_handle ? { handle: piece.owner_handle, display_name: piece.owner_name } : null,
+      editorial: piece.owner_user_id == null,
+      created_at: piece.created_at,
+      updated_at: piece.updated_at,
+      copla_count: coplas.length,
+      coplas,
+    };
+  });
+}
+
+async function handleMyPieces(request, env, url) {
+  const viewer = await getViewer(request, env);
+  if (!viewer) throw new HttpError(401, "Tes que entrar con Google.");
+  if (viewer.open || !(viewer.id > 0)) return jsonNoStore({ ok: true, pieces: [] }, { env });
+  return jsonNoStore({ ok: true, pieces: await exportPiecesJson(env, { ownerId: viewer.id }) }, { env });
+}
+
+// Pezas públicas agochadas: só para guías/admin, para poder volver amosalas.
+async function handleHiddenPieces(request, env, url) {
+  await requireRole(request, env, url, EDITOR_ROLES);
+  return jsonNoStore({ ok: true, pieces: await exportPiecesJson(env, { hiddenOnly: true }) }, { env });
+}
+
+// O PDF dunha peza só sae se é pública (e non agochada) ou se a pide a súa dona.
+async function assertPieceReadable(request, env, pieceId) {
+  let row;
+  try {
+    row = await env.DB.prepare("SELECT owner_user_id, visibility, status FROM pieces WHERE id = ?").bind(pieceId).first();
+  } catch (err) {
+    if (/no such column/i.test(String(err && err.message))) return; // sen migración: todas públicas
+    throw err;
+  }
+  if (!row) throw new HttpError(404, "Non existe a peza.");
+  if (row.visibility === "public" && row.status !== "hidden") return;
+  const viewer = await getViewer(request, env);
+  if (viewer && (viewer.open || (viewer.id > 0 && viewer.id === row.owner_user_id))) return;
+  if (viewer && row.visibility === "public" && EDITOR_ROLES.includes(viewer.role)) return;
+  throw new HttpError(404, "Non existe a peza.");
+}
+
+// ---------------------------------------------------------------------
+// Seguir persoas (só perfís públicos)
+// ---------------------------------------------------------------------
+
+async function handleMyFollows(request, env, url) {
+  const viewer = await requirePersonalSpace(request, env, url);
+  const { results } = await personalTables(env, () => env.DB.prepare(
+    `SELECT pr.handle, pr.display_name, t.nome AS territory_name
+     FROM follows f
+     JOIN profiles pr ON pr.user_id = f.followee_id AND pr.is_public = 1 AND pr.handle IS NOT NULL
+     LEFT JOIN territories t ON t.id = pr.territory_id
+     WHERE f.follower_id = ? ORDER BY pr.display_name COLLATE NOCASE`
+  ).bind(viewer.id).all());
+  return jsonNoStore({ ok: true, following: results }, { env });
+}
+
+async function handleToggleFollow(request, env, url) {
+  const viewer = await requirePersonalSpace(request, env, url);
+  const payload = await request.json().catch(() => ({}));
+  const handle = String(payload.handle || "").toLowerCase();
+  const target = await personalTables(env, () => env.DB.prepare(
+    "SELECT user_id FROM profiles WHERE handle = ? AND is_public = 1"
+  ).bind(handle).first());
+  if (!target) throw new HttpError(404, "Non existe ese perfil.");
+  if (target.user_id === viewer.id) throw new HttpError(400, "Non podes seguirte a ti mesma.");
+  if (payload.on === false) {
+    await env.DB.prepare("DELETE FROM follows WHERE follower_id = ? AND followee_id = ?").bind(viewer.id, target.user_id).run();
+  } else {
+    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM follows WHERE follower_id = ?").bind(viewer.id).first();
+    if (Number(count?.n || 0) >= 500) throw new HttpError(400, "Chegaches ao límite de perfís seguidos.");
+    await env.DB.prepare("INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?, ?)").bind(viewer.id, target.user_id).run();
+  }
+  return jsonNoStore({ ok: true, handle, on: payload.on !== false }, { env });
 }
 
 // ---------------------------------------------------------------------
@@ -2293,6 +2707,33 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/me/favorites") {
         return await handleToggleFavorite(request, env, url);
       }
+      if (request.method === "GET" && url.pathname === "/api/pieces/hidden") {
+        return await handleHiddenPieces(request, env, url);
+      }
+      if (request.method === "GET" && url.pathname === "/api/me/pieces") {
+        return await handleMyPieces(request, env, url);
+      }
+      if (request.method === "GET" && url.pathname === "/api/me/follows") {
+        return await handleMyFollows(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/me/follows") {
+        return await handleToggleFollow(request, env, url);
+      }
+      if (request.method === "GET" && url.pathname === "/data/exports/pezas/pezas.json") {
+        return await cachedExport(request, env, ctx, url, "pezas", () => exportPiecesJson(env));
+      }
+      if (request.method === "POST" && url.pathname === "/api/pieces") {
+        return await handleSavePiece(request, env, url);
+      }
+      if (request.method === "DELETE" && url.pathname === "/api/pieces") {
+        return await handleDeletePiece(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/pieces/visibility") {
+        return await handlePieceVisibility(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/pieces/moderate") {
+        return await handlePieceModerate(request, env, url);
+      }
       if (request.method === "POST" && url.pathname === "/api/me/delete") {
         return await handleDeleteAccount(request, env, url);
       }
@@ -2359,6 +2800,7 @@ export default {
 
       const pieceIdMatch = url.pathname.match(/^\/api\/pieces\/(\d+)\/pdf$/);
       if (request.method === "GET" && pieceIdMatch) {
+        await assertPieceReadable(request, env, Number(pieceIdMatch[1]));
         const document = await buildPieceDocumentForPdf(env, Number(pieceIdMatch[1]));
         const pdf = await renderPdfViaBrowserRun(env, renderPiecePdfHtml(document));
         return pdfResponse(pdf, `fol-e-ar-${pdfSafeFilename(document.title, "peza")}.pdf`);

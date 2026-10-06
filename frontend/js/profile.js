@@ -13,16 +13,23 @@
 
 const API = "../api";
 const DATA = "./data/exports";
-const KIND_LABELS = { copla: "Coplas", territory: "Lugares" };
-const FAV_HEADINGS = { copla: "Coplas favoritas", territory: "Lugares favoritos" };
+const KIND_LABELS = { copla: "Coplas", territory: "Lugares", tag: "Etiquetas", media: "Recursos", melody: "Melodías", piece: "Pezas" };
+const FAV_HEADINGS = {
+  copla: "Coplas favoritas", territory: "Lugares favoritos", tag: "Etiquetas favoritas",
+  media: "Recursos favoritos", melody: "Melodías favoritas", piece: "Pezas favoritas",
+};
+const KIND_EMPTY = { copla: "coplas", territory: "lugares", tag: "etiquetas", media: "recursos", melody: "melodías", piece: "pezas" };
 const TERRITORY_TYPES = { prov: "provincia", com: "comarca", con: "concello", par: "parroquia" };
 
 const S = {
-  favorites: { copla: new Set(), territory: new Set(), tag: new Set(), media: new Set(), melody: new Set() },
+  favorites: { copla: new Set(), territory: new Set(), tag: new Set(), media: new Set(), melody: new Set(), piece: new Set() },
   favEnabled: false,
   favTab: "copla",
   personHandle: "",
   data: null,
+  following: new Set(),
+  followingList: [],
+  followsEnabled: false,
 };
 
 function esc(value) {
@@ -66,14 +73,34 @@ function normalize(text) {
 
 async function loadData() {
   if (S.data) return S.data;
-  const [coplas, territorios] = await Promise.all([
+  const optional = path => fetch(`${DATA}/${path}`).then(response => (response.ok ? response.json() : [])).catch(() => []);
+  const [coplas, territorios, media, melodias] = await Promise.all([
     fetch(`${DATA}/coplas/coplas.json`).then(response => response.json()),
     fetch(`${DATA}/territorios/territorios.json`).then(response => response.json()),
+    optional("media/media.json"),
+    optional("melodias/melodias.json"),
   ]);
   const territoryById = new Map(territorios.map(item => [item.id, item]));
   const coplaById = new Map(coplas.map(item => [String(item.id), item]));
-  S.data = { coplas, territorios, territoryById, coplaById };
+  const mediaById = new Map((Array.isArray(media) ? media : []).map(item => [String(item.id), item]));
+  const melodyById = new Map((Array.isArray(melodias) ? melodias : []).map(item => [String(item.id), item]));
+  const tagCounts = new Map();
+  coplas.forEach(copla => (copla.tags || []).forEach(tag => tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)));
+  S.data = { coplas, territorios, territoryById, coplaById, mediaById, melodyById, tagCounts };
   return S.data;
+}
+
+// Pezas: as que xa ten a aplicación (públicas + as da persoa). Se aínda non
+// cargaron, o exporte público.
+async function loadPieces() {
+  const fromApp = window.folearApp?.pieces?.() || [];
+  if (fromApp.length) return fromApp;
+  try {
+    const list = await fetch(`${DATA}/pezas/pezas.json`).then(response => (response.ok ? response.json() : []));
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
 }
 
 function coplaTitleOf(copla) {
@@ -86,6 +113,21 @@ function territoryMeta(territory) {
 }
 
 // --- Favoritos -----------------------------------------------------------
+
+async function loadFollows() {
+  S.following.clear();
+  S.followingList = [];
+  S.followsEnabled = false;
+  if (!loggedIn()) return;
+  try {
+    const data = await api("/me/follows");
+    S.followingList = data.following || [];
+    S.followingList.forEach(person => S.following.add(person.handle));
+    S.followsEnabled = true;
+  } catch {
+    S.followsEnabled = false; // sen migración 0005
+  }
+}
 
 async function loadFavorites() {
   for (const set of Object.values(S.favorites)) set.clear();
@@ -110,10 +152,10 @@ function favGlyph(on) {
   return on ? "★" : "☆";
 }
 
-function favButtonMarkup(kind, ref, { label = false } = {}) {
+function favButtonMarkup(kind, ref, { label = false, compact = false } = {}) {
   const on = isFav(kind, ref);
   const title = on ? "Quitar dos favoritos" : "Gardar nos favoritos";
-  return `<button type="button" class="fav-btn${label ? " has-label" : ""}${on ? " is-on" : ""}" data-fav-kind="${esc(kind)}" data-fav-ref="${esc(ref)}" aria-pressed="${on}" title="${title}" aria-label="${title}"><span aria-hidden="true">${favGlyph(on)}</span>${label ? `<span class="fav-label">${on ? "Gardado" : "Gardar"}</span>` : ""}</button>`;
+  return `<button type="button" class="fav-btn${label ? " has-label" : ""}${compact ? " is-compact" : ""}${on ? " is-on" : ""}" data-fav-kind="${esc(kind)}" data-fav-ref="${esc(ref)}" aria-pressed="${on}" title="${title}" aria-label="${title}"><span aria-hidden="true">${favGlyph(on)}</span>${label ? `<span class="fav-label">${on ? "Gardado" : "Gardar"}</span>` : ""}</button>`;
 }
 
 function refreshFavButtons(kind, ref) {
@@ -174,6 +216,29 @@ function decorate() {
     }
   });
 
+  document.querySelectorAll(".piece-card[data-open-piece]:not([data-fav-done])").forEach(card => {
+    card.dataset.favDone = "1";
+    appendMetaStar(card, "piece", card.dataset.openPiece);
+  });
+  document.querySelectorAll(".media-card[data-media-id]:not([data-fav-done])").forEach(card => {
+    card.dataset.favDone = "1";
+    appendMetaStar(card, "media", card.dataset.mediaId);
+  });
+  document.querySelectorAll(".melody-card[data-open-melody]:not([data-fav-done])").forEach(card => {
+    card.dataset.favDone = "1";
+    appendMetaStar(card, "melody", card.dataset.openMelody);
+  });
+  document.querySelectorAll("#coplaDrawer .meta .tag[data-tag-name]:not([data-fav-done])").forEach(tag => {
+    tag.dataset.favDone = "1";
+    tag.classList.add("has-star");
+    tag.insertAdjacentHTML("beforeend", favButtonMarkup("tag", tag.dataset.tagName, { compact: true }));
+  });
+  document.querySelectorAll("#pieceDrawer .drawer-actions:not([data-fav-done])").forEach(actions => {
+    actions.dataset.favDone = "1";
+    const id = actions.querySelector("[data-download-piece-pdf]")?.dataset.downloadPiecePdf;
+    if (id) actions.insertAdjacentHTML("afterbegin", favButtonMarkup("piece", id, { label: true }));
+  });
+
   document.querySelectorAll("#coplaDrawer .drawer-actions:not([data-fav-done])").forEach(actions => {
     actions.dataset.favDone = "1";
     const id = actions.querySelector("[data-add-copla]")?.dataset.addCopla;
@@ -199,6 +264,14 @@ function decorate() {
     const current = row.querySelector(".fav-btn")?.dataset.favRef || "";
     if (current !== mapId) row.innerHTML = mapId ? favButtonMarkup("territory", mapId, { label: true }) : "";
   }
+}
+
+function appendMetaStar(card, kind, ref) {
+  const meta = card.querySelector(".meta") || card;
+  const wrapper = document.createElement("span");
+  wrapper.className = "fav-slot in-meta";
+  wrapper.innerHTML = favButtonMarkup(kind, ref);
+  meta.append(wrapper);
 }
 
 function startObserver() {
@@ -240,9 +313,9 @@ async function renderProfile() {
     view.innerHTML = `
       <div class="page profile-page">
         <div class="page-head"><div><div class="eyebrow">O meu espazo</div><h1>Entra para ter o teu espazo</h1>
-        <p>Con unha conta de Google podes gardar coplas e lugares favoritos e, se queres, ter un perfil público. Consultar o arquivo non require conta.</p></div></div>
+        <p>Con unha conta de Google tes o teu espazo: favoritos de coplas, lugares, etiquetas, recursos e melodías; as túas pezas (privadas ou na biblioteca pública); seguir a outras persoas e, se queres, un perfil público. Consultar o arquivo non require conta.</p></div></div>
         <p><a class="btn primary" href="${esc(window.folearAuth?.loginUrl?.() || "#")}">Entrar con Google</a></p>
-        <p class="muted small-print"><a href="./privacidade.html" target="_blank" rel="noopener">Como tratamos os teus datos</a></p>
+        <p class="muted small-print"><a href="./privacidade.html" data-privacy-link>Como tratamos os teus datos</a></p>
       </div>`;
     return;
   }
@@ -259,6 +332,9 @@ async function renderProfile() {
   const shownName = profile.display_name || me.account.google_name || user.name || "";
   let data = null;
   try { data = await loadData(); } catch { /* o formulario funciona igual */ }
+  const allPieces = await loadPieces();
+  const myPieces = allPieces.filter(piece => piece.mine);
+  await loadFollows();
 
   view.innerHTML = `
     <div class="page profile-page">
@@ -314,51 +390,166 @@ async function renderProfile() {
         </form>
       </section>
 
+      <section class="panel profile-pieces">
+        <div class="section-title"><h2>As miñas pezas <span class="muted">${myPieces.length}</span></h2><button class="btn" type="button" id="newPieceBtn">Nova peza</button></div>
+        ${myPiecesHtml(myPieces)}
+        <p class="muted small-print">Gárdanse desde Pezas \\ Obradoiro. Privadas, só as ves ti; públicas, aparecen na biblioteca${profile.is_public ? " co teu nome" : " (o teu perfil é privado, así que sen o teu nome)"}.</p>
+      </section>
+
       <section class="panel profile-favs">
         <div class="section-title"><h2>Os meus favoritos</h2></div>
-        <div class="territory-tabs" id="favTabs">
+        <div class="territory-tabs fav-tabs" id="favTabs">
           ${Object.entries(KIND_LABELS).map(([kind, label]) => `<button type="button" class="${S.favTab === kind ? "active" : ""}" data-fav-tab="${kind}">${label} (${S.favorites[kind].size})</button>`).join("")}
         </div>
-        <div id="favList" class="fav-list">${favoritesListHtml(S.favTab, [...S.favorites[S.favTab]], data)}</div>
-        <p class="muted small-print">Gárdanse co botón ☆ de cada copla e de cada lugar.</p>
+        ${S.favTab === "tag" ? tagPickerHtml() : ""}
+        <div id="favList" class="fav-list">${favoritesListHtml(S.favTab, [...S.favorites[S.favTab]], data, { pieces: allPieces })}</div>
+        <p class="muted small-print">Gárdanse co botón ☆ de cada copla, lugar, etiqueta, recurso, melodía e peza.</p>
       </section>
+
+      ${S.followsEnabled ? followingPanelHtml(allPieces) : ""}
 
       <section class="panel profile-danger">
         <div class="section-title"><h2>A miña conta</h2></div>
-        <p class="muted">Podes borrar a túa conta cando queiras: elimínanse o teu perfil, os teus favoritos e a túa sesión. Non se borra nada do arquivo. <a href="./privacidade.html" target="_blank" rel="noopener">Política de privacidade</a>.</p>
+        <p class="muted">Podes borrar a túa conta cando queiras: elimínanse o teu perfil, os teus favoritos, as túas pezas e a túa sesión. Non se borra nada do arquivo. <a href="./privacidade.html" data-privacy-link>Política de privacidade</a>.</p>
         <button class="btn danger" type="button" id="deleteAccount">Borrar a miña conta</button>
       </section>
     </div>`;
 
   bindProfileForm(view, profile, data);
-  bindFavList(view, data);
+  bindFavList(view, data, allPieces);
+  bindMyPieces(view);
+  bindFollowing(view);
 }
 
-function favoritesListHtml(kind, refs, data, { stars = true } = {}) {
-  if (!refs.length) return `<p class="muted">Aínda non tes ${kind === "copla" ? "coplas" : "lugares"} gardados.</p>`;
+function visibilityLabel(piece) {
+  if (piece.status === "hidden") return "Agochada";
+  return piece.visibility === "private" ? "Privada" : "Pública";
+}
+
+function myPiecesHtml(pieces) {
+  if (!pieces.length) return `<p class="muted">Aínda non gardaches ningunha peza. Compón unha no obradoiro: podes deixala privada ou publicala na biblioteca.</p>`;
+  return `<div class="fav-list">${pieces.map(piece => `
+    <div class="fav-item piece-row" data-piece-row="${esc(piece.id)}">
+      <button type="button" class="fav-open" data-open-piece-id="${esc(piece.id)}"><strong>${esc(piece.title || "Peza sen título")}</strong><span>${piece.copla_count || (piece.coplas || []).length} coplas</span></button>
+      <span class="piece-vis is-${piece.status === "hidden" ? "hidden" : piece.visibility}">${visibilityLabel(piece)}</span>
+      <button type="button" class="btn" data-edit-piece-id="${esc(piece.id)}">Editar</button>
+      <button type="button" class="btn" data-vis-piece-id="${esc(piece.id)}" data-vis-next="${piece.visibility === "private" ? "public" : "private"}">${piece.visibility === "private" ? "Publicar" : "Facer privada"}</button>
+    </div>`).join("")}</div>`;
+}
+
+function bindMyPieces(view) {
+  view.querySelector("#newPieceBtn")?.addEventListener("click", () => window.folearApp?.newPiece?.());
+  view.querySelectorAll("[data-open-piece-id]").forEach(button => button.addEventListener("click", () => window.folearApp?.openPiece?.(button.dataset.openPieceId)));
+  view.querySelectorAll("[data-edit-piece-id]").forEach(button => button.addEventListener("click", () => window.folearApp?.editPiece?.(button.dataset.editPieceId)));
+  view.querySelectorAll("[data-vis-piece-id]").forEach(button => button.addEventListener("click", async () => {
+    const next = button.dataset.visNext;
+    if (next === "public" && !window.confirm("A peza vai aparecer na biblioteca pública e calquera persoa poderá lela. ¿Publicala?")) return;
+    button.disabled = true;
+    try {
+      await api("/pieces/visibility", { method: "POST", body: JSON.stringify({ id: Number(button.dataset.visPieceId), visibility: next }) });
+      await window.folearApp?.refreshPezas?.({ render: true });
+      toast(next === "public" ? "Peza publicada na biblioteca." : "A peza é agora privada.");
+      renderProfile();
+    } catch (error) {
+      button.disabled = false;
+      toast(error.message);
+    }
+  }));
+}
+
+function followingPanelHtml(allPieces) {
+  const handles = new Set(S.following);
+  const recent = allPieces
+    .filter(piece => piece.owner && handles.has(piece.owner.handle) && piece.status !== "hidden")
+    .slice(0, 8);
+  const people = S.followingList.length
+    ? `<div class="people-chips">${S.followingList.map(person => `<a class="chip-link" href="#/persoa/${esc(person.handle)}" data-person-link="${esc(person.handle)}">${esc(person.display_name)}</a>`).join("")}</div>`
+    : `<p class="muted">Aínda non segues a ninguén. Mira o <a href="#" data-go-people>directorio de persoas</a> e segue a quen publique pezas que che interesen.</p>`;
+  const news = S.followingList.length
+    ? (recent.length
+      ? `<h3 class="sub-title">Pezas recentes</h3><div class="fav-list">${recent.map(piece => `<div class="fav-item"><button type="button" class="fav-open" data-open-piece-id="${esc(piece.id)}"><strong>${esc(piece.title)}</strong><span>${esc(piece.owner.display_name)}</span></button></div>`).join("")}</div>`
+      : `<p class="muted small-print">As persoas que segues aínda non publicaron pezas.</p>`)
+    : "";
+  return `<section class="panel profile-following"><div class="section-title"><h2>Persoas que sigo <span class="muted">${S.followingList.length}</span></h2></div>${people}${news}</section>`;
+}
+
+function bindFollowing(view) {
+  view.querySelectorAll("[data-go-people]").forEach(link => link.addEventListener("click", event => {
+    event.preventDefault();
+    document.querySelector('[data-view="people"]')?.click();
+  }));
+}
+
+function tagPickerHtml() {
+  return `<div class="tag-picker"><input id="tagPickInput" type="search" list="tagPickList" placeholder="Buscar unha etiqueta para gardala..." autocomplete="off"><datalist id="tagPickList">${[...(S.data?.tagCounts?.keys() || [])].sort((a, b) => a.localeCompare(b, "gl")).map(tag => `<option value="${esc(tag)}"></option>`).join("")}</datalist><button class="btn" type="button" id="tagPickAdd">Gardar etiqueta</button></div>`;
+}
+
+function favoritesListHtml(kind, refs, data, { stars = true, pieces = [] } = {}) {
+  if (!refs.length) return `<p class="muted">Aínda non tes ${KIND_EMPTY[kind] || "favoritos"} gardados.</p>`;
   if (!data) return `<p class="muted">Non se puido cargar o arquivo para amosar os favoritos.</p>`;
+  const row = (open, star) => `<div class="fav-item">${open}${stars ? star : ""}</div>`;
   const rows = refs.map(ref => {
     if (kind === "copla") {
       const copla = data.coplaById.get(String(ref));
       if (!copla) return "";
-      return `<div class="fav-item"><button type="button" class="fav-open" data-copla-id="${esc(copla.id)}"><strong>${esc(coplaTitleOf(copla))}</strong></button>${stars ? favButtonMarkup("copla", copla.id) : ""}</div>`;
+      return row(`<button type="button" class="fav-open" data-copla-id="${esc(copla.id)}"><strong>${esc(coplaTitleOf(copla))}</strong></button>`, favButtonMarkup("copla", copla.id));
     }
-    const territory = data.territoryById.get(String(ref));
-    if (!territory) return "";
-    return `<div class="fav-item"><button type="button" class="fav-open" data-territory-id="${esc(territory.id)}"><strong>${esc(territory.nome)}</strong><span>${esc(territoryMeta(territory))}</span></button>${stars ? favButtonMarkup("territory", territory.id) : ""}</div>`;
+    if (kind === "territory") {
+      const territory = data.territoryById.get(String(ref));
+      if (!territory) return "";
+      return row(`<button type="button" class="fav-open" data-territory-id="${esc(territory.id)}"><strong>${esc(territory.nome)}</strong><span>${esc(territoryMeta(territory))}</span></button>`, favButtonMarkup("territory", territory.id));
+    }
+    if (kind === "tag") {
+      const count = data.tagCounts?.get(ref);
+      return row(`<button type="button" class="fav-open" data-tag-search="${esc(ref)}"><strong>${esc(ref)}</strong><span>${count ? `${count} copla${count === 1 ? "" : "s"}` : "etiqueta"}</span></button>`, favButtonMarkup("tag", ref));
+    }
+    if (kind === "media") {
+      const item = data.mediaById?.get(String(ref));
+      if (!item) return "";
+      return row(`<button type="button" class="fav-open" data-media-url="${esc(item.url || "")}"><strong>${esc(item.title || "Recurso")}</strong><span>${esc(item.media_kind || item.provider || "")}</span></button>`, favButtonMarkup("media", item.id));
+    }
+    if (kind === "melody") {
+      const melody = data.melodyById?.get(String(ref));
+      if (!melody) return "";
+      return row(`<button type="button" class="fav-open" data-melody-id="${esc(melody.id)}"><strong>${esc(melody.name || `${melody.rhythm} ${melody.number}`)}</strong><span>${esc(melody.rhythm || "")}</span></button>`, favButtonMarkup("melody", melody.id));
+    }
+    if (kind === "piece") {
+      const piece = pieces.find(item => String(item.id) === String(ref));
+      if (!piece) return "";
+      return row(`<button type="button" class="fav-open" data-open-piece-id="${esc(piece.id)}"><strong>${esc(piece.title || "Peza")}</strong><span>${esc(piece.author && piece.author !== "Sen autoría" ? piece.author : "")}</span></button>`, favButtonMarkup("piece", piece.id));
+    }
+    return "";
   }).join("");
   return rows || `<p class="muted">Eses favoritos xa non existen no arquivo.</p>`;
 }
 
-function bindFavList(view, data) {
+function bindOpenButtons(view) {
+  view.querySelectorAll("[data-open-piece-id]").forEach(button => button.addEventListener("click", () => window.folearApp?.openPiece?.(button.dataset.openPieceId)));
+  view.querySelectorAll("[data-tag-search]").forEach(button => button.addEventListener("click", () => window.folearApp?.searchCoplas?.(button.dataset.tagSearch)));
+  view.querySelectorAll("[data-melody-id]").forEach(button => button.addEventListener("click", () => window.folearApp?.openMelody?.(button.dataset.melodyId)));
+  view.querySelectorAll("[data-media-url]").forEach(button => button.addEventListener("click", () => {
+    if (button.dataset.mediaUrl) window.open(button.dataset.mediaUrl, "_blank", "noopener");
+  }));
+}
+
+function bindFavList(view, data, allPieces) {
   view.querySelectorAll("[data-fav-tab]").forEach(button => button.addEventListener("click", () => {
     S.favTab = button.dataset.favTab;
     renderProfile();
   }));
   window.folearApp?.bindResultButtons?.(view);
+  bindOpenButtons(view);
   view.querySelectorAll("[data-person-link]").forEach(link => link.addEventListener("click", () => {
     S.personHandle = link.dataset.personLink;
   }));
+  const input = view.querySelector("#tagPickInput");
+  view.querySelector("#tagPickAdd")?.addEventListener("click", async () => {
+    const tag = input.value.trim();
+    if (!tag) return;
+    if (!data?.tagCounts?.has(tag)) { toast("Esa etiqueta non existe no arquivo."); return; }
+    if (!isFav("tag", tag)) await toggleFavorite("tag", tag);
+    renderProfile();
+  });
 }
 
 function bindProfileForm(view, profile, data) {
@@ -489,11 +680,21 @@ async function renderPerson(view, handle) {
   const { person, favorites } = result;
   let data = null;
   if (favorites) { try { data = await loadData(); } catch { /* sen lista */ } }
+  const allPieces = await loadPieces();
+  const personPieces = allPieces.filter(piece => piece.owner?.handle === person.handle && piece.status !== "hidden");
+  const isSelf = loggedIn() && auth().user.profile?.handle === person.handle;
+  if (loggedIn() && !isSelf && !S.followsEnabled && !S.followingList.length) await loadFollows();
+  const following = S.following.has(person.handle);
 
+  const piecesSection = personPieces.length
+    ? `<section class="panel"><div class="section-title"><h2>Pezas publicadas (${personPieces.length})</h2></div><div class="fav-list">${personPieces.map(piece => `<div class="fav-item"><button type="button" class="fav-open" data-open-piece-id="${esc(piece.id)}"><strong>${esc(piece.title)}</strong><span>${piece.copla_count || (piece.coplas || []).length} coplas</span></button></div>`).join("")}</div></section>`
+    : `<section class="panel"><p class="muted">${esc(person.display_name)} aínda non publicou pezas na biblioteca.</p></section>`;
   const sections = favorites ? Object.keys(KIND_LABELS).map(kind => {
     const refs = favorites[kind] || [];
     if (!refs.length) return "";
-    return `<section class="panel"><div class="section-title"><h2>${FAV_HEADINGS[kind]} (${refs.length})</h2></div><div class="fav-list">${favoritesListHtml(kind, refs, data, { stars: false })}</div></section>`;
+    const list = favoritesListHtml(kind, refs, data, { stars: false, pieces: allPieces });
+    if (!list || /^<p class="muted">/.test(list.trim()) && !list.includes("fav-item")) return "";
+    return `<section class="panel"><div class="section-title"><h2>${FAV_HEADINGS[kind]} (${refs.length})</h2></div><div class="fav-list">${list}</div></section>`;
   }).join("") : "";
 
   view.innerHTML = `
@@ -507,13 +708,28 @@ async function renderPerson(view, handle) {
             <h1>${esc(person.display_name)}</h1>
             ${person.territory_name ? `<p class="person-place">${esc(person.territory_name)}</p>` : ""}
           </div>
+          ${loggedIn() && !isSelf && S.followsEnabled ? `<button type="button" class="btn ${following ? "" : "primary"} follow-btn" id="followBtn">${following ? "Deixar de seguir" : "Seguir"}</button>` : ""}
         </div>
       </div>
       ${person.bio ? `<section class="panel"><p class="person-bio-full">${esc(person.bio)}</p></section>` : ""}
+      ${piecesSection}
       ${sections || (person.show_favorites ? "" : `<p class="muted">Esta persoa non amosa favoritos.</p>`)}
     </div>`;
   bindBack(view);
   window.folearApp?.bindResultButtons?.(view);
+  bindOpenButtons(view);
+  view.querySelector("#followBtn")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await api("/me/follows", { method: "POST", body: JSON.stringify({ handle: person.handle, on: !S.following.has(person.handle) }) });
+      await loadFollows();
+      renderPerson(view, handle);
+    } catch (error) {
+      button.disabled = false;
+      toast(error.message);
+    }
+  });
 }
 
 function bindBack(view) {
@@ -563,6 +779,10 @@ function bindEvents() {
   document.addEventListener("keydown", event => {
     if ((event.key === "Enter" || event.key === " ") && event.target.closest?.(".fav-btn")) event.stopPropagation();
   }, true);
+  window.addEventListener("folear:pezas", () => {
+    if (document.querySelector("#view-profile.active")) renderProfile();
+    else if (document.querySelector("#view-people.active") && S.personHandle) renderPeople();
+  });
   window.addEventListener("hashchange", () => {
     if (!openPersonFromHash() && document.querySelector("#view-people.active") && S.personHandle) {
       S.personHandle = "";
@@ -572,7 +792,7 @@ function bindEvents() {
 }
 
 async function onAuth() {
-  await loadFavorites();
+  await Promise.all([loadFavorites(), loadFollows()]);
   document.querySelectorAll("[data-fav-done]").forEach(node => {
     node.removeAttribute("data-fav-done");
     node.querySelectorAll(".fav-slot, .fav-row, .fav-btn").forEach(item => item.remove());
@@ -582,7 +802,78 @@ async function onAuth() {
   if (document.querySelector("#view-profile.active")) renderProfile();
 }
 
-window.folearProfile = { renderProfile, renderPeople };
+// --- Diálogo de gardado de pezas -------------------------------------------
+
+function askPieceSave({ title = "", author = "", visibility = "private", editing = null } = {}) {
+  return new Promise(resolve => {
+    const profile = auth().user?.profile;
+    const publicProfile = Boolean(profile?.is_public && profile?.handle);
+    const root = document.createElement("div");
+    root.className = "fe-dialog";
+    root.innerHTML = `
+      <div class="fe-dialog-backdrop" data-dialog-cancel></div>
+      <form class="fe-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="feDialogTitle" novalidate>
+        <div class="eyebrow">${editing ? "Actualizar peza" : "Gardar peza"}</div>
+        <h2 id="feDialogTitle">${editing ? "Gardar os cambios" : "Gardar na túa conta"}</h2>
+        <div class="field"><label for="fePieceTitle">Título</label><input id="fePieceTitle" maxlength="160" value="${esc(title)}" placeholder="Título da peza"></div>
+        <div class="field"><label for="fePieceAuthor">Autoría (opcional)</label><input id="fePieceAuthor" maxlength="120" value="${esc(author)}" placeholder="Quen creou ou arranxou a peza"></div>
+        <fieldset class="field vis-field">
+          <legend>Quen pode ver a peza</legend>
+          <label class="vis-option"><input type="radio" name="vis" value="private" ${visibility !== "public" ? "checked" : ""}><span><strong>Privada</strong><small>Só ti. Aparece en «As miñas pezas».</small></span></label>
+          <label class="vis-option"><input type="radio" name="vis" value="public" ${visibility === "public" ? "checked" : ""}><span><strong>Pública, na biblioteca</strong><small>Calquera persoa pode lela e exportala. Un guía pode agochala se fai falta.</small></span></label>
+          <small id="fePublicNote" class="muted" ${visibility === "public" ? "" : "hidden"}>${publicProfile ? `Amosarase co teu nome público (${esc(profile.display_name)}).` : "O teu perfil é privado: a peza sairá sen o teu nome. Podes activar o perfil público en «O meu espazo»."}</small>
+        </fieldset>
+        ${editing ? `<label class="check-row"><input type="checkbox" id="fePieceCopy"><span><strong>Gardar como copia nova</strong><small>Deixa a versión anterior como está.</small></span></label>` : ""}
+        <p id="feDialogError" class="muted is-error" role="alert" hidden></p>
+        <div class="form-actions"><button class="btn" type="button" data-dialog-cancel>Cancelar</button><button class="btn primary" type="submit">${editing ? "Gardar cambios" : "Gardar peza"}</button></div>
+      </form>`;
+    document.body.append(root);
+    const previous = document.activeElement;
+    const form = root.querySelector("form");
+    const note = root.querySelector("#fePublicNote");
+    const finish = value => {
+      document.removeEventListener("keydown", onKey, true);
+      root.remove();
+      previous?.focus?.();
+      resolve(value);
+    };
+    const onKey = event => { if (event.key === "Escape") { event.stopPropagation(); finish(null); } };
+    document.addEventListener("keydown", onKey, true);
+    root.querySelectorAll("[data-dialog-cancel]").forEach(item => item.addEventListener("click", () => finish(null)));
+    form.querySelectorAll('input[name="vis"]').forEach(radio => radio.addEventListener("change", () => {
+      note.hidden = form.elements.vis.value !== "public";
+    }));
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const vis = form.elements.vis.value;
+      const chosen = root.querySelector("#fePieceTitle").value.trim();
+      if (!chosen) {
+        const error = root.querySelector("#feDialogError");
+        error.textContent = "Pon un título á peza.";
+        error.hidden = false;
+        return;
+      }
+      finish({
+        title: chosen,
+        author: root.querySelector("#fePieceAuthor").value.trim(),
+        visibility: vis === "public" ? "public" : "private",
+        asCopy: Boolean(root.querySelector("#fePieceCopy")?.checked),
+      });
+    });
+    const copyBox = root.querySelector("#fePieceCopy");
+    const titleInput = root.querySelector("#fePieceTitle");
+    if (copyBox) {
+      const original = title;
+      copyBox.addEventListener("change", () => {
+        if (copyBox.checked && titleInput.value === original) titleInput.value = `${original} (copia)`;
+        else if (!copyBox.checked && titleInput.value === `${original} (copia)`) titleInput.value = original;
+      });
+    }
+    titleInput.focus();
+  });
+}
+
+window.folearProfile = { renderProfile, renderPeople, askPieceSave };
 
 bindEvents();
 startObserver();

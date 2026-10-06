@@ -165,6 +165,11 @@ class LocalHandler(SimpleHTTPRequestHandler):
             })
             return
 
+        if path == "/api/me/pieces":
+            # Modo local: as pezas non teñen dona; todas están no exporte normal.
+            self._send_json(200, {"ok": True, "pieces": []})
+            return
+
         if path == "/api/people":
             # Modo local: non hai perfís (viven na base de datos de produción).
             self._send_json(200, {"ok": True, "people": []})

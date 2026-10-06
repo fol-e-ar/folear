@@ -37,6 +37,7 @@ const RHYTHMS = [
 ].sort((a, b) => a.localeCompare(b, "gl"));
 const MUSICAL_MEDIA_KINDS = new Set(["audio", "spotify", "soundcloud"]);
 const DRAFT_KEY = "fol-e-ar-piece-cart-v2";
+const RESUME_KEY = "fol-e-ar-resume";
 const VIEWS = ["map", "coplas", "melodies", "pieces", "territory", "submit", "media", "about", "profile", "people"];
 
 const state = {
@@ -73,6 +74,7 @@ const state = {
   pieceRepositoryQuery: "",
   pieceRhythmQuery: "",
   pieceAuthorFilter: "",
+  pieceScope: "all",
   pieceEntryModal: "",
   pieceNotice: "",
   pieceAddMenu: false,
@@ -85,6 +87,7 @@ const state = {
   mediaRoleFilter: "",
   mediaModalOpen: false,
   mediaDefaultRole: "",
+  aboutPrivacy: false,
   aboutTerritoryQuery: "",
   aboutTerritoryId: "",
   submitTerritoryId: "",
@@ -146,6 +149,62 @@ function normalizeView(view = "map") {
     melodia: "melodies",
   };
   return aliases[view] || (VIEWS.includes(view) ? view : "map");
+}
+
+// --- Conta e permisos (js/auth.js) ----------------------------------------
+// O servidor é quen decide; isto só adapta a interface.
+
+function authInfo() {
+  return window.folearAuth || { mode: "offline", user: null, ready: false };
+}
+
+function isGoogleMode() {
+  return authInfo().mode === "google";
+}
+
+function isAccount() {
+  const info = authInfo();
+  return info.mode === "google" && Boolean(info.user) && !info.user.open;
+}
+
+function isEditorAccount() {
+  return isAccount() && Boolean(authInfo().canEdit?.());
+}
+
+function notify(message) {
+  if (window.folearAuth?.toast) window.folearAuth.toast(message);
+}
+
+function loginLink() {
+  return window.folearAuth?.loginUrl?.() || "../api/auth/google";
+}
+
+async function refreshPezas({ render = true } = {}) {
+  clearApiCache();
+  try {
+    state.pezas = await getPezas({ account: isAccount(), moderator: isEditorAccount() });
+  } catch (error) {
+    console.error(error);
+  }
+  if (!isAccount() && state.pieceScope === "mine") state.pieceScope = "all";
+  window.dispatchEvent(new CustomEvent("folear:pezas"));
+  if (render && state.view === "pieces") renderPiecesView();
+}
+
+async function pieceApi(path, method, body) {
+  const response = await fetch(`../api${path}`, {
+    method,
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data || data.ok === false) {
+    const error = new Error((data && data.error) || `Erro ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
 }
 
 function defaultDraft() {
@@ -582,7 +641,7 @@ function mediaCard(item, options = {}) {
   if (kind === "audio" && url) preview = `<div class="media-preview is-audio"><span class="media-preview-icon">${mediaKindIconSvg("audio")}</span><audio controls src="${escapeHtml(url)}"></audio></div>`;
   if (kind === "video" && url) preview = `<video class="media-preview is-video" controls src="${escapeHtml(url)}"></video>`;
   return `
-    <article class="media-card" tabindex="${url ? "0" : "-1"}" role="${url ? "link" : "article"}" data-open-media="${escapeHtml(url)}" aria-label="${escapeHtml(title)}">
+    <article class="media-card" tabindex="${url ? "0" : "-1"}" role="${url ? "link" : "article"}" data-open-media="${escapeHtml(url)}"${item.id != null ? ` data-media-id="${escapeHtml(item.id)}"` : ""} aria-label="${escapeHtml(title)}">
       <div class="media-preview-wrap">
         ${preview}
         <span class="media-kind-badge">${mediaKindIconSvg(kind)}${escapeHtml(mediaLabel(kind))}</span>
@@ -1421,6 +1480,10 @@ function bindMobileExplore() {
 function setView(viewName) {
   const previousView = state.view;
   state.view = normalizeView(viewName);
+  if (state.view !== "about" && state.aboutPrivacy) {
+    state.aboutPrivacy = false;
+    if (window.location.hash === "#/privacidade") history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
   all(".view").forEach(view => view.classList.toggle("active", view.id === `view-${state.view}`));
   all("[data-view]").forEach(button => button.classList.toggle("active", normalizeView(button.dataset.view) === state.view));
   $("#mobileExploreBtn")?.classList.toggle("active", ["pieces", "melodies", "media"].includes(state.view));
@@ -2026,7 +2089,7 @@ function openCoplaDrawer(coplaId) {
         <h3>Notas e fonte</h3>
         <p class="muted">${escapeHtml(copla.notes || "Sen notas rexistradas.")}</p>
       </div>
-      <div class="meta">${(copla.tags || []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
+      <div class="meta">${(copla.tags || []).map(tag => `<span class="tag" data-tag-name="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`).join("")}</div>
       <div class="drawer-actions">
         <button class="btn" type="button" data-edit-copla="${copla.id}">Editar copla</button>
         <button class="btn danger" type="button" data-delete-copla="${copla.id}">Borrar copla</button>
@@ -2310,12 +2373,15 @@ function openPieceDrawer(pieceId) {
     <div class="drawer-scrim" data-close-piece-drawer></div>
     <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="Ficha da peza">
       <button class="card-close" type="button" data-close-piece-drawer aria-label="Pechar">×</button>
-      <div class="eyebrow">Peza gardada</div>
+      <div class="eyebrow">${piece.visibility === "private" ? "Peza privada" : "Peza gardada"}</div>
       <h2>${escapeHtml(piece.title || piece.titulo || "Peza sen título")}</h2>
       <div class="meta">
         ${authorTag}
+        ${pieceOwnerLink(piece)}
         ${territory ? `<span class="tag place">${escapeHtml(territory.nome)}</span>` : ""}
+        ${pieceStatusTags(piece)}
       </div>
+      ${piece.status === "hidden" && piece.mine ? `<p class="muted">Unha persoa guía agochou esta peza da biblioteca pública. Ti segues vendo e podes editala.</p>` : ""}
       ${piece.description ? `<p class="muted">${escapeHtml(piece.description)}</p>` : ""}
       <div class="drawer-section">
         <h3>Letra</h3>
@@ -2342,11 +2408,13 @@ function openPieceDrawer(pieceId) {
           <p id="pieceMediaFeedback" class="muted"></p>
         </form>
       </div>
+      ${pieceManageMarkup(piece)}
       <div class="drawer-actions">
         <button class="btn primary" type="button" data-download-piece-pdf="${piece.id}">Descargar PDF</button>
       </div>
     </aside>
   `;
+  bindPieceManage(drawer, piece);
   all("[data-close-piece-drawer]", drawer).forEach(item => item.addEventListener("click", closePieceDrawer));
   bindPieceCardActions(drawer);
   $("[data-download-piece-pdf]", drawer)?.addEventListener("click", event => downloadPieceRecordPdf(piece, event.currentTarget));
@@ -2354,6 +2422,103 @@ function openPieceDrawer(pieceId) {
     event.preventDefault();
     linkMediaToPiece(piece, drawer);
   });
+}
+
+function canManagePiece(piece) {
+  if (!isAccount()) return false;
+  if (piece.mine) return true;
+  const info = authInfo();
+  if (info.isAdmin?.()) return true;
+  return Boolean(piece.editorial && info.canEdit?.());
+}
+
+function canModeratePiece(piece) {
+  return isEditorAccount() && piece.visibility === "public" && !piece.mine;
+}
+
+function pieceManageMarkup(piece) {
+  const manage = canManagePiece(piece);
+  const moderate = canModeratePiece(piece);
+  if (!manage && !moderate) return "";
+  return `
+    <div class="drawer-section piece-manage">
+      <h3>${manage ? "Xestionar a peza" : "Moderación"}</h3>
+      <div class="piece-manage-actions">
+        ${manage ? `<button class="btn" type="button" data-edit-piece="${piece.id}">Editar no obradoiro</button>` : ""}
+        ${manage ? `<button class="btn" type="button" data-toggle-piece-visibility="${piece.id}">${piece.visibility === "private" ? "Publicar na biblioteca" : "Facela privada"}</button>` : ""}
+        ${moderate ? `<button class="btn" type="button" data-moderate-piece="${piece.id}">${piece.status === "hidden" ? "Amosar de novo" : "Agochar da biblioteca"}</button>` : ""}
+        ${manage ? `<button class="btn danger" type="button" data-delete-piece="${piece.id}">Borrar</button>` : ""}
+      </div>
+      ${manage && piece.visibility === "private" ? `<p class="muted small-print">Só a ves ti. Se a publicas, aparece na biblioteca e (se tes perfil público) co teu nome.</p>` : ""}
+      <p id="pieceManageStatus" class="muted" role="status"></p>
+    </div>`;
+}
+
+function bindPieceManage(drawer, piece) {
+  const status = $("#pieceManageStatus", drawer);
+  const fail = error => {
+    if (status) status.textContent = error.message || "Non se puido completar a acción.";
+    else notify(error.message);
+  };
+  $("[data-edit-piece]", drawer)?.addEventListener("click", () => {
+    if (!editPieceInWorkshop(piece)) return;
+    closePieceDrawer();
+    state.pieceTab = "workshop";
+    setView("pieces");
+  });
+  $("[data-toggle-piece-visibility]", drawer)?.addEventListener("click", async () => {
+    const next = piece.visibility === "private" ? "public" : "private";
+    if (next === "public" && !window.confirm("A peza vai aparecer na biblioteca pública e calquera persoa poderá lela. ¿Publicala?")) return;
+    try {
+      await pieceApi("/pieces/visibility", "POST", { id: piece.id, visibility: next });
+      await refreshPezas();
+      notify(next === "public" ? "Peza publicada na biblioteca." : "A peza é agora privada.");
+      openPieceDrawer(piece.id);
+    } catch (error) { fail(error); }
+  });
+  $("[data-moderate-piece]", drawer)?.addEventListener("click", async () => {
+    try {
+      await pieceApi("/pieces/moderate", "POST", { id: piece.id, hidden: piece.status !== "hidden" });
+      await refreshPezas();
+      notify(piece.status === "hidden" ? "Peza amosada de novo." : "Peza agochada da biblioteca pública.");
+      openPieceDrawer(piece.id);
+    } catch (error) { fail(error); }
+  });
+  $("[data-delete-piece]", drawer)?.addEventListener("click", async () => {
+    if (!window.confirm(`Vas borrar «${piece.title || "esta peza"}». Non se pode desfacer. ¿Continuar?`)) return;
+    try {
+      await pieceApi("/pieces", "DELETE", { id: piece.id });
+      closePieceDrawer();
+      await refreshPezas();
+      notify("Peza borrada.");
+    } catch (error) { fail(error); }
+  });
+}
+
+// Pasa unha peza gardada ao obradoiro para editala (garda sobre a mesma peza).
+function editPieceInWorkshop(piece) {
+  const current = loadDraft();
+  if (draftCount(current) && current.editingPieceId !== piece.id
+      && !window.confirm("O obradoiro ten unha peza sen gardar. ¿Substituíla pola peza que vas editar?")) return false;
+  const draft = defaultDraft();
+  draft.title = piece.title || "";
+  draft.author = pieceAuthorName(piece) === "Sen autoría" ? "" : pieceAuthorName(piece);
+  draft.notes = piece.notes || "";
+  draft.territoryId = piece.context_territory?.id || piece.context_territory_id || "";
+  draft.editingPieceId = piece.id;
+  draft.visibility = piece.visibility === "public" ? "public" : "private";
+  draft.sections = pieceSections(piece).map((section, index) => ({
+    id: `parte-${index + 1}`,
+    label: section.label === "Parte" ? "" : section.label,
+    coplas: section.coplas.map(item => {
+      const entry = draftCoplaItem({ id: item.id, text: item.text || "", role: item.role || "copla", notes: item.notes || "" });
+      if ((item.text || "").trim()) entry.text = String(item.text).trim();
+      return entry;
+    }),
+  }));
+  if (!draft.sections.length) draft.sections = defaultDraft().sections;
+  saveDraft(draft);
+  return true;
 }
 
 async function linkMediaToPiece(piece, drawer) {
@@ -2483,7 +2648,9 @@ function filteredPieceRepository() {
   const q = normalizeText(state.pieceRepositoryQuery);
   const rhythm = normalizeText(state.pieceRhythmQuery);
   const authorFilter = normalizeText(state.pieceAuthorFilter || "");
+  const onlyMine = state.pieceScope === "mine" && isAccount();
   return scoped.filter(piece => {
+    if (onlyMine && !piece.mine) return false;
     const matchesText = !q || normalizeText(pieceHaystack(piece)).includes(q);
     const sections = piece.sections || piece.parts || piece.coplas || [];
     const matchesRhythm = !rhythm || sections.some(item => normalizeText(item.label || item.section_label || item.rhythm || "").includes(rhythm));
@@ -2514,6 +2681,19 @@ function pieceMedia(piece) {
   return state.media.filter(item => (item.links || []).some(link => link.entity_type === "piece" && String(link.entity_id) === String(piece.id)));
 }
 
+function pieceOwnerLink(piece) {
+  if (!piece.owner?.handle || piece.mine) return "";
+  return `<a class="tag place as-link piece-owner" href="#/persoa/${escapeHtml(piece.owner.handle)}" title="Ver o perfil de ${escapeHtml(piece.owner.display_name)}">por ${escapeHtml(piece.owner.display_name)}</a>`;
+}
+
+function pieceStatusTags(piece) {
+  const tags = [];
+  if (piece.status === "hidden") tags.push(`<span class="tag is-hidden-piece">Agochada</span>`);
+  if (piece.mine) tags.push(piece.visibility === "private" ? `<span class="tag is-private">Privada</span>` : `<span class="tag is-public">Pública</span>`);
+  else if (piece.visibility === "private") tags.push(`<span class="tag is-private">Privada</span>`);
+  return tags.join("");
+}
+
 function pieceCard(piece) {
   const title = piece.title || piece.titulo || "Peza sen título";
   const author = pieceAuthorName(piece);
@@ -2523,16 +2703,18 @@ function pieceCard(piece) {
     ? `<span class="tag place">${escapeHtml(author)}</span>`
     : `<button type="button" class="tag place as-link" data-piece-author="${escapeHtml(author)}" title="Ver as pezas de ${escapeHtml(author)}">${escapeHtml(author)}</button>`;
   return `
-    <article class="piece-card" tabindex="0" role="button" data-open-piece="${piece.id}">
+    <article class="piece-card${piece.mine ? " is-mine" : ""}" tabindex="0" role="button" data-open-piece="${piece.id}">
       <div>
-        <div class="eyebrow">Peza gardada</div>
+        <div class="eyebrow">${piece.visibility === "private" ? "Peza privada" : "Peza gardada"}</div>
         <h2>${escapeHtml(title)}</h2>
         <p>${escapeHtml(piece.description || piece.notes || "Mapa de referencias de coplas preparado para consulta e exportación.")}</p>
       </div>
       <div class="meta">
         ${authorTag}
+        ${pieceOwnerLink(piece)}
         <span class="tag">${coplaTotal || 0} coplas</span>
         ${sections.length ? `<span class="tag">${sections.length} partes</span>` : ""}
+        ${pieceStatusTags(piece)}
       </div>
     </article>
   `;
@@ -2611,7 +2793,7 @@ function updatePieceRepository(root = $("#view-pieces")) {
   const count = $("#pieceRepositoryCount", root);
   if (count) count.textContent = `${repo.length} pezas`;
   if (!list) return;
-  list.innerHTML = repo.map(pieceCard).join("") || `<article class="panel empty-panel"><p class="muted">Sen pezas gardadas.</p></article>`;
+  list.innerHTML = repo.map(pieceCard).join("") || pieceEmptyMarkup();
   bindPieceCardActions(list);
 }
 
@@ -2918,6 +3100,58 @@ function workshopAddMenuMarkup(draft) {
     </div>`;
 }
 
+function pieceScopeMarkup() {
+  const info = authInfo();
+  if (isAccount()) {
+    const mine = state.pezas.filter(piece => piece.mine).length;
+    return `
+      <div class="territory-tabs piece-scope" role="tablist" aria-label="Que pezas ver">
+        <button type="button" class="${state.pieceScope !== "mine" ? "active" : ""}" data-piece-scope="all">Todas</button>
+        <button type="button" class="${state.pieceScope === "mine" ? "active" : ""}" data-piece-scope="mine">As miñas (${mine})</button>
+      </div>`;
+  }
+  if (isGoogleMode() && info.ready) {
+    return `<p class="piece-login-note muted">Para gardar as túas pezas (privadas ou na biblioteca) e velas no teu perfil, <a href="${escapeHtml(loginLink())}" id="pieceLoginToSave">entra con Google</a>. Podes compoñelas e exportalas en PDF sen conta.</p>`;
+  }
+  return "";
+}
+
+function pieceEmptyMarkup() {
+  if (state.pieceScope === "mine" && isAccount()) {
+    return `<article class="panel empty-panel"><p class="muted">Aínda non gardaches ningunha peza. Compón unha no obradoiro e gárdaa: será privada ata que decidas publicala.</p><p><button class="btn primary" type="button" id="pieceGoWorkshop">Ir ao obradoiro</button></p></article>`;
+  }
+  return `<article class="panel empty-panel"><p class="muted">Sen pezas gardadas.</p></article>`;
+}
+
+function workshopNoticeMarkup(draft) {
+  if (!isGoogleMode() || !authInfo().ready) return "";
+  if (!isAccount()) {
+    return `
+      <div class="workshop-notice" role="note">
+        <div><strong>Estás compoñendo sen conta</strong>
+        <span>Podes escribir a peza e exportala en PDF. Para gardala e velá na túa biblioteca e no teu perfil, entra con Google: o borrador non se perde.</span></div>
+        <a class="btn primary" id="pieceLoginToSave" href="${escapeHtml(loginLink())}">Entrar con Google</a>
+      </div>`;
+  }
+  if (draft.editingPieceId) {
+    return `
+      <div class="workshop-notice is-editing" role="note">
+        <div><strong>Editando unha peza gardada</strong>
+        <span>Ao gardar actualízase a peza existente (ao gardar podes escoller facer unha copia).</span></div>
+        <button class="btn" type="button" id="stopEditingPiece">Empezar unha peza nova</button>
+      </div>`;
+  }
+  return `
+    <div class="workshop-notice" role="note">
+      <div><strong>A túa peza gárdase na túa conta</strong>
+      <span>Ao gardar escolles se é privada (só ti) ou se aparece na biblioteca pública.</span></div>
+    </div>`;
+}
+
+function rememberWorkshopForLogin() {
+  storageSet(RESUME_KEY, "pieces-workshop");
+}
+
 function renderPiecesView() {
   const view = $("#view-pieces");
   const keepScrollY = window.scrollY;
@@ -2937,7 +3171,7 @@ function renderPiecesView() {
           <div class="header-actions">
             <button class="btn" type="button" id="clearPiece">Baleirar</button>
             <button class="btn" type="button" id="downloadPiece">Descargar estrutura</button>
-            <button class="btn" type="button" id="savePieceDirect">Gardar peza</button>
+            <button class="btn" type="button" id="savePieceDirect">${draft.editingPieceId && isAccount() ? "Gardar cambios" : "Gardar peza"}</button>
             <button class="btn primary" type="button" id="openA4" ${state.pdfBusy ? "disabled" : ""}>${state.pdfBusy ? loaderHtml("Xerando PDF") : "Exportar PDF"}</button>
           </div>
         ` : ""}
@@ -2948,7 +3182,8 @@ function renderPiecesView() {
       </div>
       ${state.pieceTab === "library" ? `
         <section class="panel piece-repository">
-          <div class="section-title"><h2>${state.pieceAuthorFilter ? `Pezas de ${escapeHtml(state.pieceAuthorFilter)}` : "Pezas gardadas"}</h2><span id="pieceRepositoryCount" class="muted">${repo.length} pezas</span></div>
+          <div class="section-title"><h2>${state.pieceAuthorFilter ? `Pezas de ${escapeHtml(state.pieceAuthorFilter)}` : state.pieceScope === "mine" && isAccount() ? "As miñas pezas" : "Pezas gardadas"}</h2><span id="pieceRepositoryCount" class="muted">${repo.length} pezas</span></div>
+          ${pieceScopeMarkup()}
           ${state.pieceAuthorFilter ? `<p class="muted">Só as pezas gardadas con esta autoría. <button class="btn" type="button" id="clearPieceAuthorFilter">Ver todas as pezas</button></p>` : ""}
           <div class="toolbar piece-filters">
             <div class="searchbox"><span>⌕</span><input id="pieceRepositorySearch" type="search" value="${escapeHtml(state.pieceRepositoryQuery)}" placeholder="Buscar por título, creador ou contexto..."></div>
@@ -2958,7 +3193,7 @@ function renderPiecesView() {
             </select>
           </div>
           <div id="pieceRepositoryList" class="piece-grid">
-            ${repo.map(pieceCard).join("") || `<article class="panel empty-panel"><p class="muted">Sen pezas gardadas.</p></article>`}
+            ${repo.map(pieceCard).join("") || pieceEmptyMarkup()}
           </div>
         </section>
         <section class="panel creator-note">
@@ -2969,6 +3204,7 @@ function renderPiecesView() {
           </div>
         </section>
       ` : `
+        ${workshopNoticeMarkup(draft)}
         <div id="pieceExportStatus" class="export-status" role="status" aria-live="polite">${escapeHtml(state.pieceNotice)}</div>
         <section class="workshop">
           <header class="workshop-head">
@@ -3028,6 +3264,20 @@ function renderPiecesView() {
     state.pieceAuthorFilter = "";
     renderPiecesView();
   });
+  all("[data-piece-scope]", view).forEach(button => button.addEventListener("click", () => {
+    state.pieceScope = button.dataset.pieceScope;
+    renderPiecesView();
+  }));
+  $("#pieceGoWorkshop")?.addEventListener("click", () => {
+    state.pieceTab = "workshop";
+    renderPiecesView();
+  });
+  $("#stopEditingPiece")?.addEventListener("click", () => {
+    saveDraft(defaultDraft());
+    state.pieceNotice = "";
+    renderPiecesView();
+  });
+  $("#pieceLoginToSave")?.addEventListener("click", rememberWorkshopForLogin);
   $("#pieceTerritorySearch")?.addEventListener("input", event => {
     state.pieceTerritoryQuery = event.target.value;
     renderPieceTerritoryResults(view);
@@ -3242,7 +3492,7 @@ function buildPiecePayload() {
   };
 }
 
-function buildPieceDbPayload() {
+function buildPieceDbPayload(overrides = {}) {
   const draft = loadDraft();
   const coplas = [];
   let position = 0;
@@ -3264,12 +3514,15 @@ function buildPieceDbPayload() {
   if (!coplas.length) {
     throw new Error("Engade polo menos unha copla á peza antes de gardala.");
   }
-  const title = draft.title || territoryContextTitle(pieceTerritory()) || "Peza sen título";
+  const title = overrides.title || draft.title || territoryContextTitle(pieceTerritory()) || "Peza sen título";
+  const author = overrides.author !== undefined ? overrides.author : draft.author;
   return {
     pieces: [{
+      ...(overrides.id ? { id: overrides.id } : {}),
+      ...(overrides.visibility ? { visibility: overrides.visibility } : {}),
       title,
       slug: slugify(`${title}-${Date.now()}`),
-      author: draft.author || "Sen autoría",
+      author: author || "Sen autoría",
       context_territory_id: draft.territoryId || state.selectedTerritory?.id || null,
       description: "",
       notes: draft.notes || "",
@@ -3324,7 +3577,73 @@ async function materializeDraftCoplas(draft) {
   return draft;
 }
 
+// Con login (modo google) gardar é cousa de contas: a peza queda na conta da
+// persoa, privada ou pública. Sen conta só se pode compoñer e exportar en PDF.
+function promptLoginToSave() {
+  rememberWorkshopForLogin();
+  const status = $("#pieceExportStatus");
+  if (status) {
+    status.classList.add("is-error");
+    status.innerHTML = `Para gardar a peza precisas unha conta. O borrador non se perde e podes exportalo en PDF igualmente. <a href="${escapeHtml(loginLink())}">Entrar con Google</a>`;
+  }
+  status?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+}
+
+async function savePieceAsAccount() {
+  const draft = loadDraft();
+  if (!draftCount(draft)) {
+    setExportStatus("Engade polo menos unha copla á peza antes de gardala.", true);
+    return;
+  }
+  const suggestedTitle = draft.title || territoryContextTitle(pieceTerritory()) || "";
+  const choice = window.folearProfile?.askPieceSave
+    ? await window.folearProfile.askPieceSave({
+      title: suggestedTitle,
+      author: draft.author || "",
+      visibility: draft.visibility || "private",
+      editing: draft.editingPieceId ? { id: draft.editingPieceId } : null,
+    })
+    : { title: suggestedTitle, author: draft.author || "", visibility: "private", asCopy: false };
+  if (!choice) return;
+  const feedback = $("#pieceExportStatus");
+  try {
+    const editingId = draft.editingPieceId && !choice.asCopy ? draft.editingPieceId : null;
+    const payload = buildPieceDbPayload({ id: editingId, visibility: choice.visibility, title: choice.title, author: choice.author });
+    setLoading(feedback, "Gardando a peza");
+    const result = await pieceApi("/pieces", "POST", payload);
+    const next = loadDraft();
+    next.title = choice.title;
+    next.author = choice.author;
+    next.visibility = choice.visibility;
+    next.editingPieceId = result.ids[0];
+    saveDraft(next);
+    state.pieceNotice = "";
+    state.pieceTab = "library";
+    state.pieceScope = "mine";
+    await refreshPezas({ render: false });
+    renderPiecesView();
+    notify(choice.visibility === "public" ? "Peza gardada e publicada na biblioteca." : "Peza gardada como privada.");
+  } catch (error) {
+    if (error.status === 404 && draft.editingPieceId) {
+      const next = loadDraft();
+      delete next.editingPieceId;
+      saveDraft(next);
+      setExportStatus("Non podes actualizar esa peza (xa non existe ou non é túa). Preme de novo en gardar para gardala como nova.", true);
+    } else {
+      setExportStatus(error.message || "Non se puido gardar a peza.", true);
+    }
+  }
+}
+
 async function savePieceDirect() {
+  if (window.folearAuth && !window.folearAuth.ready) {
+    setExportStatus("Comprobando a sesión... téntao de novo nun momento.", true);
+    return;
+  }
+  if (isGoogleMode()) {
+    if (!isAccount()) return promptLoginToSave();
+    return savePieceAsAccount();
+  }
   const feedback = $("#pieceExportStatus");
   try {
     let draft = loadDraft();
@@ -5051,9 +5370,41 @@ function submitAboutCopla(event) {
   window.location.href = `mailto:folear3@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-function renderAboutView() {
-  $("#view-about").innerHTML = `
-    <div class="page">
+const ABOUT_NAV = [
+  { view: "map", name: "Mapa", text: "Toca un lugar para ver as súas coplas, melodías e recursos. As parroquias están dentro dos concellos, e estes dentro das comarcas." },
+  { view: "territory", name: "Territorios", text: "Busca un lugar polo nome e móvete pola súa xerarquía: parroquia, concello, comarca e provincia." },
+  { view: "coplas", name: "Coplas", text: "Procura por verso, íncipit, lugar ou etiqueta. Cada ficha amosa as variantes e os recursos relacionados." },
+  { view: "melodies", name: "Melodías", text: "O inventario de melodías, agrupadas por ritmo e lugar, co recursos onde se poden escoitar." },
+  { view: "pieces", name: "Pezas", text: "A biblioteca de pezas montadas con coplas do arquivo e o obradoiro para compoñer as túas." },
+  { view: "media", name: "Media", text: "Gravacións, vídeos, imaxes e documentos ligados ás coplas, ás melodías e ás pezas." },
+  { view: "people", name: "Persoas", text: "O directorio de quen decidiu amosar o seu perfil, coas pezas que publicou.", accountsOnly: true },
+];
+
+function aboutAccountsMarkup() {
+  if (!isGoogleMode()) return "";
+  const cta = isAccount()
+    ? `<button class="btn primary" type="button" data-view="profile">Ir ao meu espazo</button>`
+    : `<a class="btn primary" href="${escapeHtml(loginLink())}">Entrar con Google</a>`;
+  return `
+    <section class="about-section">
+      <div class="about-section-head"><div class="eyebrow">Contas</div><h2>Para consultar non fai falta conta</h2></div>
+      <div class="about-cards">
+        <article class="panel"><h3>Sen conta</h3><p>Podes consultar todo o arquivo e compoñer pezas no obradoiro, tamén exportalas en PDF. Non se che pide ningún dato.</p></article>
+        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo: favoritos de coplas, lugares, etiquetas, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
+        <article class="panel"><h3>Roles</h3><p>A maioría das contas son foleantes. As persoas guía axudan a editar o arquivo e a coidar a biblioteca de pezas; a administración xestiona os roles.</p></article>
+      </div>
+      <p class="about-cta">${cta}</p>
+    </section>
+    <section class="about-section">
+      <div class="about-section-head"><div class="eyebrow">Pezas</div><h2>Gardar unha peza pide conta</h2></div>
+      <p class="about-lead">Compoñer e exportar en PDF está ao alcance de todas as persoas. Gardar require conta, para que a peza quede no teu perfil. Cada peza é <strong>privada</strong> (só a ves ti) ou <strong>pública</strong> (aparece na biblioteca, aberta a calquera). Podes mudala de unha a outra, editala ou borrala cando queiras; se unha peza pública dá problemas, unha persoa guía pode agochala.</p>
+    </section>`;
+}
+
+function aboutMarkup() {
+  const accounts = isGoogleMode();
+  return `
+    <div class="page about-page">
       <div class="page-head about-hero">
         <div>
           <div class="eyebrow">Sobre o arquivo</div>
@@ -5061,22 +5412,31 @@ function renderAboutView() {
           <p>Arquivo dixital para conservar, consultar e montar repertorio tradicional galego desde o territorio e desde o texto.</p>
         </div>
       </div>
-      <div class="about-grid">
-        <article class="panel"><h2>Explorar</h2><p>Mapa e territorios para descubrir repertorio sen coñecer previamente o corpus.</p></article>
-        <article class="panel"><h2>Consultar</h2><p>Coplas en grade, lista ou galería, con procura textual e lectura de variantes.</p></article>
-        <article class="panel"><h2>Construír</h2><p>Pezas como carriño editorial: escoller, ordenar, separar por ritmos e exportar para cantar.</p></article>
-        <article class="panel"><h2>Contacto</h2><p>Dúbidas, correccións ou coplas para achegar: escríbenos a <a href="mailto:folear3@gmail.com">folear3@gmail.com</a>.</p></article>
-      </div>
-      <section class="panel about-manual">
-        <div class="section-title"><h2>Código de cores dos territorios</h2><span class="muted">Manual de uso \\ iremos actualizándoo</span></div>
-        <p>Cada copla, peza ou recurso pode levar ligado un ou varios territorios, e cada nivel administrativo ten a súa propia cor para sabermos dun golpe de vista, en cada pastilla, se se trata dunha parroquia, un concello, unha comarca ou unha provincia.</p>
-        <ul class="legend-list">
-          <li><span class="level-chip level-par">Parroquia</span><span class="muted">o nivel máis miúdo: unha parroquia concreta.</span></li>
-          <li><span class="level-chip level-con">Concello</span><span class="muted">o municipio enteiro.</span></li>
-          <li><span class="level-chip level-com">Comarca</span><span class="muted">agrupación de varios concellos.</span></li>
-          <li><span class="level-chip level-prov">Provincia</span><span class="muted">A Coruña, Lugo, Ourense ou Pontevedra.</span></li>
-        </ul>
+
+      <section class="about-section">
+        <div class="about-section-head"><div class="eyebrow">Como funciona</div><h2>Entrar polo lugar, polo texto ou polo son</h2></div>
+        <p class="about-lead">O arquivo reúne coplas e repertorio tradicional galego. Cada copla pode estar ligada a un ou varios lugares, a etiquetas, a recursos (gravacións, vídeos, partituras) e a melodías. Esas ligazóns son o que permite ir de un a outro: dun lugar ás súas coplas, dunha copla á súa melodía, dunha melodía ao recurso onde se escoita.</p>
       </section>
+
+      <section class="about-section">
+        <div class="about-section-head"><div class="eyebrow">Como moverse</div><h2>As partes do arquivo</h2></div>
+        <div class="about-nav">
+          ${ABOUT_NAV.filter(item => !item.accountsOnly || accounts).map((item, index) => `
+            <button type="button" class="about-nav-row" data-view="${item.view}">
+              <span class="about-nav-num">${String(index + 1).padStart(2, "0")}</span>
+              <span class="about-nav-body"><strong>${item.name}</strong><span>${item.text}</span></span>
+              <span class="about-nav-go" aria-hidden="true">→</span>
+            </button>`).join("")}
+        </div>
+      </section>
+
+      ${aboutAccountsMarkup()}
+
+      <section class="about-section">
+        <div class="about-section-head"><div class="eyebrow">Contacto</div><h2>Dúbidas, correccións ou coplas para achegar</h2></div>
+        <p class="about-lead">Escríbenos a <a href="mailto:folear3@gmail.com">folear3@gmail.com</a>, ou envía unha copla co formulario de abaixo para que a revise o equipo editorial.</p>
+      </section>
+
       <section class="panel public-submit">
         <div class="section-title"><h2>Enviar unha copla</h2><span class="muted">Achega para revisión editorial</span></div>
         <form id="publicCoplaForm" class="formgrid">
@@ -5112,8 +5472,60 @@ function renderAboutView() {
           </div>
         </form>
       </section>
+
+      <footer class="about-foot">
+        <svg class="isotipo about-foot-mark" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg>
+        <span class="about-foot-text">fol e ar \\ arquivo e repertorio</span>
+        <a class="about-foot-link" href="./privacidade.html" data-privacy-link>Privacidade</a>
+      </footer>
     </div>
   `;
+}
+
+async function renderAboutPrivacy() {
+  const view = $("#view-about");
+  view.innerHTML = `<div class="page about-page privacy-page"><p><button class="btn" type="button" data-privacy-back>← Sobre o arquivo</button></p><p class="muted">Cargando...</p></div>`;
+  $("[data-privacy-back]", view)?.addEventListener("click", closeAboutPrivacy);
+  let body = "";
+  try {
+    const response = await fetch("./privacidade.html", { cache: "no-cache" });
+    if (!response.ok) throw new Error("non dispoñible");
+    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    const main = doc.querySelector("main");
+    main?.querySelectorAll(".back").forEach(node => node.remove());
+    body = main ? main.innerHTML : "";
+  } catch {
+    body = `<p class="muted">Non se puido cargar a política agora mesmo. Ábrea en <a href="./privacidade.html">privacidade.html</a>.</p>`;
+  }
+  if (state.view !== "about" || !state.aboutPrivacy) return;
+  view.innerHTML = `
+    <div class="page about-page privacy-page">
+      <p><button class="btn" type="button" data-privacy-back>← Sobre o arquivo</button></p>
+      <div class="privacy-doc">${body}</div>
+    </div>`;
+  $("[data-privacy-back]", view)?.addEventListener("click", closeAboutPrivacy);
+  window.scrollTo(0, 0);
+}
+
+function openAboutPrivacy() {
+  state.aboutPrivacy = true;
+  if (window.location.hash !== "#/privacidade") history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/privacidade`);
+  if (state.view === "about") renderAboutView(); else setView("about");
+}
+
+function closeAboutPrivacy() {
+  state.aboutPrivacy = false;
+  if (window.location.hash === "#/privacidade") history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  renderAboutView();
+  window.scrollTo(0, 0);
+}
+
+function renderAboutView() {
+  if (state.aboutPrivacy) {
+    renderAboutPrivacy();
+    return;
+  }
+  $("#view-about").innerHTML = aboutMarkup();
   $("#aboutTerritorySearch")?.addEventListener("input", event => {
     state.aboutTerritoryQuery = event.target.value;
     state.aboutTerritoryId = "";
@@ -5147,6 +5559,15 @@ function renderView() {
 function bindGlobalEvents() {
   bindMelodyEvents();
   bindMobileExplore();
+  // «Privacidade» (pé de «Sobre o arquivo», perfil...) abre a política dentro da aplicación.
+  document.addEventListener("click", event => {
+    if (!event.target.closest("[data-privacy-link]")) return;
+    event.preventDefault();
+    openAboutPrivacy();
+  });
+  window.addEventListener("hashchange", () => {
+    if (window.location.hash === "#/privacidade" && !state.aboutPrivacy) openAboutPrivacy();
+  });
   document.addEventListener("click", event => {
     const nav = event.target.closest("[data-view]");
     if (nav) {
@@ -5233,7 +5654,7 @@ async function init() {
   const [territorios, coplas, pezas, media, melodias] = await Promise.allSettled([
     getTerritorios(),
     getCoplas(),
-    getPezas(),
+    getPezas({ account: isAccount(), moderator: isEditorAccount() }),
     getMedia(),
     getMelodias(),
   ]);
@@ -5242,6 +5663,9 @@ async function init() {
   state.pezas = pezas.status === "fulfilled" ? pezas.value : [];
   state.media = media.status === "fulfilled" ? media.value : [];
   state.melodias = melodias.status === "fulfilled" ? melodias.value : [];
+  state.dataReady = true;
+  // Se a sesión se resolveu mentres cargaba, completa as pezas da persoa.
+  if ((isAccount() || isEditorAccount()) && !state.pezas.some(piece => piece.mine)) await refreshPezas({ render: false });
   initPdfThumbs();
 
   if (window.L) {
@@ -5268,13 +5692,58 @@ async function init() {
   }
   if (coplaId) state.selectedCoplaId = Number(coplaId);
 
+  if (window.location.hash === "#/privacidade") state.aboutPrivacy = true;
   updateMapCard();
-  setView(coplaId ? "coplas" : normalizeView(params.get("mode") || params.get("view") || "map"));
+  setView(coplaId ? "coplas" : window.location.hash === "#/privacidade" ? "about" : state.resumeWorkshop ? "pieces" : normalizeView(params.get("mode") || params.get("view") || "map"));
   if (coplaId) openCoplaDrawer(Number(coplaId));
 }
 
 // Ganchos para js/profile.js (espazo persoal): reutiliza o apertado de resultados.
-window.folearApp = { bindResultButtons };
+window.folearApp = {
+  bindResultButtons,
+  pieces: () => state.pezas,
+  media: () => state.media,
+  melodies: () => state.melodias,
+  refreshPezas,
+  openPrivacy: openAboutPrivacy,
+  openPiece(id) { openPieceDrawer(Number(id)); },
+  openMelody(id) { openMelodyDrawer(Number(id)); },
+  searchCoplas(query) {
+    state.coplaQuery = String(query || "");
+    state.coplaStateFilter = "all";
+    closePieceDrawer();
+    setView("coplas");
+  },
+  editPiece(id) {
+    const piece = state.pezas.find(item => Number(item.id) === Number(id));
+    if (!piece || !editPieceInWorkshop(piece)) return;
+    state.pieceTab = "workshop";
+    setView("pieces");
+  },
+  newPiece() {
+    state.pieceTab = "workshop";
+    setView("pieces");
+  },
+};
+
+// A sesión resólvese despois de cargar a aplicación: ao entrar ou saír, as
+// pezas da persoa (privadas) aparecen ou desaparecen da biblioteca.
+let lastAuthKey = null;
+function onAuthChange() {
+  const key = isAccount() ? `${authInfo().user.id ?? authInfo().user.email}|${authInfo().user.role}` : "anon";
+  if (key === lastAuthKey) return;
+  lastAuthKey = key;
+  if (state.dataReady) refreshPezas();
+  if (state.view === "about" && !state.aboutPrivacy) renderAboutView();
+  if (isAccount() && storageGet(RESUME_KEY) === "pieces-workshop") {
+    storageSet(RESUME_KEY, "");
+    state.pieceTab = "workshop";
+    if (state.dataReady) setView("pieces");
+    else state.resumeWorkshop = true;
+  }
+}
+window.addEventListener("folear:auth", onAuthChange);
+if (window.folearAuth?.ready) onAuthChange();
 
 init().catch(error => {
   console.error(error);

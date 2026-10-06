@@ -6,6 +6,7 @@ body:not([data-can-edit="true"]) :is(
   [data-view="submit"],
   [data-media-role],
   #openMediaModal,
+  #pieceMediaForm,
   [data-edit-media],
   [data-delete-media],
   [data-new-melody],

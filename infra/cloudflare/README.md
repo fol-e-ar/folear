@@ -261,13 +261,50 @@ npx wrangler deploy
   «amosar os meus favoritos». Hai un botón para borrar a conta (`POST
   /api/me/delete`).
 - `frontend/privacidade.html` é a política de privacidade (ligada desde o
-  menú). Revísase cando cambie o tratamento de datos.
+  menú; desde a fase 3, no pé de «Sobre o arquivo», que a le e a amosa dentro
+  da aplicación, e no perfil). Revísase cando cambie o tratamento de datos.
 - A migración 0004 tamén crea `site_meta.data_version`. Sube con cada escritura
   de coplas, recursos e melodías e permite **cachear os exportes públicos**
   (`/data/exports/*.json`): ETag por versión (o navegador recibe 304 sen
   consultar a base) e caché do bordo de Cloudflare por versión (só funciona co
   dominio propio, non en `workers.dev`). Sen a migración, os exportes
   calcúlanse sempre coma antes.
+
+### Pezas con dona, visibilidade e seguimentos (migración 0005)
+
+Migración aditiva `migrations/0005_pieces_and_follows.sql`: engade
+`owner_user_id` e `visibility` a `pieces` (as pezas que xa existen quedan
+**públicas e sen dona**, é dicir, editoriais) e crea a táboa `follows`. Os
+`ALTER TABLE` non son idempotentes: **aplícase unha soa vez**, despois da 0004 e
+**antes** de despregar:
+
+```bash
+npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0004_profiles.sql   # só se non está aplicada
+npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0005_pieces_and_follows.sql
+npx wrangler deploy
+```
+
+- **Gardar unha peza require conta** (`POST /api/pieces` devolve 401 sen
+  sesión). Sen conta pódese compoñer no obradoiro e exportar PDF
+  (`/api/pdf/piece-draft`); o borrador vive no navegador.
+- Cada peza é `private` (só a dona) ou `public` (biblioteca). O exporte público
+  `/data/exports/pezas/pezas.json` (cacheado por versión) só leva as públicas e
+  non agochadas; `GET /api/me/pieces` devolve as da persoa.
+  O PDF dunha peza privada só o pode pedir a súa dona.
+- Calquera conta publica directamente. Unha persoa guía/admin pode **agochar**
+  unha peza pública (`POST /api/pieces/moderate`; a dona segue vendoa) e ver as
+  agochadas (`GET /api/pieces/hidden`). A dona edita (`POST /api/pieces` con
+  `id`), cambia a visibilidade (`/api/pieces/visibility`) e borra
+  (`DELETE /api/pieces`). Admin pode xestionar calquera; as pezas editoriais
+  (sen dona) xestiónanas guías e admin.
+- O nome da dona só se amosa nunha peza pública se o seu perfil é público.
+- Seguir persoas: `GET/POST /api/me/follows` (só perfís públicos; a lista é
+  privada). Favoritos tamén de pezas.
+- Borrar a conta elimina tamén as pezas da persoa, os seus seguimentos e os
+  favoritos que apuntaban a elas. Límites: 200 pezas por persoa e 300 coplas
+  por peza.
+- Sen a 0005 a web segue funcionando: as pezas existentes saen como públicas e
+  gardar devolve un erro claro que pide aplicar a migración.
 
 ### Escalabilidade (plan gratuíto)
 

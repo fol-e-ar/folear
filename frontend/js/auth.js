@@ -87,20 +87,15 @@ function sidebarMarkup() {
       </button>
       ${isAdmin() ? `<button type="button" data-account="people"><span class="nav-icon">☷</span><span>Xestionar roles</span></button>` : ""}
       <button type="button" data-account="logout"><span class="nav-icon">↗</span><span>Saír</span></button>
-      ${privacyLink()}
     `;
   }
   if (mode === "google") {
-    return `<button type="button" data-account="login"><span class="nav-icon">→</span><span>Entrar con Google</span></button>${privacyLink()}`;
+    return `<button type="button" data-account="login"><span class="nav-icon">→</span><span>Entrar con Google</span></button>`;
   }
   if (mode === "local" || mode === "open") {
     return `<div class="account-line is-note"><span class="account-text"><small>${mode === "local" ? "Modo local" : "Acceso aberto"}</small></span></div>`;
   }
   return "";
-}
-
-function privacyLink() {
-  return `<a class="account-privacy" href="./privacidade.html" target="_blank" rel="noopener"><span class="nav-icon">§</span><span>Privacidade</span></a>`;
 }
 
 function mobileMarkup() {
@@ -112,11 +107,10 @@ function mobileMarkup() {
       <button type="button" role="menuitem" data-view="profile"><i>☆</i>O meu espazo</button>
       ${isAdmin() ? `<button type="button" role="menuitem" data-account="people"><i>☷</i>Xestionar roles</button>` : ""}
       <button type="button" role="menuitem" data-account="logout"><i>↗</i>Saír</button>
-      <a class="mobile-privacy" role="menuitem" href="./privacidade.html" target="_blank" rel="noopener"><i>§</i>Privacidade</a>
     `;
   }
   if (mode === "google") {
-    return `<div class="mobile-menu-sep" role="separator"></div><button type="button" role="menuitem" data-account="login"><i>→</i>Entrar con Google</button><a class="mobile-privacy" role="menuitem" href="./privacidade.html" target="_blank" rel="noopener"><i>§</i>Privacidade</a>`;
+    return `<div class="mobile-menu-sep" role="separator"></div><button type="button" role="menuitem" data-account="login"><i>→</i>Entrar con Google</button>`;
   }
   return "";
 }
