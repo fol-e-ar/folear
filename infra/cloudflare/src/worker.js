@@ -157,7 +157,27 @@ async function exportTerritoriosJson(env) {
   return rows.map(row => ({ ...row, traits: traitsByTerritory.get(row.id) || [] }));
 }
 
+// «Lugar» (migración 0009): texto libre dentro dunha parroquia. Sen a migración, todo segue
+// funcionando e o campo simplemente non se garda nin se exporta.
+let lugarColumnsKnown = false;
+async function lugarAvailable(env) {
+  if (lugarColumnsKnown) return true;
+  try {
+    await env.DB.batch([env.DB.prepare("SELECT lugar FROM coplas LIMIT 1"), env.DB.prepare("SELECT lugar FROM pieces LIMIT 1")]);
+    lugarColumnsKnown = true;
+    return true;
+  } catch (err) {
+    if (/no such (column|table)/i.test(String(err && err.message))) return false;
+    throw err;
+  }
+}
+
+function cleanLugar(value) {
+  return cleanText(value, 80) || null;
+}
+
 async function exportCoplasJson(env) {
+  const lugarSql = (await lugarAvailable(env)) ? "lugar" : "NULL AS lugar";
   // Consultas en bloque (5 no total), en paralelo, en vez dunha consulta
   // por copla/version (chegaba a ~472 voltas de rede para 156 coplas).
   // Verificado byte-a-byte idéntico á versión anterior antes de trocalo
@@ -171,7 +191,7 @@ async function exportCoplasJson(env) {
   ] = await Promise.all([
     env.DB.prepare(
       `SELECT id, text, normalized_text, incipit, notes, status,
-              territory_state, is_volta, created_at, updated_at
+              territory_state, is_volta, ${lugarSql}, created_at, updated_at
        FROM coplas
        ORDER BY id DESC`
     ).all(),
@@ -251,6 +271,7 @@ async function exportCoplasJson(env) {
     status: copla.status,
     territory_state: copla.territory_state,
     is_volta: Boolean(copla.is_volta),
+    lugar: copla.lugar || null,
     created_at: copla.created_at,
     updated_at: copla.updated_at,
     territories: territoriesByCopla.get(copla.id) || [],
@@ -259,22 +280,44 @@ async function exportCoplasJson(env) {
   }));
 }
 
-async function exportMediaJson(env) {
-  // Consultas en bloque (2), en paralelo, en vez dunha consulta por media
-  // (antes 1+N). Verificado idéntico á versión anterior antes de trocalo.
-  const [{ results: mediaRows }, { results: linkRows }] = await Promise.all([
-    env.DB.prepare(
-      `SELECT id, provider, media_kind, title, url, description,
-              author_or_source, thumbnail_url, status, created_at, updated_at
-       FROM media
-       ORDER BY updated_at DESC, id DESC`
-    ).all(),
-    env.DB.prepare(
-      `SELECT media_id, entity_type, entity_id, relation_type
-       FROM media_links
-       ORDER BY media_id, entity_type, entity_id`
-    ).all(),
-  ]);
+// Media pública: só o que ten visibility = 'public'. Os recursos creados desde unha peza
+// seguen a peza (privada ou agochada => non saen aquí). Co ownerId devolve, en cambio, os
+// privados desa persoa (/api/me/media). Sen a migración 0008 funciona coma antes.
+async function exportMediaJson(env, { ownerId = null } = {}) {
+  const columns = `m.id, m.provider, m.media_kind, m.title, m.url, m.description,
+              m.author_or_source, m.thumbnail_url, m.status, m.created_at, m.updated_at`;
+  const publicWhere = `m.visibility = 'public' AND (m.piece_id IS NULL OR EXISTS (
+      SELECT 1 FROM pieces p WHERE p.id = m.piece_id AND p.visibility = 'public' AND p.status <> 'hidden'))`;
+  let mediaRows;
+  let linkRows;
+  try {
+    [{ results: mediaRows }, { results: linkRows }] = await Promise.all([
+      (ownerId === null
+        ? env.DB.prepare(`SELECT ${columns}, m.visibility, m.piece_id FROM media m WHERE ${publicWhere} ORDER BY m.updated_at DESC, m.id DESC`)
+        : env.DB.prepare(`SELECT ${columns}, m.visibility, m.piece_id FROM media m WHERE m.visibility = 'private' AND m.owner_user_id = ? ORDER BY m.updated_at DESC, m.id DESC`).bind(ownerId)
+      ).all(),
+      (ownerId === null
+        ? env.DB.prepare(`SELECT ml.media_id, ml.entity_type, ml.entity_id, ml.relation_type FROM media_links ml JOIN media m ON m.id = ml.media_id WHERE ${publicWhere} ORDER BY ml.media_id, ml.entity_type, ml.entity_id`)
+        : env.DB.prepare(`SELECT ml.media_id, ml.entity_type, ml.entity_id, ml.relation_type FROM media_links ml JOIN media m ON m.id = ml.media_id WHERE m.visibility = 'private' AND m.owner_user_id = ? ORDER BY ml.media_id, ml.entity_type, ml.entity_id`).bind(ownerId)
+      ).all(),
+    ]);
+  } catch (err) {
+    if (!/no such (column|table)/i.test(String(err && err.message))) throw err;
+    if (ownerId !== null) return [];
+    [{ results: mediaRows }, { results: linkRows }] = await Promise.all([
+      env.DB.prepare(
+        `SELECT id, provider, media_kind, title, url, description,
+                author_or_source, thumbnail_url, status, created_at, updated_at
+         FROM media
+         ORDER BY updated_at DESC, id DESC`
+      ).all(),
+      env.DB.prepare(
+        `SELECT media_id, entity_type, entity_id, relation_type
+         FROM media_links
+         ORDER BY media_id, entity_type, entity_id`
+      ).all(),
+    ]);
+  }
 
   const linksByMedia = new Map();
   for (const row of linkRows) {
@@ -371,6 +414,9 @@ async function validateCoplasPayload(env, payload) {
     const territoryState = copla.territory_state ?? "assigned";
     if (!["assigned", "unassigned", "general"].includes(territoryState)) {
       errors.push(`${label}: 'territory_state' debe ser 'assigned', 'unassigned' ou 'general'.`);
+    }
+    if (copla.lugar !== undefined && copla.lugar !== null && (typeof copla.lugar !== "string" || copla.lugar.length > 200)) {
+      errors.push(`${label}: 'lugar' debe ser texto curto.`);
     }
     if (copla.is_volta !== undefined && typeof copla.is_volta !== "boolean") {
       errors.push(`${label}: 'is_volta' debe ser booleano.`);
@@ -535,6 +581,7 @@ async function importCoplas(env, payload) {
 
   const db = env.DB;
   const importedIds = [];
+  const withLugar = await lugarAvailable(env);
 
   for (const copla of payload.coplas) {
     const text = copla.text.trim();
@@ -553,6 +600,7 @@ async function importCoplas(env, payload) {
              territory_state = ?, is_volta = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`
       ).bind(text, normalized, incipit, notes, status, territoryState, isVolta, coplaId).run();
+      if (withLugar) await db.prepare("UPDATE coplas SET lugar = ? WHERE id = ?").bind(cleanLugar(copla.lugar), coplaId).run();
       await db.prepare("DELETE FROM copla_territories WHERE copla_id = ?").bind(coplaId).run();
       await db.prepare("DELETE FROM copla_tags WHERE copla_id = ?").bind(coplaId).run();
     } else {
@@ -561,6 +609,7 @@ async function importCoplas(env, payload) {
          VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
       ).bind(text, normalized, incipit, notes, status, territoryState, isVolta).run();
       coplaId = result.meta.last_row_id;
+      if (withLugar && copla.lugar) await db.prepare("UPDATE coplas SET lugar = ? WHERE id = ?").bind(cleanLugar(copla.lugar), coplaId).run();
     }
     importedIds.push(coplaId);
 
@@ -694,9 +743,70 @@ async function deleteMedia(env, mediaIds) {
     throw new Error(`Non existe ningún recurso con estes IDs: [${missing.join(", ")}].`);
   }
 
-  for (const mediaId of ids) {
-    // media_links.media_id ten ON DELETE CASCADE real, abonda con isto.
-    await env.DB.prepare("DELETE FROM media WHERE id = ?").bind(mediaId).run();
+  // Borra o recurso e todo o que colga del: ligazóns (peza, territorio, coplas, melodías) e favoritos.
+  for (const mediaId of ids) await deletePieceResourceRows(env, "id = ?", mediaId);
+  return ids;
+}
+
+// Quen pode tocar un recurso de Media: guías e admin (calquera público; os privados, só a súa
+// dona ou admin) e, nos recursos ligados a unha peza súa, a propia dona (só metadatos e borrar).
+const MEDIA_DENIED = "Non podes xestionar ese recurso.";
+
+async function requireMediaWriter(request, env, url) {
+  assertSameOrigin(request, url);
+  const viewer = await getViewer(request, env);
+  if (!viewer) {
+    if (authMode(env) === "unconfigured") throw new HttpError(503, "O acceso con Google aínda non está configurado no servidor, así que as escrituras están pechadas.");
+    throw new HttpError(401, "Tes que entrar con Google para facer isto.");
+  }
+  return { viewer, editor: Boolean(viewer.open) || EDITOR_ROLES.includes(viewer.role) };
+}
+
+async function mediaOwnership(env, ids) {
+  const rows = new Map();
+  if (!ids.length || !(await pieceResourcesAvailable(env))) return rows;
+  const placeholders = ids.map(() => "?").join(",");
+  const { results } = await env.DB.prepare(`SELECT id, owner_user_id, visibility, piece_id FROM media WHERE id IN (${placeholders})`).bind(...ids).all();
+  results.forEach(row => rows.set(row.id, row));
+  return rows;
+}
+
+// Garda: o que se pide tocar ten que poder tocalo esa persoa.
+async function assertMediaWritable(env, access, ids) {
+  if (!ids.length) throw new HttpError(400, "Datos non válidos.");
+  if (ids.some(id => !Number.isInteger(id))) throw new HttpError(access.editor ? 400 : 403, access.editor ? "Datos non válidos." : MEDIA_DENIED);
+  const rows = await mediaOwnership(env, ids);
+  for (const id of ids) {
+    const row = rows.get(id);
+    if (access.editor) {
+      if (row && row.visibility === "private" && row.owner_user_id !== access.viewer.id && access.viewer.role !== "admin" && !access.viewer.open) {
+        throw new HttpError(403, MEDIA_DENIED);
+      }
+    } else if (!row || row.owner_user_id !== access.viewer.id || row.piece_id == null) {
+      throw new HttpError(403, MEDIA_DENIED);
+    }
+  }
+}
+
+// A dona edita os datos dun recurso ligado a unha peza súa (título, URL, tipo, uso, fonte...).
+// As ligazóns (peza, territorio, coplas) seguen as da peza.
+async function updateOwnedPieceResources(env, access, payload) {
+  if (!Array.isArray(payload.media) || !payload.media.length) throw new HttpError(400, "Datos non válidos.");
+  const ids = payload.media.map(item => Number(item && item.id));
+  await assertMediaWritable(env, access, ids);
+  const links = cleanPieceLinks(payload.media.map(item => ({
+    url: item.url, title: item.title, media_kind: item.media_kind, role: item.role,
+    description: item.description, author_or_source: item.author_or_source, thumbnail_url: item.thumbnail_url,
+  })));
+  for (let i = 0; i < ids.length; i += 1) {
+    const link = links[i];
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE media SET provider = ?, media_kind = ?, title = ?, url = ?, description = ?, author_or_source = ?,
+                thumbnail_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).bind(link.media_kind, link.media_kind, link.title, link.url, link.description, link.author_or_source, link.thumbnail_url, ids[i]),
+      env.DB.prepare("UPDATE media_links SET relation_type = ? WHERE media_id = ? AND entity_type = 'piece'").bind(link.role, ids[i]),
+    ]);
   }
   return ids;
 }
@@ -2076,7 +2186,7 @@ async function handleSaveProfile(request, env, url) {
   const territoryRaw = String(payload.territory_id ?? "").trim();
   if (territoryRaw) {
     const found = await env.DB.prepare("SELECT id FROM territories WHERE id = ?").bind(territoryRaw).first();
-    if (!found) throw new HttpError(400, "Ese lugar non existe.");
+    if (!found) throw new HttpError(400, "Ese territorio non existe.");
     territoryId = found.id;
   }
 
@@ -2161,11 +2271,16 @@ async function handleDeleteAccount(request, env, url) {
   const payload = await request.json().catch(() => ({}));
   if (payload.confirm !== true) throw new HttpError(400, "Falta confirmar o borrado da conta.");
   // Borra todo o que é da persoa, incluídas as súas pezas (públicas e privadas).
-  const linksOk = await pieceLinksAvailable(env);
+  const resourcesOk = await pieceResourcesAvailable(env);
   await personalTables(env, async () => {
     try {
       await env.DB.batch([
-        ...(linksOk ? [env.DB.prepare("DELETE FROM piece_links WHERE piece_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id)] : []),
+        ...(resourcesOk ? [
+          env.DB.prepare("DELETE FROM favorites WHERE kind = 'media' AND ref IN (SELECT CAST(id AS TEXT) FROM media WHERE owner_user_id = ?)").bind(viewer.id),
+          env.DB.prepare("DELETE FROM media_links WHERE media_id IN (SELECT id FROM media WHERE owner_user_id = ?)").bind(viewer.id),
+          env.DB.prepare("DELETE FROM media WHERE owner_user_id = ?").bind(viewer.id),
+        ] : []),
+        env.DB.prepare("DELETE FROM piece_links WHERE piece_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
         env.DB.prepare("DELETE FROM favorites WHERE kind = 'piece' AND ref IN (SELECT CAST(id AS TEXT) FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
         env.DB.prepare("DELETE FROM media_links WHERE entity_type = 'piece' AND entity_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
         env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
@@ -2262,31 +2377,69 @@ const MAX_PIECES_PER_USER = 200;
 const MAX_COPLAS_PER_PIECE = 300;
 const MAX_LINKS_PER_PIECE = 10;
 
-// Ligazóns a recursos externos (migración 0006). Se a táboa aínda non existe, as
-// pezas seguen funcionando sen ligazóns.
-async function pieceLinksAvailable(env) {
+// Recursos ligados a unha peza (migracións 0006/0008): cada un é unha fila de Media con
+// datos completos. Sen a 0008, gardar unha peza con recursos devolve un erro claro.
+async function pieceResourcesAvailable(env) {
   try {
-    await env.DB.prepare("SELECT 1 FROM piece_links LIMIT 1").first();
+    await env.DB.prepare("SELECT piece_id, owner_user_id, visibility FROM media LIMIT 1").first();
     return true;
   } catch (err) {
-    if (/no such table/i.test(String(err && err.message))) return false;
+    if (/no such (column|table)/i.test(String(err && err.message))) return false;
     throw err;
+  }
+}
+
+const MEDIA_KINDS = ["youtube", "spotify", "soundcloud", "audio", "video", "image", "pdf", "web"];
+const RESOURCE_ROLES = ["documental", "melody", "mixed"];
+
+function guessMediaKind(parsed) {
+  const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+  const path = parsed.pathname.toLowerCase();
+  if (host === "youtube.com" || host === "youtu.be" || host.endsWith(".youtube.com")) return "youtube";
+  if (host === "open.spotify.com" || host === "spotify.link") return "spotify";
+  if (host === "soundcloud.com") return "soundcloud";
+  if (/\.(mp3|ogg|wav|m4a|flac)$/.test(path)) return "audio";
+  if (/\.(mp4|webm|mov)$/.test(path)) return "video";
+  if (/\.(png|jpe?g|gif|webp|avif)$/.test(path)) return "image";
+  if (/\.pdf$/.test(path)) return "pdf";
+  return "web";
+}
+
+function cleanHttpUrl(value, max = 500) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  try {
+    const parsed = new URL(text);
+    if (!["http:", "https:"].includes(parsed.protocol) || text.length > max || parsed.username || parsed.password) return null;
+    return parsed.toString();
+  } catch {
+    return null;
   }
 }
 
 function cleanPieceLinks(raw) {
   if (raw == null) return [];
   if (!Array.isArray(raw)) throw new HttpError(400, "As ligazóns da peza non son válidas.");
-  if (raw.length > MAX_LINKS_PER_PIECE) throw new HttpError(400, `Unha peza non pode ter máis de ${MAX_LINKS_PER_PIECE} ligazóns.`);
+  if (raw.length > MAX_LINKS_PER_PIECE) throw new HttpError(400, `Unha peza non pode ter máis de ${MAX_LINKS_PER_PIECE} recursos.`);
   return raw.map((item, index) => {
     const text = String((item && item.url) ?? "").trim();
     let parsed;
     try { parsed = new URL(text); } catch { parsed = null; }
     if (!parsed || !["http:", "https:"].includes(parsed.protocol) || text.length > 500 || parsed.username || parsed.password) {
-      throw new HttpError(400, `Ligazón ${index + 1}: a URL debe ser http(s) e non pasar de 500 caracteres.`);
+      throw new HttpError(400, `Recurso ${index + 1}: a URL debe ser http(s) e non pasar de 500 caracteres.`);
     }
     const title = cleanText(item.title, 120) || parsed.hostname.replace(/^www\./, "");
-    return { title, url: parsed.toString(), position: index };
+    const kind = MEDIA_KINDS.includes(item.media_kind) ? item.media_kind : guessMediaKind(parsed);
+    return {
+      title,
+      url: parsed.toString(),
+      position: index,
+      media_kind: kind,
+      role: RESOURCE_ROLES.includes(item.role) ? item.role : (["youtube", "spotify", "soundcloud", "audio"].includes(kind) ? "melody" : "documental"),
+      author_or_source: cleanText(item.author_or_source, 160) || null,
+      description: cleanText(item.description, 500) || null,
+      thumbnail_url: cleanHttpUrl(item.thumbnail_url),
+    };
   });
 }
 
@@ -2337,6 +2490,7 @@ async function cleanPieceInput(env, raw) {
   const description = cleanMultiline(raw.description, 1000);
   const notes = cleanMultiline(raw.notes, 4000);
   const visibility = PIECE_VISIBILITIES.includes(raw.visibility) ? raw.visibility : "private";
+  const lugar = cleanLugar(raw.lugar);
 
   let territoryId = null;
   if (raw.context_territory_id) {
@@ -2383,7 +2537,7 @@ async function cleanPieceInput(env, raw) {
     }
   }
   const links = cleanPieceLinks(raw.links);
-  return { title, author, description, notes, visibility, territoryId, items, links };
+  return { title, author, description, notes, visibility, lugar, territoryId, items, links, linksProvided: raw.links !== undefined, lugarProvided: raw.lugar !== undefined };
 }
 
 function pieceCoplaStatements(env, pieceId, items) {
@@ -2393,10 +2547,77 @@ function pieceCoplaStatements(env, pieceId, items) {
   ).bind(pieceId, item.copla_id, item.inline_text, item.position, item.section_label, item.role, item.notes));
 }
 
-function pieceLinkStatements(env, pieceId, links) {
-  return links.map(link => env.DB.prepare(
-    "INSERT INTO piece_links (piece_id, title, url, position) VALUES (?, ?, ?, ?)"
-  ).bind(pieceId, link.title, link.url, link.position));
+// Sincroniza os recursos da peza coa Media: actualiza os que xa había (mesma URL, así non
+// cambian de id nin perden favoritos), crea os novos e borra os que se quitaron. A
+// visibilidade e a dona seguen as da peza.
+async function syncPieceResources(env, pieceId, ownerId, visibility, links) {
+  const { results: existing } = await env.DB.prepare("SELECT id, url FROM media WHERE piece_id = ? ORDER BY id").bind(pieceId).all();
+  const byUrl = new Map();
+  existing.forEach(row => { if (!byUrl.has(row.url)) byUrl.set(row.url, row); });
+  const keep = new Set();
+  for (const link of links) {
+    const found = byUrl.get(link.url);
+    if (found && !keep.has(found.id)) {
+      keep.add(found.id);
+      await env.DB.batch([
+        env.DB.prepare(
+          `UPDATE media SET provider = ?, media_kind = ?, title = ?, description = ?, author_or_source = ?, thumbnail_url = ?,
+                  owner_user_id = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        ).bind(link.media_kind, link.media_kind, link.title, link.description, link.author_or_source, link.thumbnail_url, ownerId, visibility, found.id),
+        env.DB.prepare("DELETE FROM media_links WHERE media_id = ? AND entity_type = 'piece' AND entity_id = ?").bind(found.id, String(pieceId)),
+        env.DB.prepare("INSERT INTO media_links (media_id, entity_type, entity_id, relation_type) VALUES (?, 'piece', ?, ?)").bind(found.id, String(pieceId), link.role),
+      ]);
+    } else {
+      const inserted = await env.DB.prepare(
+        `INSERT INTO media (provider, media_kind, title, url, description, author_or_source, thumbnail_url, status, owner_user_id, visibility, piece_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, CURRENT_TIMESTAMP)`
+      ).bind(link.media_kind, link.media_kind, link.title, link.url, link.description, link.author_or_source, link.thumbnail_url, ownerId, visibility, pieceId).run();
+      const mediaId = inserted.meta.last_row_id;
+      keep.add(mediaId);
+      await env.DB.prepare("INSERT INTO media_links (media_id, entity_type, entity_id, relation_type) VALUES (?, 'piece', ?, ?)").bind(mediaId, String(pieceId), link.role).run();
+    }
+  }
+  const stale = existing.filter(row => !keep.has(row.id)).map(row => row.id);
+  for (const id of stale) await deletePieceResourceRows(env, "id = ?", id);
+  await refreshPieceResourceLinks(env, pieceId);
+}
+
+// Os recursos dunha peza van ligados tamén ao territorio da peza e ás coplas do arquivo que a
+// forman (relation_type 'piece' marca estas ligazóns automáticas: refánse con cada gardado da
+// peza, e as que un guía edite a man en Media pasan a ser súas e xa non se tocan).
+async function refreshPieceResourceLinks(env, pieceId) {
+  const { results: media } = await env.DB.prepare("SELECT id FROM media WHERE piece_id = ?").bind(pieceId).all();
+  if (!media.length) return;
+  const piece = await env.DB.prepare("SELECT context_territory_id FROM pieces WHERE id = ?").bind(pieceId).first();
+  const statements = [];
+  for (const { id } of media) {
+    statements.push(env.DB.prepare(
+      "DELETE FROM media_links WHERE media_id = ? AND relation_type = 'piece' AND entity_type IN ('territory', 'copla')"
+    ).bind(id));
+    if (piece?.context_territory_id) {
+      statements.push(env.DB.prepare(
+        `INSERT INTO media_links (media_id, entity_type, entity_id, relation_type)
+         SELECT ?1, 'territory', ?2, 'piece'
+         WHERE NOT EXISTS (SELECT 1 FROM media_links WHERE media_id = ?1 AND entity_type = 'territory' AND entity_id = ?2)`
+      ).bind(id, piece.context_territory_id));
+    }
+    statements.push(env.DB.prepare(
+      `INSERT INTO media_links (media_id, entity_type, entity_id, relation_type)
+       SELECT ?1, 'copla', CAST(pc.copla_id AS TEXT), 'piece'
+       FROM (SELECT DISTINCT copla_id FROM piece_coplas WHERE piece_id = ?2 AND copla_id IS NOT NULL) pc
+       WHERE NOT EXISTS (SELECT 1 FROM media_links ml WHERE ml.media_id = ?1 AND ml.entity_type = 'copla' AND ml.entity_id = CAST(pc.copla_id AS TEXT))`
+    ).bind(id, pieceId));
+  }
+  await env.DB.batch(statements);
+}
+
+// Borra recursos de peza e o que colga deles (ligazóns e favoritos).
+async function deletePieceResourceRows(env, condition, bind) {
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM favorites WHERE kind = 'media' AND ref IN (SELECT CAST(id AS TEXT) FROM media WHERE ${condition})`).bind(bind),
+    env.DB.prepare(`DELETE FROM media_links WHERE media_id IN (SELECT id FROM media WHERE ${condition})`).bind(bind),
+    env.DB.prepare(`DELETE FROM media WHERE ${condition}`).bind(bind),
+  ]);
 }
 
 function canManagePiece(viewer, row) {
@@ -2415,6 +2636,67 @@ async function requirePieceWriter(request, env, url) {
   return viewer;
 }
 
+// Quen pode publicar pezas na biblioteca (e dar de alta coplas no arquivo): guías e admin
+// (e o modo aberto, onde non hai contas).
+const PUBLISH_DENIED = "Só as persoas guía ou admin poden publicar pezas na biblioteca. Gárdaa como privada.";
+function canPublishPieces(viewer) {
+  return Boolean(viewer.open) || EDITOR_ROLES.includes(viewer.role);
+}
+
+// As coplas soltas dunha peza (sen copla_id) dan de alta no arquivo, co territorio e o lugar da
+// peza: se xa existe unha copla co mesmo texto, úsase esa (e, se non ten o territorio da peza,
+// engádeselle) en vez de duplicala. Só o fan guías/admin, que son quen escribe no arquivo.
+async function registerLooseCoplas(env, input) {
+  const loose = input.items.filter(item => item.copla_id === null && item.inline_text);
+  if (!loose.length) return 0;
+  const byText = new Map();
+  for (const item of loose) {
+    const key = `${item.role === "retrouso" ? "v" : "c"}::${normalizeText(item.inline_text)}`;
+    if (!byText.has(key)) byText.set(key, []);
+    byText.get(key).push(item);
+  }
+  const withLugar = await lugarAvailable(env);
+  const created = [];
+  for (const [, items] of byText) {
+    const text = items[0].inline_text;
+    const found = await env.DB.prepare("SELECT id, territory_state FROM coplas WHERE normalized_text = ? ORDER BY id LIMIT 1").bind(normalizeText(text)).first();
+    let coplaId;
+    if (found) {
+      coplaId = found.id;
+      if (input.territoryId && found.territory_state !== "general") {
+        const linked = await env.DB.prepare("SELECT 1 AS ok FROM copla_territories WHERE copla_id = ? AND territory_id = ?").bind(coplaId, input.territoryId).first();
+        if (!linked) {
+          await env.DB.batch([
+            env.DB.prepare("INSERT INTO copla_territories (copla_id, territory_id, relation_type, is_direct) VALUES (?, ?, 'direct', 1)").bind(coplaId, input.territoryId),
+            env.DB.prepare("UPDATE coplas SET territory_state = 'assigned', updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(coplaId),
+          ]);
+        }
+      }
+      if (withLugar && input.lugar) await env.DB.prepare("UPDATE coplas SET lugar = ? WHERE id = ? AND (lugar IS NULL OR lugar = '')").bind(input.lugar, coplaId).run();
+    } else {
+      const [id] = await importCoplas(env, {
+        coplas: [{
+          text,
+          status: "published",
+          territory_state: input.territoryId ? "assigned" : "unassigned",
+          territories: input.territoryId ? [{ id: input.territoryId }] : [],
+          tags: [],
+          is_volta: items[0].role === "retrouso",
+          versions: [],
+          ...(input.lugar ? { lugar: input.lugar } : {}),
+        }],
+      });
+      coplaId = id;
+      created.push(id);
+    }
+    for (const item of items) {
+      item.copla_id = coplaId;
+      item.inline_text = null;
+    }
+  }
+  return created.length;
+}
+
 async function handleSavePiece(request, env, url) {
   const viewer = await requirePieceWriter(request, env, url);
   const payload = await request.json().catch(() => null);
@@ -2424,15 +2706,20 @@ async function handleSavePiece(request, env, url) {
 
   const ownerId = viewer.open ? null : viewer.id;
   const ids = [];
+  let registered = 0;
   for (const raw of list) {
     const input = await cleanPieceInput(env, raw);
-    const linksOk = await pieceLinksAvailable(env);
-    if (!linksOk && input.links.length) throw new HttpError(503, "Falta aplicar a migración 0006 (ligazóns das pezas) na base de datos.");
+    const resourcesOk = await pieceResourcesAvailable(env);
+    if (!resourcesOk && input.links.length) throw new HttpError(503, "Falta aplicar a migración 0008 (recursos das pezas en Media) na base de datos.");
     const existingId = raw && raw.id != null ? Number(raw.id) : null;
+    const withLugar = await lugarAvailable(env);
     try {
       if (existingId !== null) {
-        const row = await env.DB.prepare("SELECT id, owner_user_id FROM pieces WHERE id = ?").bind(existingId).first();
+        const row = await env.DB.prepare("SELECT id, owner_user_id, visibility FROM pieces WHERE id = ?").bind(existingId).first();
         if (!row || !canManagePiece(viewer, row)) throw new HttpError(404, "Non existe esa peza ou non é túa.");
+        if (input.visibility === "public" && row.visibility !== "public" && !canPublishPieces(viewer)) throw new HttpError(403, PUBLISH_DENIED);
+        // As coplas soltas pasan ao arquivo (só guías/admin) antes de gardar: a peza apunta a elas.
+        if (canPublishPieces(viewer)) registered += await registerLooseCoplas(env, input);
         await env.DB.batch([
           env.DB.prepare(
             `UPDATE pieces SET title = ?, author = ?, context_territory_id = ?, description = ?, notes = ?,
@@ -2440,22 +2727,32 @@ async function handleSavePiece(request, env, url) {
           ).bind(input.title, input.author, input.territoryId, input.description, input.notes, input.visibility, existingId),
           env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id = ?").bind(existingId),
           ...pieceCoplaStatements(env, existingId, input.items),
-          ...(linksOk ? [env.DB.prepare("DELETE FROM piece_links WHERE piece_id = ?").bind(existingId), ...pieceLinkStatements(env, existingId, input.links)] : []),
         ]);
+        if (withLugar && input.lugarProvided) await env.DB.prepare("UPDATE pieces SET lugar = ? WHERE id = ?").bind(input.lugar, existingId).run();
+        if (resourcesOk) {
+          if (input.linksProvided) await syncPieceResources(env, existingId, ownerId ?? row.owner_user_id ?? null, input.visibility, input.links);
+          else await refreshPieceResourceLinks(env, existingId);
+        }
         ids.push(existingId);
       } else {
+        if (input.visibility === "public" && !canPublishPieces(viewer)) throw new HttpError(403, PUBLISH_DENIED);
         if (ownerId !== null && viewer.role !== "admin") {
           const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM pieces WHERE owner_user_id = ?").bind(ownerId).first();
           if (Number(count?.n || 0) >= MAX_PIECES_PER_USER) throw new HttpError(400, "Chegaches ao límite de pezas gardadas.");
         }
+        if (canPublishPieces(viewer)) registered += await registerLooseCoplas(env, input);
         const inserted = await env.DB.prepare(
           `INSERT INTO pieces (title, slug, author, context_territory_id, description, notes, status, visibility, owner_user_id, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, 'published', ?, ?, CURRENT_TIMESTAMP)`
         ).bind(input.title, pieceSlugFor(input.title), input.author, input.territoryId, input.description, input.notes, input.visibility, ownerId).run();
         const pieceId = inserted.meta.last_row_id;
+        if (withLugar && input.lugar) await env.DB.prepare("UPDATE pieces SET lugar = ? WHERE id = ?").bind(input.lugar, pieceId).run();
         try {
-          await env.DB.batch([...pieceCoplaStatements(env, pieceId, input.items), ...pieceLinkStatements(env, pieceId, input.links)]);
+          await env.DB.batch(pieceCoplaStatements(env, pieceId, input.items));
+          if (resourcesOk && input.links.length) await syncPieceResources(env, pieceId, ownerId, input.visibility, input.links);
         } catch (err) {
+          if (resourcesOk) await deletePieceResourceRows(env, "piece_id = ?", pieceId);
+          await env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id = ?").bind(pieceId).run();
           await env.DB.prepare("DELETE FROM pieces WHERE id = ?").bind(pieceId).run();
           throw err;
         }
@@ -2466,7 +2763,34 @@ async function handleSavePiece(request, env, url) {
     }
   }
   await bumpDataVersion(env);
-  return jsonNoStore({ ok: true, ids }, { env });
+  return jsonNoStore({ ok: true, ids, registered_coplas: registered }, { env });
+}
+
+// Pezas xa gardadas con coplas soltas (anteriores a este comportamento): dá de alta no arquivo as
+// que non estean, co territorio e o lugar da peza. Só guías/admin.
+async function handleRegisterPieceCoplas(request, env, url) {
+  const viewer = await requirePieceWriter(request, env, url);
+  if (!canPublishPieces(viewer)) throw new HttpError(403, "Só as persoas guía ou admin dan de alta coplas no arquivo.");
+  const payload = await request.json().catch(() => ({}));
+  const id = Number(payload.id);
+  if (!Number.isInteger(id) || id < 1) throw new HttpError(400, "Peza non válida.");
+  await loadManagedPiece(env, viewer, id);
+  const withLugar = await lugarAvailable(env);
+  const piece = await env.DB.prepare(`SELECT context_territory_id, ${withLugar ? "lugar" : "NULL AS lugar"} FROM pieces WHERE id = ?`).bind(id).first();
+  const { results: rows } = await env.DB.prepare(
+    "SELECT position, inline_text, role FROM piece_coplas WHERE piece_id = ? AND copla_id IS NULL ORDER BY position"
+  ).bind(id).all();
+  const items = rows.map(row => ({ copla_id: null, inline_text: row.inline_text, position: row.position, role: row.role }));
+  const created = await registerLooseCoplas(env, { items, territoryId: piece.context_territory_id || null, lugar: piece.lugar || null });
+  for (const item of items) {
+    if (item.copla_id !== null) {
+      await env.DB.prepare("UPDATE piece_coplas SET copla_id = ?, inline_text = NULL WHERE piece_id = ? AND position = ?").bind(item.copla_id, id, item.position).run();
+    }
+  }
+  await env.DB.prepare("UPDATE pieces SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id).run();
+  if (await pieceResourcesAvailable(env)) await refreshPieceResourceLinks(env, id);
+  await bumpDataVersion(env);
+  return jsonNoStore({ ok: true, id, registered: created, linked: items.length - created }, { env });
 }
 
 async function loadManagedPiece(env, viewer, id) {
@@ -2481,10 +2805,10 @@ async function loadManagedPiece(env, viewer, id) {
 }
 
 async function deletePieceRows(env, ids) {
-  const linksOk = await pieceLinksAvailable(env);
+  const resourcesOk = await pieceResourcesAvailable(env);
   for (const id of ids) {
+    if (resourcesOk) await deletePieceResourceRows(env, "piece_id = ?", id);
     await env.DB.batch([
-      ...(linksOk ? [env.DB.prepare("DELETE FROM piece_links WHERE piece_id = ?").bind(id)] : []),
       env.DB.prepare("DELETE FROM favorites WHERE kind = 'piece' AND ref = ?").bind(String(id)),
       env.DB.prepare("DELETE FROM media_links WHERE entity_type = 'piece' AND entity_id = ?").bind(id),
       env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id = ?").bind(id),
@@ -2504,13 +2828,32 @@ async function handleDeletePiece(request, env, url) {
   return jsonNoStore({ ok: true, id }, { env });
 }
 
+// Actualiza só os recursos dunha peza (sen reenviar as coplas): o formulario «Obter datos»
+// da ficha da peza. Recibe a lista completa de recursos da peza.
+async function handlePieceResources(request, env, url) {
+  const viewer = await requirePieceWriter(request, env, url);
+  const payload = await request.json().catch(() => ({}));
+  const id = Number(payload.id);
+  if (!Number.isInteger(id) || id < 1 || !Array.isArray(payload.links)) throw new HttpError(400, "Datos non válidos.");
+  const links = cleanPieceLinks(payload.links);
+  const row = await loadManagedPiece(env, viewer, id);
+  if (!(await pieceResourcesAvailable(env))) throw new HttpError(503, "Falta aplicar a migración 0008 (recursos das pezas en Media) na base de datos.");
+  await syncPieceResources(env, id, row.owner_user_id ?? null, row.visibility || "public", links);
+  await env.DB.prepare("UPDATE pieces SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id).run();
+  await bumpDataVersion(env);
+  return jsonNoStore({ ok: true, id, count: links.length }, { env });
+}
+
 async function handlePieceVisibility(request, env, url) {
   const viewer = await requirePieceWriter(request, env, url);
   const payload = await request.json().catch(() => ({}));
   const id = Number(payload.id);
   if (!Number.isInteger(id) || id < 1 || !PIECE_VISIBILITIES.includes(payload.visibility)) throw new HttpError(400, "Datos non válidos.");
+  if (payload.visibility === "public" && !canPublishPieces(viewer)) throw new HttpError(403, "Só as persoas guía ou admin poden publicar pezas na biblioteca.");
   await loadManagedPiece(env, viewer, id);
   await env.DB.prepare("UPDATE pieces SET visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(payload.visibility, id).run();
+  // Os recursos da peza seguen a súa visibilidade (públicos en Media ou só da dona).
+  if (await pieceResourcesAvailable(env)) await env.DB.prepare("UPDATE media SET visibility = ? WHERE piece_id = ?").bind(payload.visibility, id).run();
   await bumpDataVersion(env);
   return jsonNoStore({ ok: true, id, visibility: payload.visibility }, { env });
 }
@@ -2538,13 +2881,14 @@ async function exportPiecesJson(env, { ownerId = null, hiddenOnly = false } = {}
     ? "p.visibility = 'public' AND p.status = 'hidden'"
     : ownerId === null ? PUBLIC_PIECE_SQL : "p.owner_user_id = ?";
   const binds = hiddenOnly || ownerId === null ? [] : [ownerId];
+  const lugarSql = (await lugarAvailable(env)) ? "p.lugar" : "NULL AS lugar";
   let pieces;
   let coplaRows;
   try {
     [{ results: pieces }, { results: coplaRows }] = await Promise.all([
       env.DB.prepare(
         `SELECT p.id, p.title, p.slug, p.author, p.context_territory_id, p.description, p.notes, p.status, p.visibility,
-                p.created_at, p.updated_at, t.nome AS context_nome, t.tipo AS context_tipo,
+                ${lugarSql}, p.created_at, p.updated_at, t.nome AS context_nome, t.tipo AS context_tipo,
                 pr.handle AS owner_handle, pr.display_name AS owner_name, p.owner_user_id
          FROM pieces p
          LEFT JOIN territories t ON t.id = p.context_territory_id
@@ -2583,15 +2927,34 @@ async function exportPiecesJson(env, { ownerId = null, hiddenOnly = false } = {}
   let linkRows = [];
   try {
     ({ results: linkRows } = await env.DB.prepare(
-      `SELECT pl.piece_id, pl.title, pl.url FROM piece_links pl JOIN pieces p ON p.id = pl.piece_id WHERE ${condition} ORDER BY pl.piece_id, pl.position ASC`
+      `SELECT m.piece_id, m.id AS media_id, m.title, m.url, m.media_kind, m.description, m.author_or_source, m.thumbnail_url,
+              (SELECT ml.relation_type FROM media_links ml WHERE ml.media_id = m.id AND ml.entity_type = 'piece' AND ml.entity_id = CAST(m.piece_id AS TEXT) LIMIT 1) AS role
+       FROM media m JOIN pieces p ON p.id = m.piece_id
+       WHERE ${condition} ORDER BY m.piece_id, m.id ASC`
     ).bind(...binds).all());
   } catch (err) {
     if (!/no such (column|table)/i.test(String(err && err.message))) throw err;
+    try {
+      ({ results: linkRows } = await env.DB.prepare(
+        `SELECT pl.piece_id, pl.title, pl.url FROM piece_links pl JOIN pieces p ON p.id = pl.piece_id WHERE ${condition} ORDER BY pl.piece_id, pl.position ASC`
+      ).bind(...binds).all());
+    } catch (err2) {
+      if (!/no such (column|table)/i.test(String(err2 && err2.message))) throw err2;
+    }
   }
   const linksByPiece = new Map();
   for (const row of linkRows) {
     const list = linksByPiece.get(row.piece_id) || [];
-    list.push({ title: row.title, url: row.url });
+    list.push({
+      media_id: row.media_id ?? null,
+      title: row.title,
+      url: row.url,
+      media_kind: row.media_kind || "web",
+      description: row.description || null,
+      author_or_source: row.author_or_source || null,
+      thumbnail_url: row.thumbnail_url || null,
+      role: row.role || "documental",
+    });
     linksByPiece.set(row.piece_id, list);
   }
   const byPiece = new Map();
@@ -2610,6 +2973,7 @@ async function exportPiecesJson(env, { ownerId = null, hiddenOnly = false } = {}
       context_territory: piece.context_territory_id
         ? { id: piece.context_territory_id, nome: piece.context_nome, tipo: piece.context_tipo }
         : null,
+      lugar: piece.lugar || null,
       description: piece.description,
       notes: piece.notes,
       status: piece.status,
@@ -2630,6 +2994,14 @@ async function handleMyPieces(request, env, url) {
   if (!viewer) throw new HttpError(401, "Tes que entrar con Google.");
   if (viewer.open || !(viewer.id > 0)) return jsonNoStore({ ok: true, pieces: [] }, { env });
   return jsonNoStore({ ok: true, pieces: await exportPiecesJson(env, { ownerId: viewer.id }) }, { env });
+}
+
+// Recursos privados da persoa (os que van ligados ás súas pezas privadas).
+async function handleMyMedia(request, env, url) {
+  const viewer = await getViewer(request, env);
+  if (!viewer) throw new HttpError(401, "Tes que entrar con Google.");
+  if (viewer.open || !(viewer.id > 0)) return jsonNoStore({ ok: true, media: [] }, { env });
+  return jsonNoStore({ ok: true, media: await exportMediaJson(env, { ownerId: viewer.id }) }, { env });
 }
 
 // Pezas públicas agochadas: só para guías/admin, para poder volver amosalas.
@@ -2758,6 +3130,9 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/pieces/hidden") {
         return await handleHiddenPieces(request, env, url);
       }
+      if (request.method === "GET" && url.pathname === "/api/me/media") {
+        return await handleMyMedia(request, env, url);
+      }
       if (request.method === "GET" && url.pathname === "/api/me/pieces") {
         return await handleMyPieces(request, env, url);
       }
@@ -2775,6 +3150,12 @@ export default {
       }
       if (request.method === "DELETE" && url.pathname === "/api/pieces") {
         return await handleDeletePiece(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/pieces/register-coplas") {
+        return await handleRegisterPieceCoplas(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/pieces/resources") {
+        return await handlePieceResources(request, env, url);
       }
       if (request.method === "POST" && url.pathname === "/api/pieces/visibility") {
         return await handlePieceVisibility(request, env, url);
@@ -2796,7 +3177,9 @@ export default {
         return await handleUserRole(request, env, url);
       }
       if (request.method === "GET" && url.pathname === "/api/link-preview") {
-        await requireRole(request, env, url, EDITOR_ROLES);
+        // «Obter datos»: guías e admin para Media, e calquera conta para os recursos das súas pezas.
+        const viewer = await getViewer(request, env);
+        if (!viewer) throw new HttpError(401, "Tes que entrar con Google para ler os datos dunha ligazón.");
         return await handleLinkPreview(env, url);
       }
       if (request.method === "GET" && url.pathname === "/api/pdf-proxy") {
@@ -2832,15 +3215,23 @@ export default {
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "POST" && url.pathname === "/api/media") {
-        await requireRole(request, env, url, EDITOR_ROLES);
+        const access = await requireMediaWriter(request, env, url);
         const payload = await request.json();
-        const ids = await importMedia(env, payload);
+        let ids;
+        if (access.editor) {
+          const editedIds = (payload.media || []).map(item => item && item.id).filter(id => id !== undefined && id !== null);
+          if (editedIds.length) await assertMediaWritable(env, access, editedIds);
+          ids = await importMedia(env, payload);
+        } else {
+          ids = await updateOwnedPieceResources(env, access, payload);
+        }
         await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "DELETE" && url.pathname === "/api/media") {
-        await requireRole(request, env, url, EDITOR_ROLES);
+        const access = await requireMediaWriter(request, env, url);
         const payload = await request.json().catch(() => ({}));
+        if (Array.isArray(payload.ids) && payload.ids.length) await assertMediaWritable(env, access, payload.ids);
         const ids = await deleteMedia(env, payload.ids);
         await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });

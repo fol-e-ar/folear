@@ -2,10 +2,10 @@
 //
 // Módulo autónomo (ver index.html), no mesmo estilo ca js/auth.js:
 //   - "O meu espazo" (vista `profile`): nome que se amosa, username,
-//     lugar, presentación, perfil público opcional e lista de favoritos.
+//     territorio, presentación, perfil público opcional e lista de favoritos.
 //   - "Persoas" (vista `people`): directorio dos perfís públicos e páxina de
 //     cada persoa (#/persoa/<username>).
-//   - Estrelas de favorito en coplas e lugares, inxectadas no DOM sen tocar
+//   - Estrelas de favorito en coplas e territorios, inxectadas no DOM sen tocar
 //     o resto da aplicación.
 //
 // O servidor é quen decide: aquí só se debuxa. Todo o personal é privado ata
@@ -13,12 +13,12 @@
 
 const API = "../api";
 const DATA = "./data/exports";
-const KIND_LABELS = { copla: "Coplas", territory: "Lugares", tag: "Etiquetas", media: "Recursos", melody: "Melodías", piece: "Pezas" };
+const KIND_LABELS = { copla: "Coplas", territory: "Territorios", tag: "Etiquetas", media: "Recursos", melody: "Melodías", piece: "Pezas" };
 const FAV_HEADINGS = {
-  copla: "Coplas favoritas", territory: "Lugares favoritos", tag: "Etiquetas favoritas",
+  copla: "Coplas favoritas", territory: "Territorios favoritos", tag: "Etiquetas favoritas",
   media: "Recursos favoritos", melody: "Melodías favoritas", piece: "Pezas favoritas",
 };
-const KIND_EMPTY = { copla: "coplas", territory: "lugares", tag: "etiquetas", media: "recursos", melody: "melodías", piece: "pezas" };
+const KIND_EMPTY = { copla: "coplas", territory: "territorios", tag: "etiquetas", media: "recursos", melody: "melodías", piece: "pezas" };
 const TERRITORY_TYPES = { prov: "provincia", com: "comarca", con: "concello", par: "parroquia" };
 
 const S = {
@@ -313,7 +313,7 @@ async function renderProfile() {
     view.innerHTML = `
       <div class="page profile-page">
         <div class="page-head"><div><div class="eyebrow">O meu espazo</div><h1>Entra para ter o teu espazo</h1>
-        <p>Con unha conta de Google tes o teu espazo: favoritos de coplas, lugares, etiquetas, recursos e melodías; as túas pezas (privadas ou na biblioteca pública); seguir a outras persoas e, se queres, un perfil público. Consultar o arquivo non require conta.</p></div></div>
+        <p>Con unha conta de Google tes o teu espazo: favoritos de coplas, territorios, etiquetas, recursos e melodías; as túas pezas (privadas ou na biblioteca pública); seguir a outras persoas e, se queres, un perfil público. Consultar o arquivo non require conta.</p></div></div>
         <p><a class="btn primary" href="${esc(window.folearAuth?.loginUrl?.() || "#")}">Entrar con Google</a></p>
         <p class="muted small-print"><a href="./privacidade.html" data-privacy-link>Como tratamos os teus datos</a></p>
       </div>`;
@@ -363,7 +363,7 @@ async function renderProfile() {
             <small>Só minúsculas sen acentos, números e guións (3-30). A túa páxina sería <code>#/persoa/<span id="pfHandlePreview">${esc(profile.handle || "o-teu-username")}</span></code>.</small>
           </div>
           <div class="field">
-            <label for="pfPlace">Lugar (opcional)</label>
+            <label for="pfPlace">Territorio (opcional)</label>
             <div class="place-pick">
               <input id="pfPlace" type="search" value="${esc(profile.territory_name)}" placeholder="Busca un concello, parroquia ou comarca" data-territory="${esc(profile.territory_id)}">
               <button class="btn" type="button" id="pfPlaceClear" ${profile.territory_id ? "" : "hidden"}>Quitar</button>
@@ -377,7 +377,7 @@ async function renderProfile() {
           </div>
           <label class="check-row">
             <input type="checkbox" name="is_public" ${profile.is_public ? "checked" : ""}>
-            <span><strong>Perfil público</strong><small>Aparece no directorio «Persoas» e calquera pode ver o teu nome, lugar e presentación. Precisa nome e username. Podes desactivalo cando queiras.</small></span>
+            <span><strong>Perfil público</strong><small>Aparece no directorio «Persoas» e calquera pode ver o teu nome, territorio e presentación. Precisa nome e username. Podes desactivalo cando queiras.</small></span>
           </label>
           <label class="check-row">
             <input type="checkbox" name="show_favorites" ${profile.show_favorites ? "checked" : ""}>
@@ -403,7 +403,7 @@ async function renderProfile() {
         </div>
         ${S.favTab === "tag" ? tagPickerHtml() : ""}
         <div id="favList" class="fav-list">${favoritesListHtml(S.favTab, [...S.favorites[S.favTab]], data, { pieces: allPieces })}</div>
-        <p class="muted small-print">Gárdanse co botón ☆ de cada copla, lugar, etiqueta, recurso, melodía e peza.</p>
+        <p class="muted small-print">Gárdanse co botón ☆ de cada copla, territorio, etiqueta, recurso, melodía e peza.</p>
       </section>
 
       ${S.followsEnabled ? followingPanelHtml(allPieces) : ""}
@@ -433,7 +433,7 @@ function myPiecesHtml(pieces) {
       <button type="button" class="fav-open" data-open-piece-id="${esc(piece.id)}"><strong>${esc(piece.title || "Peza sen título")}</strong><span>${piece.copla_count || (piece.coplas || []).length} coplas</span></button>
       <span class="piece-vis is-${piece.status === "hidden" ? "hidden" : piece.visibility}">${visibilityLabel(piece)}</span>
       <button type="button" class="btn" data-edit-piece-id="${esc(piece.id)}">Editar</button>
-      <button type="button" class="btn" data-vis-piece-id="${esc(piece.id)}" data-vis-next="${piece.visibility === "private" ? "public" : "private"}">${piece.visibility === "private" ? "Publicar" : "Facer privada"}</button>
+      ${piece.visibility === "private" && !(auth().canEdit?.() || auth().mode !== "google") ? "" : `<button type="button" class="btn" data-vis-piece-id="${esc(piece.id)}" data-vis-next="${piece.visibility === "private" ? "public" : "private"}">${piece.visibility === "private" ? "Publicar" : "Facer privada"}</button>`}
     </div>`).join("")}</div>`;
 }
 
@@ -660,7 +660,7 @@ async function renderPeople() {
     <div class="page people-page">
       <div class="page-head"><div><div class="eyebrow">Comunidade</div><h1>Persoas</h1>
       <p>Quen decidiu amosar o seu perfil. Cada persoa elixe que comparte.</p></div></div>
-      <div class="toolbar"><div class="searchbox"><span>⌕</span><input id="peopleSearch" type="search" placeholder="Buscar por nome, lugar..."></div></div>
+      <div class="toolbar"><div class="searchbox"><span>⌕</span><input id="peopleSearch" type="search" placeholder="Buscar por nome, territorio..."></div></div>
       <div id="peopleCards" class="people-cards"></div>
     </div>`;
   view.querySelector("#peopleSearch").addEventListener("input", event => paint(event.target.value));
@@ -808,6 +808,8 @@ function askPieceSave({ title = "", author = "", visibility = "private", editing
   return new Promise(resolve => {
     const profile = auth().user?.profile;
     const publicProfile = Boolean(profile?.is_public && profile?.handle);
+    const canPublish = Boolean(auth().canEdit?.()) || auth().mode !== "google";
+    if (!canPublish && visibility === "public" && !editing?.wasPublic) visibility = "private";
     const root = document.createElement("div");
     root.className = "fe-dialog";
     root.innerHTML = `
@@ -816,11 +818,11 @@ function askPieceSave({ title = "", author = "", visibility = "private", editing
         <div class="eyebrow">${editing ? "Actualizar peza" : "Gardar peza"}</div>
         <h2 id="feDialogTitle">${editing ? "Gardar os cambios" : "Gardar na túa conta"}</h2>
         <div class="field"><label for="fePieceTitle">Título</label><input id="fePieceTitle" maxlength="160" value="${esc(title)}" placeholder="Título da peza"></div>
-        <div class="field"><label for="fePieceAuthor">Autoría (opcional)</label><input id="fePieceAuthor" maxlength="120" value="${esc(author)}" placeholder="Grupo, artista ou persoa que a creou ou arranxou" list="fePieceAuthorList" autocomplete="off"><datalist id="fePieceAuthorList">${(window.folearApp?.authors?.() || []).map(name => `<option value="${esc(name)}"></option>`).join("")}</datalist><small class="muted">Se xa existe a súa ficha, escolle o nome da lista para que quede xunto ao resto.</small></div>
+        <div class="field"><label for="fePieceAuthor">Autoría (opcional)</label><input id="fePieceAuthor" maxlength="120" value="${esc(author)}" placeholder="Grupo, artista ou persoa que a creou ou arranxou" autocomplete="off"><small class="muted">Se xa existe a súa ficha, escolle o nome das suxestións para que quede xunto ao resto.</small></div>
         <fieldset class="field vis-field">
           <legend>Quen pode ver a peza</legend>
           <label class="vis-option"><input type="radio" name="vis" value="private" ${visibility !== "public" ? "checked" : ""}><span><strong>Privada</strong><small>Só ti. Aparece en «As miñas pezas».</small></span></label>
-          <label class="vis-option"><input type="radio" name="vis" value="public" ${visibility === "public" ? "checked" : ""}><span><strong>Pública, na biblioteca</strong><small>Calquera persoa pode lela e exportala. Un guía pode agochala se fai falta.</small></span></label>
+          <label class="vis-option${canPublish ? "" : " is-disabled"}"><input type="radio" name="vis" value="public" ${visibility === "public" && canPublish ? "checked" : ""} ${canPublish ? "" : "disabled"}><span><strong>Pública, na biblioteca</strong><small>${canPublish ? "Calquera persoa pode lela e exportala. Un guía pode agochala se fai falta." : "Só as persoas guía ou admin poden publicar pezas. A túa queda privada."}</small></span></label>
           <small id="fePublicNote" class="muted" ${visibility === "public" ? "" : "hidden"}>${publicProfile ? `Amosarase co teu nome público (${esc(profile.display_name)}).` : "O teu perfil é privado: a peza sairá sen o teu nome. Podes activar o perfil público en «O meu espazo»."}</small>
         </fieldset>
         ${editing ? `<label class="check-row"><input type="checkbox" id="fePieceCopy"><span><strong>Gardar como copia nova</strong><small>Deixa a versión anterior como está.</small></span></label>` : ""}
@@ -828,6 +830,7 @@ function askPieceSave({ title = "", author = "", visibility = "private", editing
         <div class="form-actions"><button class="btn" type="button" data-dialog-cancel>Cancelar</button><button class="btn primary" type="submit">${editing ? "Gardar cambios" : "Gardar peza"}</button></div>
       </form>`;
     document.body.append(root);
+    window.folearAuthorBox?.attach(root.querySelector("#fePieceAuthor"), { items: () => window.folearApp?.authorEntries?.() || [], free: true });
     const previous = document.activeElement;
     const form = root.querySelector("form");
     const note = root.querySelector("#fePublicNote");
@@ -837,7 +840,7 @@ function askPieceSave({ title = "", author = "", visibility = "private", editing
       previous?.focus?.();
       resolve(value);
     };
-    const onKey = event => { if (event.key === "Escape") { event.stopPropagation(); finish(null); } };
+    const onKey = event => { if (event.key === "Escape" && event.target?.getAttribute?.("aria-expanded") !== "true") { event.stopPropagation(); finish(null); } };
     document.addEventListener("keydown", onKey, true);
     root.querySelectorAll("[data-dialog-cancel]").forEach(item => item.addEventListener("click", () => finish(null)));
     form.querySelectorAll('input[name="vis"]').forEach(radio => radio.addEventListener("change", () => {

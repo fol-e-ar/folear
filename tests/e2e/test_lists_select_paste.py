@@ -1,5 +1,5 @@
 """E2E: vistas de lista, selección múltipla, pegar varias coplas, aliñamento de íncipits."""
-import sys, pathlib
+import sys, pathlib, re
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "harness"))
 from common import APP, DB, OUT, sql, Client, SAMPLE_PDF
 import urllib.request
@@ -28,6 +28,17 @@ with sync_playwright() as p:
     cols=pg.evaluate("[...new Set([...document.querySelectorAll('.incipit-place .level-text')].slice(0,40).map(e=>getComputedStyle(e).color))]")
     ok("level colors differ", len(cols)>=2, cols)
     pg.screenshot(path=str(OUT/"t24-incipits.png"))
+    # a busca por territorio superior atopa as coplas das parroquias de dentro
+    # (a copla de Loureiro, no concello Cerdedo-Cotobade, comarcas Pontevedra e Tabeirós-Terra de Montes, provincia Pontevedra)
+    def nres(q):
+        pg.fill("#coplaSearch",q); pg.wait_for_timeout(600)
+        return int(re.search(r"\d+", pg.locator("#coplaResultCount").inner_text()).group())
+    n_con=nres("Cerdedo-Cotobade"); n_com=nres("Tabeirós"); n_prov=nres("Pontevedra"); n_none=nres("Carnota")
+    ok("busca por concello atopa coplas de parroquias", n_con>=1, n_con)
+    ok("busca por comarca atopa coplas de parroquias", n_com>=1, n_com)
+    ok("busca por provincia atopa polo menos tantas coma o concello", n_prov>=n_con, (n_prov,n_con))
+    ok("busca por concello alleo non as atopa de máis", n_none<n_prov, n_none)
+    pg.fill("#coplaSearch",""); pg.wait_for_timeout(500)
     # select mode
     pg.click("#toggleCoplaSelect"); pg.wait_for_timeout(500)
     ok("dock visible", pg.locator(".batch-dock").count()==1)
@@ -53,7 +64,11 @@ with sync_playwright() as p:
     pg.screenshot(path=str(OUT/"t24-select-list.png"))
     pg.click("#batchExit"); pg.wait_for_timeout(300)
     pg.screenshot(path=str(OUT/"t24-list.png"))
-    pg.click('[data-copla-view="gallery"]'); pg.click("#toggleCoplaSelect"); pg.locator(".gallery-card").nth(1).click(position={"x":100,"y":100}); pg.wait_for_timeout(400)
+    pg.click('[data-copla-view="gallery"]'); pg.wait_for_timeout(400)
+    sz=pg.evaluate("(()=>{const c=document.querySelector('.gallery-card:not(.as-list)');const t=getComputedStyle(c.querySelector('.gallery-title')),x=getComputedStyle(c.querySelector('.gallery-text'));return [parseFloat(t.fontSize),parseFloat(x.fontSize),t.fontFamily,x.fontFamily]})()")
+    ok("galería: íncipit case do tamaño do texto e coa súa fonte propia", sz[0]>=sz[1]-2 and sz[2]!=sz[3], sz)
+    pg.screenshot(path=str(OUT/"t24-gallery-sizes.png"))
+    pg.click("#toggleCoplaSelect"); pg.locator(".gallery-card").nth(1).click(position={"x":100,"y":100}); pg.wait_for_timeout(400)
     pg.screenshot(path=str(OUT/"t24-select-gallery.png"))
     # paste
     pg.click('#view-coplas [data-view="submit"]'); pg.wait_for_timeout(700)
@@ -61,16 +76,58 @@ with sync_playwright() as p:
     pg.fill("#pasteBlock","Primeira copla\nsegundo verso\n\n>Volta da copla\nsegundo<\n\nA terriña de Almofrei\nxa non vexo"); pg.wait_for_timeout(300)
     ok("paste preview 3", pg.locator(".paste-item").count()==3 and "3 coplas" in pg.locator("#pasteSummary").inner_text(), pg.locator("#pasteSummary").inner_text())
     ok("volta count", "1 volta" in pg.locator("#pasteSummary").inner_text())
+    # só as voltas levan etiqueta «Volta»; as demais, un control discreto
+    ok("only real volta shows tag", pg.locator(".paste-item .tag.is-volta").count()==1, pg.locator(".paste-item .tag.is-volta").count())
+    ok("non-volta items have no tag", pg.locator(".paste-item:not(.is-volta) .tag.is-volta").count()==0)
     pg.click('[data-paste-volta="0"]'); pg.wait_for_timeout(200)
     ok("toggle volta -> 2", "2 voltas" in pg.locator("#pasteSummary").inner_text() and pg.input_value("#pasteBlock").startswith(">Primeira"))
+    ok("two tags now", pg.locator(".paste-item .tag.is-volta").count()==2)
     pg.click("#pasteCheckDupes"); pg.wait_for_timeout(500)
     print("dupes:", pg.locator(".paste-dupe").count(), pg.locator("#pasteBlockFeedback").inner_text())
     pg.click('[data-paste-remove="1"]'); pg.wait_for_timeout(200)
     ok("remove -> 2", pg.locator(".paste-item").count()==2)
     pg.screenshot(path=str(OUT/"t24-paste.png"))
+    # lote 1: Moscoso
+    pg.fill("#pasteTerritoryQuery","Moscoso"); pg.wait_for_timeout(300)
+    ok("place results", pg.locator("[data-paste-pick-territory]").count()>=1, pg.locator("#pasteTerritoryResults").inner_text()[:80])
+    first_name=pg.locator("[data-paste-pick-territory] strong").first.inner_text()
+    pg.locator("[data-paste-pick-territory]").first.click(); pg.wait_for_timeout(300)
+    ok("lot place chip", pg.locator("#pasteTerritoryChips .selected-chip").count()==1 and first_name in pg.locator("#pasteDest").inner_text(), pg.locator("#pasteDest").inner_text())
+    ok("paste lot has its own «lugar» field", pg.locator("#pasteLugar").count()==1)
+    pg.fill("#pasteLugar","Laxoso"); pg.wait_for_timeout(200)
+    ok("lugar shown in the destination", "Laxoso" in pg.locator("#pasteDest").inner_text(), pg.locator("#pasteDest").inner_text())
+    ok("main form has «lugar» too", pg.locator("#newLugar").count()==1)
     pg.click("#parsePasteBlock"); pg.wait_for_timeout(800)
-    ok("queued 2", pg.locator(".submit-batch-item").count()==2 and "Engadidas 2" in pg.locator("#pasteBlockFeedback").inner_text(), pg.locator(".submit-batch-item").count())
+    ok("lot lugar in the queue", "Laxoso" in pg.locator(".submit-batch-lot").first.inner_text() and "Laxoso" in pg.locator(".submit-batch-item").first.inner_text(), pg.locator(".submit-batch-lot").first.inner_text())
+    ok("lugar reset for next lot", pg.input_value("#pasteLugar")=="")
+    ok("queued 2", pg.locator(".submit-batch-item").count()==2 and "Lote engadido: 2 coplas" in pg.locator("#pasteBlockFeedback").inner_text(), pg.locator("#pasteBlockFeedback").inner_text())
     ok("textarea cleared", pg.input_value("#pasteBlock")=="")
+    ok("place reset for next lot", pg.locator("#pasteTerritoryChips .selected-chip").count()==0)
+    ok("lot header 1", pg.locator(".submit-batch-lot").count()==1 and "Lote 1" in pg.locator(".submit-batch-lot").first.inner_text())
+    # lote 2: outro lugar
+    pg.evaluate("document.querySelector('.paste-panel').open=true")
+    pg.fill("#pasteBlock","Terceira copla\nunha\n\nCuarta copla\ndúas\n\nQuinta copla\ntres"); pg.wait_for_timeout(300)
+    ok("only normal items, no volta tag", pg.locator(".paste-item .tag.is-volta").count()==0)
+    pg.fill("#pasteTerritoryQuery","Barcia"); pg.wait_for_timeout(300)
+    second_name=None
+    if pg.locator("[data-paste-pick-territory]").count():
+        second_name=pg.locator("[data-paste-pick-territory] strong").first.inner_text()
+        pg.locator("[data-paste-pick-territory]").first.click(); pg.wait_for_timeout(200)
+    else:
+        pg.click("#pasteMarkGeneral"); pg.wait_for_timeout(200); second_name="Galiza enteira"
+    pg.click("#parsePasteBlock"); pg.wait_for_timeout(800)
+    ok("lots accumulate", pg.locator(".submit-batch-item").count()==5 and pg.locator(".submit-batch-lot").count()==2, pg.locator(".submit-batch-item").count())
+    summary=pg.locator(".submit-batch-summary").inner_text()
+    ok("summary per place", ": 2" in summary and ": 3" in summary, summary)
+    ok("save-all button in paste panel", pg.locator("#pasteSaveAll").is_visible() and "5" in pg.locator("#pasteSaveAll").inner_text())
+    # lote 3 sen engadir: gardar avisa
+    pg.evaluate("document.querySelector('.paste-panel').open=true")
+    pg.fill("#pasteBlock","Sobrante\nunha"); pg.wait_for_timeout(200)
+    pg.click("#pasteSaveAll"); pg.wait_for_timeout(300)
+    ok("pending paste blocks save", "sen engadir" in pg.locator("#pasteBlockFeedback").inner_text() and pg.locator(".submit-batch-item").count()==5, pg.locator("#pasteBlockFeedback").inner_text())
+    pg.click("#clearPasteBlock")
+    pg.click('[data-remove-lot="2"]'); pg.wait_for_timeout(300)
+    ok("remove lot", pg.locator(".submit-batch-item").count()==2 and pg.locator(".submit-batch-lot").count()==1)
     pg.screenshot(path=str(OUT/"t24-paste-after.png"))
     # media / melodies
     for v,sel,attr in (("media","#mediaList","data-media-view"),("melodies","#melodiesList","data-melody-view")):

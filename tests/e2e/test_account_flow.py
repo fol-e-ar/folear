@@ -1,11 +1,12 @@
 """E2E: visitante, conta, pezas, favoritos, perfís, seguimentos, moderación, Sobre o arquivo, privacidade."""
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "harness"))
-from common import APP, DB, OUT, sql, Client, SAMPLE_PDF
+from common import APP, DB, OUT, sql, Client, SAMPLE_PDF, restore_coplas
 import urllib.request, json, sqlite3, sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 import shoot_lib as S
+MAX_COPLA_ID=sql("select coalesce(max(id),0) from coplas")[0][0]
 for t in ("follows","favorites","profiles","sessions"): sql(f"delete from {t}")
 sql("delete from piece_coplas where piece_id in (select id from pieces where owner_user_id is not null)")
 sql("delete from pieces where owner_user_id is not null"); sql("delete from users")
@@ -74,13 +75,27 @@ with sync_playwright() as p:
     ok("loose coplas NOT added to archive", len([c for c in json.load(urllib.request.urlopen(APP+"/data/exports/coplas/coplas.json"))])==len(coplas))
     # drawer + publicar
     card.click(); pv.wait_for_selector("#pieceDrawer:not([hidden]) .piece-manage", timeout=5000)
-    ok("drawer manage actions", all(pv.locator(f"#pieceDrawer {s}").count()==1 for s in ("[data-edit-piece]","[data-toggle-piece-visibility]","[data-delete-piece]")))
-    ok("piece media form hidden for foleante", not pv.locator("#pieceDrawer #pieceMediaForm").is_visible())
+    ok("drawer manage actions (foleante: sen publicar)", all(pv.locator(f"#pieceDrawer {s}").count()==1 for s in ("[data-edit-piece]","[data-delete-piece]")) and pv.locator("#pieceDrawer [data-toggle-piece-visibility]").count()==0)
+    ok("owner (foleante) can link resources to her own piece", pv.locator("#pieceDrawer .piece-media-form").is_visible() and pv.locator("#pieceDrawer .piece-media-form #pmFetch").count()==1)
     ok("piece star in drawer", pv.locator("#pieceDrawer .fav-btn.has-label").count()==1)
     pv.screenshot(path=str(OUT/"drawer-mine.png"))
+    myid=sql("select id from pieces where owner_user_id is not null")[0][0]
+    st,_=jfetch(pv,"/api/pieces/visibility","POST",{"id":myid,"visibility":"public"})
+    ok("foleante cannot publish (403)", st==403, st)
+    ok("foleante: the register-coplas button is not offered", pv.locator("#pieceDrawer [data-register-piece-coplas]").count()==0)
+    # a partir de aquí Ana é guía: publica e as coplas soltas pasan ao arquivo
+    pv.click("#pieceDrawer [data-close-piece-drawer]"); pv.wait_for_timeout(200)
+    sql("update users set role='guia' where email='ana@example.com'")
+    pv.reload(); wait_ready(pv)
+    pv.click('.sidebar [data-view="pieces"]'); pv.wait_for_timeout(500); pv.click('[data-piece-tab="library"]'); pv.wait_for_timeout(500)
+    pv.locator('[data-piece-scope="mine"]').click(); pv.wait_for_timeout(500)
+    pv.locator("#pieceRepositoryList .piece-card").first.click(); pv.wait_for_selector("#pieceDrawer:not([hidden]) .piece-manage", timeout=5000)
+    ok("guía: sees the register-coplas button (loose coplas)", pv.locator("#pieceDrawer [data-register-piece-coplas]").count()==1)
+    pv.click("#pieceDrawer [data-register-piece-coplas]"); pv.wait_for_timeout(1500)
+    ok("register-coplas puts the loose copla in the archive", len(json.load(urllib.request.urlopen(APP+"/data/exports/coplas/coplas.json")))==len(coplas)+1 and sql("select count(*) from piece_coplas where copla_id is null")[0][0]==0)
+    ok("button gone once registered", pv.locator("#pieceDrawer [data-register-piece-coplas]").count()==0)
     pv.click("#pieceDrawer [data-toggle-piece-visibility]"); pv.wait_for_timeout(1200)
     pubids=[x["id"] for x in json.load(urllib.request.urlopen(APP+"/data/exports/pezas/pezas.json"))]
-    myid=sql("select id from pieces where owner_user_id is not null")[0][0]
     ok("published appears in public export", myid in pubids, pubids)
     ok("drawer refreshed shows Facela privada", "Facela privada" in pv.locator("#pieceDrawer").inner_text())
     pv.click("#pieceDrawer [data-close-piece-drawer]"); pv.wait_for_timeout(300)
@@ -164,7 +179,7 @@ with sync_playwright() as p:
     pa.locator("#pieceRepositoryList .piece-card h2", has_text="Xota de proba (editada)").first.click(); pa.wait_for_selector("#pieceDrawer .piece-manage")
     ok("admin moderation button", pa.locator("#pieceDrawer [data-moderate-piece]").count()==1)
     myid=int(pa.get_attribute("#pieceDrawer [data-moderate-piece]","data-moderate-piece"))
-    ok("admin piece media form visible", pa.locator("#pieceDrawer #pieceMediaForm").is_visible())
+    ok("admin piece media form visible", pa.locator("#pieceDrawer .piece-media-form").is_visible())
     pa.click("#pieceDrawer [data-moderate-piece]"); pa.wait_for_timeout(1200)
     ok("hidden chip for admin", "Agochada" in pa.locator("#pieceDrawer .meta").inner_text() and "Amosar de novo" in pa.locator("#pieceDrawer").inner_text())
     pubids=[x["id"] for x in json.load(urllib.request.urlopen(APP+"/data/exports/pezas/pezas.json"))]
@@ -178,7 +193,7 @@ with sync_playwright() as p:
     # 4 SOBRE
     pv.click('.sidebar [data-view="about"]'); pv.wait_for_timeout(600)
     about=pv.locator("#view-about").inner_text().lower()
-    ok("about: colour legend", all(t in about for t in ("código de cores","parroquia","concello","comarca","provincia","sen lugar")))
+    ok("about: colour legend", all(t in about for t in ("código de cores","parroquia","concello","comarca","provincia","sen territorio")))
     ok("about: levels use the level colours", pv.locator("#view-about .about-legend .level-text.level-par, #view-about .about-legend .level-text.level-prov").count()==2)
     ok("about: explains PDF needs login", "para xerar un pdf pedimos que entres" in about and "15" in about)
     ok("about: how it works", all(t in about for t in ("copla","lugar","melodía","recurso","peza","persoa","que podes facer")))
@@ -206,4 +221,5 @@ with sync_playwright() as p:
     pm.goto(APP+"/?view=about"); wait_ready(pm); pm.screenshot(path=str(OUT/"m-about.png"), full_page=True)
     ok("mobile no horizontal scroll about", pm.evaluate("document.documentElement.scrollWidth<=window.innerWidth+1"))
     b.close()
+restore_coplas(MAX_COPLA_ID)
 print("ERRORS:",errs[:8]); print("FAILS:",FAILS)

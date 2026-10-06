@@ -12,6 +12,7 @@ MIGRATION_005 = "005_copla_version_territories"
 MIGRATION_006 = "006_piece_inline_text"
 MIGRATION_007 = "007_copla_volta_and_traits"
 MIGRATION_008 = "008_melodies"
+MIGRATION_009 = "009_lugar"
 
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -373,6 +374,13 @@ def apply_008_melodies(conn: sqlite3.Connection) -> None:
     execute_sql_file(conn, SCHEMA_DIR / "008_melodies.sql")
 
 
+def apply_009_lugar(conn: sqlite3.Connection) -> None:
+    """«Lugar»: subdivisión dunha parroquia como texto libre (aditivo; só engade columnas nulas)."""
+    for table in ("coplas", "pieces"):
+        if table_exists(conn, table) and "lugar" not in table_columns(conn, table):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN lugar TEXT")
+
+
 def migrate(db_path: Path = DB_PATH) -> list[str]:
     ensure_parent_dir(db_path)
 
@@ -420,6 +428,11 @@ def migrate(db_path: Path = DB_PATH) -> list[str]:
             apply_008_melodies(conn)
             mark_migration(conn, MIGRATION_008)
             applied_now.append(MIGRATION_008)
+
+        if MIGRATION_009 not in applied:
+            apply_009_lugar(conn)
+            mark_migration(conn, MIGRATION_009)
+            applied_now.append(MIGRATION_009)
 
         conn.commit()
     finally:

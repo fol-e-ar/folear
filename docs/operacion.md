@@ -25,7 +25,7 @@ As migracións 0001-0005 aplicáronse a man. Para que `migrations apply` saiba c
 
 ```bash
 npx wrangler d1 execute fol-e-ar-db --remote --file=scripts/baseline_migrations.sql
-npx wrangler d1 migrations apply fol-e-ar-db --remote      # aplica 0006 e 0007
+npx wrangler d1 migrations apply fol-e-ar-db --remote      # aplica as migracións pendentes (0006 a 0009)
 ```
 
 Unha migración nova é un ficheiro `infra/cloudflare/migrations/NNNN_nome.sql`: aditivo, con `IF NOT EXISTS` sempre que sexa posible.

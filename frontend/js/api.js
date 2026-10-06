@@ -131,9 +131,16 @@ export async function getPezas({ account = false, moderator = false } = {}) {
     String(b.updated_at || "").localeCompare(String(a.updated_at || "")) || Number(b.id) - Number(a.id));
 }
 
-export async function getMedia() {
+// Media pública (exporte cacheado) + os recursos privados da persoa con sesión (os que
+// van ligados ás súas pezas privadas). Se o segundo pedido falla, queda a pública.
+export async function getMedia({ account = false } = {}) {
   const paths = buildPaths();
-  return fetchJson(paths.media);
+  const publicList = await fetchJson(paths.media);
+  const base = Array.isArray(publicList) ? publicList : [];
+  if (!account) return base;
+  const mine = await getJsonOrNull("../api/me/media");
+  const seen = new Set(base.map(item => String(item.id)));
+  return [...base, ...(mine?.media || []).filter(item => !seen.has(String(item.id)))];
 }
 
 export async function getMelodias() {

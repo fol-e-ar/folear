@@ -988,3 +988,316 @@ button.chip-link {
 .piece-links-drawer {
   margin: 12px 0;
 }
+
+/* Escolla de autorías (js/authorbox.js) */
+
+.authorbox-list {
+  position: fixed;
+  z-index: 4000;
+  max-width: min(420px, calc(100vw - 16px));
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--float-bg, #fff);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+}
+
+.authorbox-list[hidden] {
+  display: none;
+}
+
+.authorbox-head,
+.authorbox-note {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.authorbox-head {
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.authorbox-new strong {
+  color: var(--ink);
+}
+
+.authorbox-option {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.authorbox-option:hover,
+.authorbox-option.is-active {
+  background: var(--tint);
+}
+
+.authorbox-count {
+  flex: none;
+  font: 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.authorbox-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 22px 24px 8px;
+  overflow: hidden;
+  width: min(560px, calc(100vw - 40px));
+  max-height: min(720px, calc(100dvh - 40px));
+}
+
+.authorbox-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 0 10px;
+}
+
+.authorbox-search {
+  flex: 1;
+  min-width: 180px;
+  padding: 9px 12px;
+  font: inherit;
+  background: var(--tint);
+  border: 0;
+  border-radius: 999px;
+}
+
+.authorbox-sort {
+  display: flex;
+  gap: 6px;
+}
+
+.authorbox-letters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 8px;
+}
+
+.authorbox-letters .chip {
+  min-width: 30px;
+  padding: 3px 8px;
+  font: 12px var(--font-mono);
+}
+
+.authorbox-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.authorbox-letter {
+  margin: 16px 0 4px;
+  font: 500 12px var(--font-mono);
+  color: var(--accent);
+}
+
+.authorbox-row {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 6px;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.authorbox-row:hover,
+.authorbox-row:focus-visible {
+  background: var(--tint);
+  outline: 0;
+}
+
+.authorbox-row small {
+  flex: none;
+  font: 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.authorbox-more {
+  padding: 14px 6px;
+  font-size: 12px;
+}
+
+.author-search {
+  min-width: 190px;
+}
+
+/* Recursos ligados a unha peza: mesmo formulario no obradoiro e na ficha */
+
+.resource-form {
+  display: grid;
+  gap: 10px;
+}
+
+.resource-form .input-action input {
+  min-width: 0;
+  padding: 9px 0;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  border-radius: 0;
+  outline: none;
+}
+
+.resource-form .input-action input:focus {
+  border-bottom-color: var(--ink);
+  box-shadow: 0 1px 0 var(--ink);
+}
+
+.resource-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.resource-fields .field {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.resource-fields .field > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.resource-fields .field:first-child {
+  grid-column: 1 / -1;
+}
+
+.resource-preview {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.resource-preview[hidden] {
+  display: none;
+}
+
+.resource-preview img {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.resource-preview div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.resource-preview strong,
+.resource-preview span,
+.resource-preview small {
+  overflow-wrap: anywhere;
+}
+
+.resource-preview span,
+.resource-preview small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.resource-feedback {
+  min-height: 1em;
+  margin: 0;
+  font-size: 12px;
+}
+
+.workshop-link-item {
+  gap: 10px;
+}
+
+.resource-chip-kind {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-width: 78px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.resource-chip-kind svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+
+.resource-chip-main {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.resource-chip-main small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tag.is-private {
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+}
+
+@media (max-width: 560px) {
+  .resource-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Recursos ligados a unha peza: pregados e discretos; o principal son os ritmos e as coplas. */
+.resources-fold {
+  margin: 14px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+}
+.resources-fold > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.resources-fold > summary::-webkit-details-marker { display: none; }
+.resources-fold > summary::before { content: "＋"; font-weight: 400; }
+.resources-fold[open] > summary::before { content: "－"; }
+.resources-fold > summary:hover,
+.resources-fold > summary:focus-visible { color: var(--ink); outline: 0; }
+.resources-fold > summary small { font-weight: 400; font-size: 12px; }
+.resources-fold .workshop-links-note { margin: 0; font-size: 12px; }
+.workshop-links.resources-fold { margin: 18px 0 0; }

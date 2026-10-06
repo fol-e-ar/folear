@@ -9,7 +9,7 @@ infra/cloudflare/
 ├── wrangler.toml.example   # modelo de configuración (copiar a wrangler.toml, que non se sube a git)
 ├── .dev.vars.example       # modelo de variables locais (copiar a .dev.vars)
 ├── package.json            # wrangler, illado do resto do repo
-├── migrations/             # 0001..0007, aditivas (ver táboa)
+├── migrations/             # 0001..0009, aditivas (ver táboa)
 ├── seed/                   # xerado por scripts/export_sqlite_to_d1.py (carga inicial)
 ├── scripts/
 │   ├── export_sqlite_to_d1.py    # SQLite (só lectura) -> SQL de seed
@@ -37,6 +37,8 @@ infra/cloudflare/
 | `0005_pieces_and_follows.sql` | dona e visibilidade das pezas, seguimentos (**non idempotente**) |
 | `0006_piece_links.sql` | ligazóns externas nas pezas |
 | `0007_pdf_usage.sql` | contador diario de PDFs por persoa |
+| `0008_piece_resources_in_media.sql` | os recursos das pezas pasan a Media (dona, visibilidade, peza) e copia as ligazóns de `piece_links` |
+| `0009_lugar.sql` | «lugar» (subdivisión dunha parroquia) como texto libre en coplas e pezas |
 
 Aplícanse con `npx wrangler d1 migrations apply fol-e-ar-db --remote` (despois de executar unha vez `scripts/baseline_migrations.sql`; ver `docs/operacion.md`). Cada migración nova é un ficheiro `NNNN_nome.sql`, aditivo.
 
@@ -243,6 +245,55 @@ táboa `piece_links` (ata 10 ligazóns externas por peza: título + URL).
   e non entran no inventario público de media. Só aceptan `http(s)://`.
 - Sen a 0006 a web segue funcionando; gardar unha peza con ligazóns devolve un
   erro claro que pide aplicar a migración.
+
+### Recursos das pezas en Media (migración 0008)
+
+Migración aditiva `migrations/0008_piece_resources_in_media.sql`: engade a `media` as
+columnas `owner_user_id`, `visibility` (`public`|`private`) e `piece_id`, e copia as
+ligazóns que xa había en `piece_links` (a táboa queda como está; non se borra nada).
+
+- Cada recurso dunha peza é unha fila de **Media** con datos completos (título, plataforma,
+  tipo, uso, fonte, descrición, miniatura) e unha ligazón `piece` en `media_links` cuxo
+  `relation_type` garda o uso (`documental`, `melody` ou `mixed`).
+- Segue a peza: pública ⇒ sae en `/data/exports/media/media.json`; privada ou agochada ⇒
+  só a dona a ve, vía `GET /api/me/media` (a web une as dúas listas). Publicar ou facer
+  privada a peza muda tamén os seus recursos; borrar a peza borra os seus recursos.
+- Gárdanse coa peza (`links` en `POST /api/pieces`) ou soltos con
+  `POST /api/pieces/resources {id, links}` (lista completa; os que xa estaban conservan o
+  seu id e favoritos). Máximo 10 por peza, só `http(s)://`.
+- O formulario do obradoiro e o da ficha da peza son os mesmos que «Novo recurso»:
+  URL + «Obter datos» (`GET /api/link-preview`, agora aberto a calquera conta con sesión).
+- Sen a 0008 a web segue funcionando coas ligazóns antigas; gardar recursos devolve un erro
+  claro que pide aplicar a migración.
+- **Ligados ao territorio e ás coplas da peza**: ao gardar, cada recurso leva tamén ligazóns
+  `territory` (o territorio de contexto da peza) e `copla` (as coplas do arquivo que a forman)
+  en `media_links`, con `relation_type='piece'` (marca de ligazón automática: refánse con
+  cada gardado da peza, ao dar de alta as súas coplas e ao cambiar o seu territorio; as que
+  un guía edite a man en Media pasan a ser súas e xa non se tocan).
+- **Editar e borrar desde Media** (`POST`/`DELETE /api/media`): guías e admin xestionan os
+  recursos públicos (os privados, só a súa dona ou admin) e a dona dun recurso de peza
+  edita os seus datos (título, URL, tipo, uso, fonte...) e bórrao ela mesma; non pode crear
+  Media nova nin tocar a doutra persoa (403). Borrar un recurso desvincúlao de todo (peza,
+  territorios, coplas, melodías e favoritos). O tipo `web` é un recurso máis.
+
+### Lugares e alta automática das coplas das pezas (migración 0009)
+
+Migración aditiva `migrations/0009_lugar.sql`: columna `lugar` (texto, nula) en `coplas` e `pieces`.
+
+- **Lugar** = subdivisión dunha parroquia que non existe como territorio (ex.: «Laxoso», en
+  Ponte Caldelas). Escríbese como texto libre e queda ligado á parroquia da copla ou da peza;
+  o formulario suxire os lugares xa usados nesa parroquia (para non duplicar «Laxoso» e
+  «laxoso»). Sae diante do territorio («Laxoso, Ponte Caldelas (...)») e entra na busca.
+  Local: o `db.py` engade a columna de forma defensiva (`009_lugar`).
+- **Publicar pezas na biblioteca é cousa de guías e admin** (`403` para unha foleante; unha
+  foleante garda pezas privadas). Unha peza pública que xa existise segue pública.
+- **Alta automática**: ao gardar unha peza, se quen garda é guía/admin, as coplas soltas (sen
+  `copla_id`) dan de alta no arquivo co territorio e o lugar da peza (a volta, coma volta). Se xa
+  hai unha copla co mesmo texto non se duplica: úsase e, se non ten o territorio da peza,
+  engádeselle. Así «Lira (Santa María)» xa non pode ter unha peza e 0 coplas.
+  `POST /api/pieces/register-coplas {id}` fai o mesmo cunha peza xa gardada (botón «Dar de alta
+  as coplas no arquivo» na ficha). As coplas soltas dunha foleante non entran no arquivo.
+- Sen a 0009 a web segue funcionando, só que o lugar non se garda.
 
 ### Escalabilidade (plan gratuíto)
 

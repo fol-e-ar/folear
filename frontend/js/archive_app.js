@@ -72,6 +72,8 @@ const state = {
   layer: null,
   layerType: "con",
   selectedTerritory: null,
+  resourcesOpen: false,
+  drawerResourcesOpen: false,
   selectedCoplaId: null,
   view: "map",
   territoryTab: "coplas",
@@ -84,6 +86,9 @@ const state = {
   pasteDraft: "",
   pasteFeedback: "",
   pasteDupes: null,
+  pastePlace: null,
+  pasteLugar: "",
+  pasteLotSeq: 0,
   pieceTab: "workshop",
   coplaQuery: "",
   coplaStateFilter: "all",
@@ -220,10 +225,20 @@ function loginLink() {
   return window.folearAuth?.loginUrl?.() || "../api/auth/google";
 }
 
+// Media pública + (con sesión) os recursos privados das pezas privadas da persoa.
+function loadMedia() {
+  return getMedia({ account: isAccount() });
+}
+
 async function refreshPezas({ render = true } = {}) {
   clearApiCache();
   try {
-    state.pezas = await getPezas({ account: isAccount(), moderator: isEditorAccount() });
+    const [pezas, media] = await Promise.all([
+      getPezas({ account: isAccount(), moderator: isEditorAccount() }),
+      loadMedia().catch(() => null),
+    ]);
+    state.pezas = pezas;
+    if (media) state.media = media;
   } catch (error) {
     console.error(error);
   }
@@ -255,6 +270,7 @@ function defaultDraft() {
     notes: "",
     status: "draft",
     territoryId: "",
+    lugar: "",
     sections: [
       { id: "parte-1", label: "", coplas: [] },
     ],
@@ -504,10 +520,45 @@ function coplaPlaceTextHtml(copla) {
 }
 
 function coplaPlaceLabel(copla) {
-  if ((copla.territories || []).length) return copla.territories.map(item => territoryDisplayName(item)).join(", ");
+  // «Lugar concreto» (Laxoso...): subdivisión da parroquia, texto libre; vai diante do territorio.
+  const lugar = String(copla.lugar || "").trim();
+  if ((copla.territories || []).length) return `${lugar ? `${lugar}, ` : ""}${copla.territories.map(item => territoryDisplayName(item)).join(", ")}`;
+  if (lugar) return lugar;
   if (copla.territory_state === "general") return "Galiza xeral";
-  if (copla.territory_state === "unassigned") return "Lugar descoñecido";
+  if (copla.territory_state === "unassigned") return "Territorio descoñecido";
   return "Sen territorio";
+}
+
+// Lugares concretos xa usados dentro dos territorios dados (e os seus descendentes), para
+// suxerilos ao escribir e non duplicar «Laxoso» / «laxoso».
+function knownLugares(territoryIds = []) {
+  const wanted = new Set();
+  territoryIds.forEach(id => {
+    const territory = state.territorios.find(item => item.id === id);
+    (territory ? getDescendantIds(territory, state.territorios) : [id]).forEach(value => wanted.add(value));
+  });
+  const found = new Map();
+  const add = (lugar, ids) => {
+    const name = String(lugar || "").trim();
+    if (!name || (wanted.size && !ids.some(id => wanted.has(id)))) return;
+    const key = normalizeText(name);
+    const entry = found.get(key) || { name, count: 0 };
+    entry.count += 1;
+    found.set(key, entry);
+  };
+  state.coplas.forEach(copla => add(copla.lugar, (copla.territories || []).map(item => item.id)));
+  state.pezas.forEach(piece => add(piece.lugar, [piece.context_territory?.id || piece.context_territory_id].filter(Boolean)));
+  return [...found.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "gl"));
+}
+
+function lugarOptionsMarkup(territoryIds) {
+  return knownLugares(territoryIds).slice(0, 60).map(item => `<option value="${escapeHtml(item.name)}"></option>`).join("");
+}
+
+function refreshLugarOptions() {
+  const ids = state.submitGeneral ? [] : state.submitTerritoryIds;
+  const list = $("#lugarList");
+  if (list) list.innerHTML = ids.length ? lugarOptionsMarkup(ids) : "";
 }
 
 function territoryHasCoplas(territory) {
@@ -545,12 +596,28 @@ function placeContext(territory = state.selectedTerritory) {
   };
 }
 
+// Nomes do territorio e de todos os superiores (provincia, comarca/s, concello): unha copla de Lira
+// (parroquia) tamén se atopa buscando «Carnota» (concello), a súa comarca ou a provincia.
+let territoryTreeCache = { source: null, names: new Map() };
+function territoryTreeNames(territory) {
+  if (!territory) return "";
+  if (territoryTreeCache.source !== state.territorios) territoryTreeCache = { source: state.territorios, names: new Map() };
+  const cache = territoryTreeCache.names;
+  if (!cache.has(territory.id)) {
+    const full = state.territorios.find(item => item.id === territory.id) || territory;
+    cache.set(territory.id, buildHierarchy(full, state.territorios).map(item => item.nome).join(" "));
+  }
+  return cache.get(territory.id);
+}
+
 function coplaHaystack(copla) {
   return [
+    (copla.territories || []).map(territoryTreeNames).join(" "),
     copla.text,
     copla.incipit,
     copla.notes,
     copla.territory_state,
+    copla.lugar,
     coplaPlaceLabel(copla),
     (copla.tags || []).join(" "),
     (copla.versions || []).map(version => `${version.label || ""} ${version.text || ""} ${version.notes || ""}`).join(" "),
@@ -664,6 +731,23 @@ function mediaKindIconSvg(kind) {
   return `<svg class="media-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
 
+// Un recurso ligado a unha peza pódese editar e borrar desde Media (e desvincúlase de todo): as
+// persoas guía/admin ven todos os públicos; a dona, os dos seus propios (só datos e borrado).
+function ownPieceResource(item) {
+  if (item.piece_id == null || isEditorAccount() || !isAccount()) return false;
+  const piece = state.pezas.find(entry => String(entry.id) === String(item.piece_id));
+  return Boolean(piece && canManagePiece(piece));
+}
+
+function canEditMedia(item) {
+  return item.piece_id == null ? true : (!isGoogleMode() || isEditorAccount() || ownPieceResource(item));
+}
+
+function mediaEditButtons(item) {
+  const own = ownPieceResource(item) ? " data-own-media" : "";
+  return `<button class="btn" type="button" data-edit-media="${item.id}"${own}>Editar</button><button class="btn danger" type="button" data-delete-media="${item.id}"${own}>Borrar</button>`;
+}
+
 function mediaCard(item, options = {}) {
   const url = mediaUrl(item);
   const kind = mediaKind(item);
@@ -692,19 +776,33 @@ function mediaCard(item, options = {}) {
         ${description ? `<p>${escapeHtml(description)}</p>` : ""}
         <div class="meta">
           <span class="tag">${escapeHtml(mediaRoleLabel(role))}</span>
+          ${item.visibility === "private" ? `<span class="tag is-private" title="Só a ves ti: vai ligada a unha peza privada">Privada</span>` : ""}
+          ${mediaPieceTag(item)}
           ${territoryLinks.length ? `<span class="tag place">${escapeHtml(territoryLinks.slice(0, 2).join(" \\ "))}</span>` : ""}
           ${linkedCoplas.length ? `<span class="tag">${linkedCoplas.length} copla${linkedCoplas.length === 1 ? "" : "s"}</span>` : ""}
           ${linkedMelodies.slice(0, 2).map(melody => `<span class="tag is-melody" title="${escapeHtml(melodyName(melody))}">${escapeHtml(melodyShortName(melody))}</span>`).join("")}
           ${linkedMelodies.length > 2 ? `<span class="tag is-melody">+${linkedMelodies.length - 2} melodías</span>` : ""}
         </div>
         ${url ? "" : `<p class="muted">Sen ligazón pública.</p>`}
-        ${options.editable ? `<div class="media-card-actions"><button class="btn" type="button" data-edit-media="${item.id}">Editar</button><button class="btn danger" type="button" data-delete-media="${item.id}">Borrar</button></div>` : ""}
+        ${options.editable && canEditMedia(item) ? `<div class="media-card-actions">${mediaEditButtons(item)}</div>` : ""}
+        ${options.removeFromPiece ? `<div class="media-card-actions is-visible"><button class="btn" type="button" data-remove-piece-resource="${escapeHtml(item.id)}">Quitar da peza</button></div>` : ""}
       </div>
     </article>
   `;
 }
 
-function levelPlacesHtml(territories, emptyLabel = "Sen lugar") {
+function mediaPieceTitle(item) {
+  if (item.piece_id == null) return "";
+  const piece = state.pezas.find(entry => String(entry.id) === String(item.piece_id));
+  return piece ? (piece.title || piece.titulo || "") : "";
+}
+
+function mediaPieceTag(item) {
+  const title = mediaPieceTitle(item);
+  return title ? `<span class="tag place" title="Recurso ligado a unha peza">Peza: ${escapeHtml(title.length > 28 ? `${title.slice(0, 27)}…` : title)}</span>` : "";
+}
+
+function levelPlacesHtml(territories, emptyLabel = "Sen territorio") {
   if (!territories.length) return `<span class="level-text level-empty">${escapeHtml(emptyLabel)}</span>`;
   return territories.map(territory => `<span class="level-text level-${territory.tipo}">${escapeHtml(territory.nome)}</span>`).join("");
 }
@@ -726,10 +824,10 @@ function mediaRow(item, options = {}) {
   return `
     <article class="media-row" tabindex="${url ? "0" : "-1"}" role="${url ? "link" : "article"}" data-open-media="${escapeHtml(url)}"${item.id != null ? ` data-media-id="${escapeHtml(item.id)}"` : ""} aria-label="${escapeHtml(title)}">
       <span class="row-kind">${mediaKindIconSvg(kind)}<span>${escapeHtml(mediaLabel(kind))}</span></span>
-      <span class="row-title"><strong>${escapeHtml(title)}</strong>${extras.length ? `<small>${escapeHtml(extras.join(" \\ "))}</small>` : ""}${url ? "" : `<small>Sen ligazón pública</small>`}</span>
+      <span class="row-title"><strong>${escapeHtml(title)}${item.visibility === "private" ? ` <span class="tag is-private">Privada</span>` : ""}</strong>${extras.length ? `<small>${escapeHtml(extras.join(" \\ "))}</small>` : ""}${mediaPieceTitle(item) ? `<small>Peza: ${escapeHtml(mediaPieceTitle(item))}</small>` : ""}${url ? "" : `<small>Sen ligazón pública</small>`}</span>
       <span class="row-place" title="${escapeHtml(territories.map(territory => territory.nome).join(", "))}">${levelPlacesHtml(territories.slice(0, 2))}</span>
       <span class="row-role">${escapeHtml(mediaRoleLabel(role))}</span>
-      ${options.editable ? `<span class="row-actions"><button class="btn" type="button" data-edit-media="${item.id}">Editar</button><button class="btn danger" type="button" data-delete-media="${item.id}">Borrar</button></span>` : ""}
+      ${options.editable && canEditMedia(item) ? `<span class="row-actions">${mediaEditButtons(item)}</span>` : ""}
     </article>
   `;
 }
@@ -868,7 +966,7 @@ function melodyRow(melody) {
   return `
     <article class="melody-row" tabindex="0" role="button" data-open-melody="${melody.id}" aria-label="${escapeHtml(melodyName(melody))}">
       <span class="row-title"><strong>${escapeHtml(melodyShortName(melody))}</strong>${notes ? `<small>${escapeHtml(notes.length > 90 ? `${notes.slice(0, 87)}…` : notes)}</small>` : ""}</span>
-      <span class="row-place" title="${escapeHtml(territory ? territorySearchMeta(territory) : "")}">${levelPlacesHtml(territory ? [territory] : [], "Sen lugar")}</span>
+      <span class="row-place" title="${escapeHtml(territory ? territorySearchMeta(territory) : "")}">${levelPlacesHtml(territory ? [territory] : [], "Sen territorio")}</span>
       <span class="row-role">${resources ? `${resources} recurso${resources === 1 ? "" : "s"}` : "Sen recursos"}</span>
     </article>
   `;
@@ -960,7 +1058,7 @@ async function postMelodies(melodies) {
 async function removeMelody(melodyId) {
   await melodiesRequest("DELETE", { ids: [melodyId] }, "Non se puido borrar a melodía.");
   clearApiCache();
-  [state.melodias, state.media] = await Promise.all([getMelodias(), getMedia()]);
+  [state.melodias, state.media] = await Promise.all([getMelodias(), loadMedia()]);
 }
 
 function rerenderMelodyViews() {
@@ -1022,12 +1120,12 @@ function renderMelodiesView() {
       <div class="page-head">
         <div>
           <h1>Melodías</h1>
-          <p class="muted">Inventario de melodías, cada unha co seu ritmo, número e lugar.</p>
+          <p class="muted">Inventario de melodías, cada unha co seu ritmo, número e territorio.</p>
         </div>
         <button class="btn primary" type="button" data-new-melody="">+ Nova melodía</button>
       </div>
       <div class="toolbar melody-toolbar">
-        <div class="searchbox"><span>⌕</span><input id="melodiesSearch" type="search" value="${escapeHtml(state.melodyQuery)}" placeholder="Buscar por ritmo, lugar, notas ou recurso..."></div>
+        <div class="searchbox"><span>⌕</span><input id="melodiesSearch" type="search" value="${escapeHtml(state.melodyQuery)}" placeholder="Buscar por ritmo, territorio, notas ou recurso..."></div>
         <select id="melodiesRhythmFilter" aria-label="Filtrar por ritmo">
           <option value="">Todos os ritmos</option>
           ${rhythms.map(rhythm => `<option value="${escapeHtml(rhythm)}" ${normalizeText(state.melodyRhythmFilter) === normalizeText(rhythm) ? "selected" : ""}>${escapeHtml(rhythm)}</option>`).join("")}
@@ -1076,7 +1174,7 @@ function openMelodyDrawer(melodyId) {
       <h2>${escapeHtml(melodyName(melody))}</h2>
       <div class="meta"><span class="tag">${escapeHtml(melody.rhythm)}</span><span class="tag">Número ${melody.number}</span></div>
       <div class="drawer-section">
-        <h3>Lugar</h3>
+        <h3>Territorio</h3>
         <div class="territory-links">
           ${territory ? `<button type="button" data-territory-id="${territory.id}"><strong>${escapeHtml(territory.nome)}</strong><span>${escapeHtml(territorySearchMeta(territory))}</span></button>` : `<p class="muted">Territorio non atopado.</p>`}
         </div>
@@ -1227,9 +1325,9 @@ function renderMelodyModal() {
               ${rhythmDatalist("melodyRhythmList")}
             </div>
             <div class="field">
-              <label>Lugar</label>
+              <label>Territorio</label>
               <div class="melody-place">
-                ${territory ? `<span class="selected-chip">${escapeHtml(territory.nome)} <small class="level-badge level-${territory.tipo}">${escapeHtml(territoryLabel(territory))}</small></span>` : `<span class="muted">Sen lugar.</span>`}
+                ${territory ? `<span class="selected-chip">${escapeHtml(territory.nome)} <small class="level-badge level-${territory.tipo}">${escapeHtml(territoryLabel(territory))}</small></span>` : `<span class="muted">Sen territorio.</span>`}
                 <button class="link-button" type="button" id="melodyChangeTerritory">${territory ? "Cambiar" : "Escoller"}</button>
               </div>
               <input id="melodyTerritoryQuery" type="search" placeholder="Buscar parroquia, concello, comarca..." ${modal.picking ? "" : "hidden"}>
@@ -1303,7 +1401,7 @@ async function saveMelodyForm() {
     return;
   }
   if (!modal.territoryId) {
-    feedback.textContent = "Escolle o lugar da melodía.";
+    feedback.textContent = "Escolle o territorio da melodía.";
     return;
   }
   setLoading(feedback, "Gardando");
@@ -1343,7 +1441,7 @@ function mediaMelodyOptionsMarkup() {
   }
   const candidates = mediaMelodyCandidates();
   if (!candidates.length) {
-    return `<p class="muted">Os lugares escollidos aínda non teñen melodías inventariadas. Podes crear a primeira aquí embaixo.</p>`;
+    return `<p class="muted">Os territorios escollidos aínda non teñen melodías inventariadas. Podes crear a primeira aquí embaixo.</p>`;
   }
   const byTerritory = new Map();
   candidates.forEach(melody => {
@@ -1386,7 +1484,7 @@ function mediaMelodyFieldMarkup() {
         <div class="melody-new-row">
           <input id="mediaNewMelodyRhythm" type="text" list="mediaNewMelodyRhythmList" autocomplete="off" placeholder="Ritmo (xota, muiñeira...)">
           ${rhythmDatalist("mediaNewMelodyRhythmList")}
-          <select id="mediaNewMelodyTerritory" aria-label="Lugar da nova melodía">${territories.map(territory => `<option value="${territory.id}">${escapeHtml(territory.nome)}</option>`).join("")}</select>
+          <select id="mediaNewMelodyTerritory" aria-label="Territorio da nova melodía">${territories.map(territory => `<option value="${territory.id}">${escapeHtml(territory.nome)}</option>`).join("")}</select>
           <button class="btn" type="button" id="mediaNewMelodyCreate">Crear e marcar</button>
         </div>
         <p id="mediaNewMelodyFeedback" class="muted"></p>
@@ -2559,7 +2657,7 @@ async function confirmDelete() {
     if (!response.ok) throw new Error(result.error || "Non se puido borrar.");
     clearApiCache();
     if (kind === "media") {
-      state.media = await getMedia();
+      state.media = await loadMedia();
     } else {
       state.coplas = await getCoplas();
       state.coplaSelectedIds = state.coplaSelectedIds.filter(id => !ids.includes(Number(id)));
@@ -2600,7 +2698,7 @@ function openPieceDrawer(pieceId) {
       <div class="meta">
         ${authorTag}
         ${pieceOwnerLink(piece)}
-        ${territory ? `<span class="tag place">${escapeHtml(territory.nome)}</span>` : ""}
+        ${pieceTerritoryTag(piece)}
         ${pieceStatusTags(piece)}
       </div>
       ${piece.status === "hidden" && piece.mine ? `<p class="muted">Unha persoa guía agochou esta peza da biblioteca pública. Ti segues vendo e podes editala.</p>` : ""}
@@ -2620,16 +2718,11 @@ function openPieceDrawer(pieceId) {
         `).join("") || `<p class="muted">Esta peza aínda non ten coplas gardadas.</p>`}
       </div>
       ${piece.notes ? `<div class="drawer-section"><h3>Notas</h3><p class="muted">${nl2br(escapeHtml(piece.notes))}</p></div>` : ""}
-      ${(piece.links || []).length ? `<div class="drawer-section"><h3>Ligazóns</h3>${linkRowsMarkup(piece.links)}</div>` : ""}
+      ${pieceExtraLinks(piece).length ? `<div class="drawer-section"><h3>Ligazóns</h3>${linkRowsMarkup(pieceExtraLinks(piece))}</div>` : ""}
       <div class="drawer-section">
         <h3>Media relacionada</h3>
-        <div class="media-grid compact">${pieceMedia(piece).map(mediaCard).join("") || `<p class="muted">Sen recursos multimedia vinculados a esta peza.</p>`}</div>
-        <form id="pieceMediaForm" class="piece-media-form">
-          <input id="pieceMediaTitle" type="text" placeholder="Título do recurso (ex.: intérprete - tema)" required>
-          <input id="pieceMediaUrl" type="url" placeholder="URL (Spotify, YouTube, audio...)" required>
-          <button class="btn" type="submit">Vincular media a esta peza</button>
-          <p id="pieceMediaFeedback" class="muted"></p>
-        </form>
+        <div class="media-grid compact">${pieceMedia(piece).map(item => mediaCard(item, { removeFromPiece: canManagePiece(piece) && String(item.piece_id) === String(piece.id) })).join("") || `<p class="muted">Sen recursos multimedia vinculados a esta peza.</p>`}</div>
+        ${pieceResourceFormMarkup(piece)}
       </div>
       ${pieceManageMarkup(piece)}
       <div class="drawer-actions">
@@ -2643,10 +2736,60 @@ function openPieceDrawer(pieceId) {
   all("[data-close-piece-drawer]", drawer).forEach(item => item.addEventListener("click", closePieceDrawer));
   bindPieceCardActions(drawer);
   $("[data-download-piece-pdf]", drawer)?.addEventListener("click", event => downloadPieceRecordPdf(piece, event.currentTarget));
-  $("#pieceMediaForm", drawer)?.addEventListener("submit", event => {
-    event.preventDefault();
-    linkMediaToPiece(piece, drawer);
-  });
+  bindResourceForm("pm", drawer, { onEnter: () => linkMediaToPiece(piece, drawer) });
+  $("#pieceMediaAdd", drawer)?.addEventListener("click", () => linkMediaToPiece(piece, drawer));
+  bindResourceFolds(drawer);
+  bindResultButtons(drawer);
+  all("[data-territory-id]", drawer).forEach(button => button.addEventListener("click", closePieceDrawer));
+  all("[data-remove-piece-resource]", drawer).forEach(button => button.addEventListener("click", event => {
+    event.stopPropagation();
+    removePieceResource(piece, button.dataset.removePieceResource, drawer);
+  }));
+}
+
+// Recursos que a peza ten pero que non saen en Media (base sen migrar ou exporte aínda sen
+// actualizar): evita duplicar os que xa se ven como tarxetas.
+function pieceExtraLinks(piece) {
+  const media = pieceMedia(piece);
+  return (piece.links || []).filter(link => !media.some(item => (link.media_id != null && String(item.id) === String(link.media_id)) || mediaUrl(item) === link.url));
+}
+
+// Quen pode engadir recursos: a dona (ou admin / guía nas editoriais) gardándoos coa peza; os
+// guías, en pezas alleas, vinculando Media; en modo local (sen contas) igual.
+function pieceResourceMode(piece) {
+  if (canManagePiece(piece)) return "piece";
+  if (!isGoogleMode() || isEditorAccount()) return "media";
+  return "";
+}
+
+function pieceResourceFormMarkup(piece) {
+  const mode = pieceResourceMode(piece);
+  if (!mode) return "";
+  if (mode === "piece" && (piece.links || []).length >= MAX_PIECE_RESOURCES) return `<p class="muted">Máximo de ${MAX_PIECE_RESOURCES} recursos por peza.</p>`;
+  const where = mode === "piece"
+    ? (piece.visibility === "private" ? "O recurso será privado: só o ves ti, igual que a peza." : "O recurso aparecerá en Media, ligado a esta peza.")
+    : "";
+  return `
+    <details class="piece-media-form resources-fold" data-fold="drawer" ${state.drawerResourcesOpen ? "open" : ""}>
+      <summary><span>Vincular un recurso</span></summary>
+      ${resourceFormMarkup("pm")}
+      <div><button class="btn" type="button" id="pieceMediaAdd">Vincular a esta peza</button></div>
+      ${where ? `<p class="muted small-print">${escapeHtml(where)}</p>` : ""}
+    </details>`;
+}
+
+async function removePieceResource(piece, mediaId, drawer) {
+  const rest = (piece.links || []).filter(link => String(link.media_id) !== String(mediaId));
+  const feedback = $("#pmFeedback", drawer);
+  if (!window.confirm("Vas quitar este recurso da peza (e de Media). ¿Continuar?")) return;
+  try {
+    await pieceApi("/pieces/resources", "POST", { id: piece.id, links: rest.map(cleanResource) });
+    await refreshPezas();
+    openPieceDrawer(piece.id);
+  } catch (error) {
+    if (feedback) feedback.textContent = error.message || "Non se puido quitar o recurso.";
+    else notify(error.message);
+  }
 }
 
 function canManagePiece(piece) {
@@ -2661,6 +2804,11 @@ function canModeratePiece(piece) {
   return isEditorAccount() && piece.visibility === "public" && !piece.mine;
 }
 
+// Publicar pezas na biblioteca (e dar de alta coplas no arquivo) é cousa de guías e admin.
+function canPublishPieces() {
+  return !isGoogleMode() || isEditorAccount();
+}
+
 function pieceManageMarkup(piece) {
   const manage = canManagePiece(piece);
   const moderate = canModeratePiece(piece);
@@ -2670,7 +2818,8 @@ function pieceManageMarkup(piece) {
       <h3>${manage ? "Xestionar a peza" : "Moderación"}</h3>
       <div class="piece-manage-actions">
         ${manage ? `<button class="btn" type="button" data-edit-piece="${piece.id}">Editar no obradoiro</button>` : ""}
-        ${manage ? `<button class="btn" type="button" data-toggle-piece-visibility="${piece.id}">${piece.visibility === "private" ? "Publicar na biblioteca" : "Facela privada"}</button>` : ""}
+        ${manage && (piece.visibility !== "private" || canPublishPieces()) ? `<button class="btn" type="button" data-toggle-piece-visibility="${piece.id}">${piece.visibility === "private" ? "Publicar na biblioteca" : "Facela privada"}</button>` : ""}
+        ${manage && isEditorAccount() && (piece.coplas || []).some(item => item.id == null) ? `<button class="btn" type="button" data-register-piece-coplas="${piece.id}" title="Dá de alta no arquivo as coplas soltas desta peza, co seu territorio e lugar">Dar de alta as coplas no arquivo</button>` : ""}
         ${moderate ? `<button class="btn" type="button" data-moderate-piece="${piece.id}">${piece.status === "hidden" ? "Amosar de novo" : "Agochar da biblioteca"}</button>` : ""}
         ${manage ? `<button class="btn danger" type="button" data-delete-piece="${piece.id}">Borrar</button>` : ""}
       </div>
@@ -2698,6 +2847,16 @@ function bindPieceManage(drawer, piece) {
       await pieceApi("/pieces/visibility", "POST", { id: piece.id, visibility: next });
       await refreshPezas();
       notify(next === "public" ? "Peza publicada na biblioteca." : "A peza é agora privada.");
+      openPieceDrawer(piece.id);
+    } catch (error) { fail(error); }
+  });
+  $("[data-register-piece-coplas]", drawer)?.addEventListener("click", async () => {
+    try {
+      const result = await pieceApi("/pieces/register-coplas", "POST", { id: piece.id });
+      clearApiCache();
+      state.coplas = await getCoplas();
+      await refreshPezas();
+      notify(result.registered ? `${result.registered} copla${result.registered === 1 ? "" : "s"} nova${result.registered === 1 ? "" : "s"} no arquivo.` : "As coplas xa estaban no arquivo: ligáronse á peza.");
       openPieceDrawer(piece.id);
     } catch (error) { fail(error); }
   });
@@ -2730,7 +2889,8 @@ function editPieceInWorkshop(piece) {
   draft.author = pieceAuthorName(piece) === "Sen autoría" ? "" : pieceAuthorName(piece);
   draft.notes = piece.notes || "";
   draft.territoryId = piece.context_territory?.id || piece.context_territory_id || "";
-  draft.links = (piece.links || []).map(link => ({ title: link.title, url: link.url }));
+  draft.lugar = piece.lugar || "";
+  draft.links = (piece.links || []).map(cleanResource);
   draft.editingPieceId = piece.id;
   draft.visibility = piece.visibility === "public" ? "public" : "private";
   draft.sections = pieceSections(piece).map((section, index) => ({
@@ -2748,37 +2908,42 @@ function editPieceInWorkshop(piece) {
 }
 
 async function linkMediaToPiece(piece, drawer) {
-  const feedback = $("#pieceMediaFeedback", drawer);
-  const title = $("#pieceMediaTitle", drawer)?.value.trim();
-  const url = $("#pieceMediaUrl", drawer)?.value.trim();
-  if (!title || !url) {
-    if (feedback) feedback.textContent = "Indica título e URL.";
-    return;
-  }
+  const feedback = $("#pmFeedback", drawer);
+  const link = readResourceForm("pm", drawer);
+  if (!link) return;
+  const mode = pieceResourceMode(piece);
+  if (!mode) return;
   setLoading(feedback, "Gardando");
-  const kind = mediaKind({ url });
   try {
-    const response = await fetch("../api/media", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        media: [{
-          provider: kind,
-          media_kind: kind,
-          title,
-          url,
-          description: null,
-          author_or_source: null,
-          thumbnail_url: null,
-          status: "published",
-          links: [{ entity_type: "piece", entity_id: piece.id, relation_type: "documental" }],
-        }],
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Non se puido vincular o recurso.");
-    clearApiCache();
-    state.media = await getMedia();
+    if (mode === "piece") {
+      const current = (piece.links || []).map(cleanResource);
+      if (current.length >= MAX_PIECE_RESOURCES) throw new Error(`Unha peza non pode ter máis de ${MAX_PIECE_RESOURCES} recursos.`);
+      if (current.some(item => item.url === link.url)) throw new Error("Ese recurso xa está ligado á peza.");
+      await pieceApi("/pieces/resources", "POST", { id: piece.id, links: [...current, link] });
+      await refreshPezas();
+    } else {
+      const response = await fetch("../api/media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          media: [{
+            provider: link.media_kind,
+            media_kind: link.media_kind,
+            title: link.title,
+            url: link.url,
+            description: link.description,
+            author_or_source: link.author_or_source,
+            thumbnail_url: link.thumbnail_url,
+            status: "published",
+            links: [{ entity_type: "piece", entity_id: piece.id, relation_type: link.role }],
+          }],
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Non se puido vincular o recurso.");
+      clearApiCache();
+      state.media = await loadMedia();
+    }
     openPieceDrawer(piece.id);
   } catch (error) {
     if (feedback) feedback.textContent = error.message || "Non se puido vincular o recurso.";
@@ -2862,6 +3027,8 @@ function pieceHaystack(piece) {
     piece.context,
     piece.territory_id,
     piece.context_territory_id,
+    piece.lugar,
+    territoryTreeNames(piece.context_territory),
   ].join(" ");
 }
 
@@ -2992,7 +3159,7 @@ function authorFichaMarkup() {
   if (!filter) return "";
   const pieces = state.pezas.filter(piece => hasAuthor(piece) && authorKey(pieceAuthorName(piece)) === authorKey(filter));
   const name = pieces.length ? authorDisplayName(pieces.map(piece => pieceAuthorName(piece).trim().replace(/\s+/g, " "))) : filter;
-  const links = pieces.flatMap(piece => (piece.links || []).map(link => ({ ...link, pieceTitle: piece.title })));
+  const links = pieces.flatMap(piece => pieceExtraLinks(piece).map(link => ({ ...link, pieceTitle: piece.title })));
   const seen = new Set();
   const media = pieces.flatMap(pieceMedia).filter(item => (seen.has(item.id) ? false : seen.add(item.id)));
   const owners = new Map();
@@ -3015,16 +3182,22 @@ function authorFichaMarkup() {
     </section>`;
 }
 
-// Autorías: unha tira compacta sobre a listaxe (en vez dun bloque aparte ao final).
+// Autorías: as máis activas en chips e o resto a un clic (busca ou directorio completo).
+// Pensado para que siga servindo con centos de autorías.
+const AUTHOR_CHIPS = 6;
+
+function authorEntries() {
+  return authorDirectory().map(entry => ({ name: entry.name, count: entry.count }));
+}
+
 function authorStripMarkup() {
   const authors = authorDirectory();
   if (!authors.length) return "";
-  const open = state.authorStripOpen;
   return `
     <div class="author-strip-wrap">
-      <span class="author-strip-label">Autorías</span>
-      <div id="authorStrip" class="author-strip${open ? " is-open" : ""}">${authors.map(entry => `<button type="button" class="chip-link" data-piece-author="${escapeHtml(entry.name)}" title="Ver as pezas e recursos de ${escapeHtml(entry.name)}">${escapeHtml(entry.name)} <span class="muted">${entry.count}</span></button>`).join("")}</div>
-      ${authors.length > 6 ? `<button type="button" class="link-button author-strip-toggle" id="authorStripToggle" aria-expanded="${open}">${open ? "Ver menos" : "Ver todas"}</button>` : ""}
+      <span class="author-strip-label">Máis activas</span>
+      <div id="authorStrip" class="author-strip">${authors.slice(0, AUTHOR_CHIPS).map(entry => `<button type="button" class="chip-link" data-piece-author="${escapeHtml(entry.name)}" title="Ver as pezas e recursos de ${escapeHtml(entry.name)}">${escapeHtml(entry.name)} <span class="muted">${entry.count}</span></button>`).join("")}</div>
+      ${authors.length > AUTHOR_CHIPS ? `<button type="button" class="link-button author-strip-toggle" id="authorDirectoryOpen">Todas as ${authors.length} autorías</button>` : ""}
     </div>`;
 }
 
@@ -3039,6 +3212,22 @@ function pieceStatusTags(piece) {
   if (piece.mine) tags.push(piece.visibility === "private" ? `<span class="tag is-private">Privada</span>` : `<span class="tag is-public">Pública</span>`);
   else if (piece.visibility === "private") tags.push(`<span class="tag is-private">Privada</span>`);
   return tags.join("");
+}
+
+// Territorio (e, se hai, lugar) dunha peza: etiqueta clicable que leva ao territorio.
+function pieceTerritoryOf(piece) {
+  const id = piece.context_territory?.id || piece.context_territory_id || piece.territory_id;
+  return id ? (state.territorios.find(item => item.id === id) || piece.context_territory || null) : null;
+}
+
+function pieceTerritoryTag(piece) {
+  const territory = pieceTerritoryOf(piece);
+  const lugar = String(piece.lugar || "").trim();
+  if (!territory) return lugar ? `<span class="tag place">${escapeHtml(lugar)}</span>` : "";
+  const label = lugar ? `${lugar}, ${territory.nome}` : territory.nome;
+  return territory.id
+    ? `<button type="button" class="tag place as-link" data-territory-id="${escapeHtml(territory.id)}" title="Ver ${escapeHtml(territory.nome)} no arquivo">${escapeHtml(label)}</button>`
+    : `<span class="tag place">${escapeHtml(label)}</span>`;
 }
 
 function pieceCard(piece) {
@@ -3058,6 +3247,7 @@ function pieceCard(piece) {
       </div>
       <div class="meta">
         ${authorTag}
+        ${pieceTerritoryTag(piece)}
         ${pieceOwnerLink(piece)}
         <span class="tag">${coplaTotal || 0} coplas</span>
         ${sections.length ? `<span class="tag">${sections.length} partes</span>` : ""}
@@ -3081,7 +3271,7 @@ function pieceRow(piece) {
       <span class="row-title"><strong>${escapeHtml(title)}</strong>${description ? `<small>${escapeHtml(description)}</small>` : ""}</span>
       <span class="row-author">${authorCell}</span>
       <span class="row-count">${coplaTotal || 0} coplas${sections.length ? ` \\ ${sections.length} partes` : ""}</span>
-      <span class="row-tags">${pieceOwnerLink(piece)}${pieceStatusTags(piece)}</span>
+      <span class="row-tags">${pieceTerritoryTag(piece)}${pieceOwnerLink(piece)}${pieceStatusTags(piece)}</span>
     </article>`;
 }
 
@@ -3142,6 +3332,7 @@ function updatePieceLibrary(root = $("#view-pieces")) {
 }
 
 function bindPieceCardActions(root = $("#view-pieces")) {
+  bindResultButtons(root);
   all("[data-piece-author]", root).forEach(button => button.addEventListener("click", () => openAuthor(button.dataset.pieceAuthor)));
   all("[data-open-piece]", root).forEach(card => {
     card.addEventListener("click", event => {
@@ -3494,35 +3685,170 @@ function pieceEmptyMarkup() {
   return `<article class="panel empty-panel"><p class="muted">Sen pezas gardadas.</p></article>`;
 }
 
+// --- Recursos ligados a unha peza ---------------------------------------------
+// Cada recurso é unha entrada de Media (pública ou privada segundo a peza). O formulario é o
+// mesmo que o de «Novo recurso»: URL + «Obter datos» le título, plataforma, tipo, fonte...
+
+const RESOURCE_KINDS = ["youtube", "spotify", "soundcloud", "audio", "video", "image", "pdf", "web"];
+const MAX_PIECE_RESOURCES = 10;
+
+function resourceFormMarkup(prefix) {
+  return `
+    <div class="resource-form" data-resource-form="${prefix}">
+      <div class="input-action">
+        <input id="${prefix}Url" type="url" placeholder="https://... (YouTube, Spotify, audio, web...)" aria-label="URL do recurso" autocomplete="off">
+        <button class="btn" type="button" id="${prefix}Fetch">Obter datos</button>
+      </div>
+      <div class="resource-fields">
+        <label class="field"><span>Título</span><input id="${prefix}Title" type="text" maxlength="120" placeholder="Intérprete - tema, gravación do grupo..."></label>
+        <label class="field"><span>Tipo</span><select id="${prefix}Kind">${RESOURCE_KINDS.map(value => `<option value="${value}">${escapeHtml(mediaLabel(value))}</option>`).join("")}</select></label>
+        <label class="field"><span>Uso no arquivo</span><select id="${prefix}Role"><option value="documental">Media documental</option><option value="melody">Melodía / recurso musical</option><option value="mixed">Ambas cousas</option></select></label>
+        <label class="field"><span>Fonte ou autoría</span><input id="${prefix}Source" type="text" maxlength="160" placeholder="Canle, intérprete, arquivo..."></label>
+      </div>
+      <input id="${prefix}Thumb" type="hidden">
+      <input id="${prefix}Desc" type="hidden">
+      <div id="${prefix}Preview" class="resource-preview" hidden></div>
+      <p id="${prefix}Feedback" class="muted resource-feedback" role="status"></p>
+    </div>`;
+}
+
+function resourceEls(prefix, root = document) {
+  const q = suffix => $(`#${prefix}${suffix}`, root);
+  return { url: q("Url"), title: q("Title"), kind: q("Kind"), role: q("Role"), source: q("Source"), thumb: q("Thumb"), desc: q("Desc"), preview: q("Preview"), feedback: q("Feedback"), fetch: q("Fetch") };
+}
+
+function paintResourcePreview(els) {
+  if (!els.preview) return;
+  const url = els.url.value.trim();
+  const thumb = safeUrl(els.thumb.value);
+  const desc = els.desc.value.trim();
+  if (!url || (!thumb && !desc && !els.title.value.trim())) { els.preview.hidden = true; els.preview.innerHTML = ""; return; }
+  els.preview.hidden = false;
+  els.preview.innerHTML = `${thumb ? `<img src="${escapeHtml(thumb)}" alt="">` : ""}<div><strong>${escapeHtml(els.title.value.trim() || "Sen título")}</strong><span>${escapeHtml(mediaLabel(els.kind.value))}${els.source.value.trim() ? ` \\ ${escapeHtml(els.source.value.trim())}` : ""}</span>${desc ? `<small>${escapeHtml(desc.slice(0, 160))}</small>` : ""}</div>`;
+}
+
+async function fetchResourceMeta(prefix, root = document, { silent = false } = {}) {
+  const els = resourceEls(prefix, root);
+  const url = els.url?.value.trim();
+  if (!url) {
+    if (!silent && els.feedback) els.feedback.textContent = "Pega primeiro unha URL.";
+    return;
+  }
+  if (!safeUrl(url)) {
+    if (!silent && els.feedback) els.feedback.textContent = "Escribe unha URL completa que empece por http:// ou https://.";
+    return;
+  }
+  const kind = mediaKind({ url });
+  if (kind !== "web" && kind !== "media") els.kind.value = kind;
+  if (els.feedback && !silent) setLoading(els.feedback, "Lendo metadatos da ligazón");
+  if (els.fetch) els.fetch.disabled = true;
+  try {
+    const response = await fetch(`../api/link-preview?url=${encodeURIComponent(url)}`, { credentials: "same-origin" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Non se puideron ler metadatos.");
+    if (result.title && !els.title.value.trim()) els.title.value = String(result.title).slice(0, 120);
+    if (result.description && !els.desc.value.trim()) els.desc.value = String(result.description).slice(0, 500);
+    if (result.thumbnail_url && !els.thumb.value.trim()) els.thumb.value = result.thumbnail_url;
+    if (!els.source.value.trim()) els.source.value = String(result.author_or_source || result.provider || "").slice(0, 160);
+    if (MUSICAL_MEDIA_KINDS.has(els.kind.value)) els.role.value = "mixed";
+    if (els.feedback) els.feedback.textContent = "Datos incorporados. Revísaos antes de engadir.";
+  } catch (error) {
+    if (els.feedback && !silent) els.feedback.textContent = `${error.message} Podes completar os campos a man.`;
+  } finally {
+    if (els.fetch) els.fetch.disabled = false;
+  }
+  paintResourcePreview(els);
+}
+
+function bindResourceForm(prefix, root = document, { onEnter } = {}) {
+  const els = resourceEls(prefix, root);
+  if (!els.url) return;
+  els.fetch?.addEventListener("click", () => fetchResourceMeta(prefix, root));
+  els.url.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (els.title.value.trim() && onEnter) onEnter(); else fetchResourceMeta(prefix, root);
+  });
+  els.url.addEventListener("input", () => {
+    const kind = mediaKind({ url: els.url.value.trim() });
+    if (kind !== "web" && kind !== "media") els.kind.value = kind;
+  });
+  els.url.addEventListener("blur", () => {
+    if (els.url.value.trim() && !els.title.value.trim()) fetchResourceMeta(prefix, root, { silent: true });
+  });
+  [els.title, els.source, els.kind].forEach(node => node.addEventListener("change", () => paintResourcePreview(els)));
+}
+
+// Le o formulario: devolve o recurso listo para gardar ou null (con aviso no formulario).
+function readResourceForm(prefix, root = document) {
+  const els = resourceEls(prefix, root);
+  const href = safeUrl(els.url?.value.trim());
+  if (!href) {
+    if (els.feedback) els.feedback.textContent = "Escribe unha URL completa que empece por http:// ou https://.";
+    return null;
+  }
+  const kind = RESOURCE_KINDS.includes(els.kind.value) ? els.kind.value : mediaKind({ url: href });
+  return {
+    title: (els.title.value.trim() || new URL(href).hostname.replace(/^www\./, "")).slice(0, 120),
+    url: href,
+    media_kind: kind,
+    role: ["documental", "melody", "mixed"].includes(els.role.value) ? els.role.value : "documental",
+    author_or_source: els.source.value.trim().slice(0, 160) || null,
+    description: els.desc.value.trim().slice(0, 500) || null,
+    thumbnail_url: safeUrl(els.thumb.value) || null,
+  };
+}
+
+// Forma que viaxa ao servidor (e que se garda no borrador do obradoiro).
+function cleanResource(link) {
+  const href = safeUrl(link.url);
+  return {
+    title: String(link.title || (href ? new URL(href).hostname.replace(/^www\./, "") : "")).slice(0, 120),
+    url: href || String(link.url || ""),
+    media_kind: RESOURCE_KINDS.includes(link.media_kind) ? link.media_kind : mediaKind({ url: link.url }),
+    role: ["documental", "melody", "mixed"].includes(link.role) ? link.role : "documental",
+    author_or_source: link.author_or_source || null,
+    description: link.description || null,
+    thumbnail_url: link.thumbnail_url || null,
+  };
+}
+
+function resourceChipMarkup(link, index, attr) {
+  const item = cleanResource(link);
+  return `<div class="workshop-link-item">
+    <span class="resource-chip-kind">${mediaKindIconSvg(mediaKind(item))}<span>${escapeHtml(mediaLabel(item.media_kind))}</span></span>
+    <span class="resource-chip-main"><a href="${escapeHtml(safeUrl(item.url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a><small>${escapeHtml(mediaRoleLabel(item.role))}${item.author_or_source ? ` \\ ${escapeHtml(item.author_or_source)}` : ""}</small></span>
+    <button type="button" class="btn" ${attr}="${index}" aria-label="Quitar ${escapeHtml(item.title)}">Quitar</button>
+  </div>`;
+}
+
 function workshopLinksMarkup(draft) {
   if (!isAccount()) return "";
   const links = draft.links || [];
   return `
-    <div class="workshop-links">
-      <div class="workshop-links-head"><strong>Recursos ligados</strong><span class="muted">Opcional: gravación, vídeo, partitura... Aparecen na ficha da peza e na da autoría.</span></div>
-      ${links.map((link, index) => `<div class="workshop-link-item"><a href="${escapeHtml(safeUrl(link.url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.title)}</a><button type="button" class="btn" data-remove-piece-link="${index}" aria-label="Quitar ${escapeHtml(link.title)}">Quitar</button></div>`).join("")}
-      ${links.length < 10 ? `
-      <div class="workshop-link-add">
-        <input id="pieceLinkTitle" type="text" maxlength="120" placeholder="Nome (ex.: gravación do grupo)" aria-label="Nome da ligazón">
-        <input id="pieceLinkUrl" type="url" placeholder="https://..." aria-label="URL da ligazón">
-        <button class="btn" type="button" id="addPieceLink">Engadir</button>
-      </div>
-      <p id="pieceLinkError" class="muted is-error" role="alert" hidden></p>` : ""}
-    </div>`;
+    <details class="workshop-links resources-fold" id="workshopLinks" ${state.resourcesOpen ? "open" : ""}>
+      <summary><span>Recursos ligados${links.length ? ` (${links.length})` : ""}</span><small>opcional: gravación, vídeo, partitura...</small></summary>
+      <p class="muted workshop-links-note">Van a Media, ligados á peza, ao seu territorio e ás súas coplas: públicos se a peza é pública e privados (só os ves ti) se a gardas privada.</p>
+      ${links.map((link, index) => resourceChipMarkup(link, index, "data-remove-piece-link")).join("")}
+      ${links.length < MAX_PIECE_RESOURCES ? `
+      ${resourceFormMarkup("pl")}
+      <div><button class="btn" type="button" id="addPieceLink">Engadir recurso</button></div>` : `<p class="muted">Máximo de ${MAX_PIECE_RESOURCES} recursos por peza.</p>`}
+    </details>`;
+}
+
+// Os formularios de recursos van pregados; lémbrase se a persoa os abriu para non pechalos ao redibuxar.
+function bindResourceFolds(root) {
+  all(".resources-fold", root).forEach(fold => fold.addEventListener("toggle", () => { if (fold.dataset.fold === "drawer") state.drawerResourcesOpen = fold.open; else state.resourcesOpen = fold.open; }));
 }
 
 function addPieceLink() {
-  const urlInput = $("#pieceLinkUrl");
-  const error = $("#pieceLinkError");
-  const href = safeUrl(urlInput?.value.trim());
-  if (!href) {
-    if (error) { error.textContent = "Escribe unha URL completa que empece por http:// ou https://."; error.hidden = false; }
-    return;
-  }
+  const link = readResourceForm("pl");
+  if (!link) return;
   const draft = loadDraft();
   draft.links = draft.links || [];
-  if (draft.links.length >= 10) return;
-  draft.links.push({ title: ($("#pieceLinkTitle")?.value.trim() || new URL(href).hostname.replace(/^www\./, "")).slice(0, 120), url: href });
+  if (draft.links.length >= MAX_PIECE_RESOURCES) return;
+  if (!draft.links.some(item => item.url === link.url)) draft.links.push(link);
+  state.resourcesOpen = true;
   saveDraft(draft);
   renderPiecesView();
 }
@@ -3594,6 +3920,7 @@ function renderPiecesView() {
               <option value="">Todos os ritmos</option>
               ${RHYTHMS.map(value => `<option value="${value}" ${state.pieceRhythmQuery === value ? "selected" : ""}>${value}</option>`).join("")}
             </select>
+            ${authorDirectory().length ? `<div class="searchbox author-search"><span>♪</span><input id="pieceAuthorSearch" type="search" placeholder="Buscar autoría..." aria-label="Buscar unha autoría"></div>` : ""}
             ${listViewToggleMarkup("data-piece-view", state.pieceViewMode)}
           </div>
           ${state.pieceAuthorFilter ? "" : authorStripMarkup()}
@@ -3608,20 +3935,21 @@ function renderPiecesView() {
           <header class="workshop-head">
             <input id="pieceTitle" class="workshop-title" type="text" value="${escapeHtml(draft.title || "")}" placeholder="${escapeHtml(territoryContextTitle(territory) || "Título da peza")}" aria-label="Título da peza">
             <div class="workshop-meta">
-              <input id="pieceAuthor" class="workshop-author" type="text" list="pieceAuthorList" value="${escapeHtml(draft.author || "")}" placeholder="Autoría (grupo, artista, ti...)" aria-label="Autoría">
-              <datalist id="pieceAuthorList">${authorDirectory().map(entry => `<option value="${escapeHtml(entry.name)}"></option>`).join("")}</datalist>
+              <input id="pieceAuthor" class="workshop-author" type="text" value="${escapeHtml(draft.author || "")}" placeholder="Autoría (grupo, artista, ti...)" aria-label="Autoría" maxlength="120">
               ${territory
                 ? `<button class="chip-btn" type="button" id="clearPieceTerritory" aria-label="Quitar territorio ${escapeHtml(territory.nome)}"><span>${escapeHtml(territory.nome)}</span>${uiIcon("close", 14)}</button>`
                 : `<div class="searchbox workshop-territory"><input id="pieceTerritorySearch" type="search" value="${escapeHtml(state.pieceTerritoryQuery)}" placeholder="Territorio…" aria-label="Centrar peza nun territorio"></div>`}
+              <input id="pieceLugar" class="workshop-author workshop-lugar" type="text" list="pieceLugarList" maxlength="80" value="${escapeHtml(draft.lugar || "")}" placeholder="Lugar (ex.: Laxoso)" aria-label="Lugar dentro da parroquia" title="Lugar dentro da parroquia, se o coñeces (ex.: Laxoso)" autocomplete="off">
+              <datalist id="pieceLugarList">${territory ? lugarOptionsMarkup([territory.id]) : ""}</datalist>
             </div>
             <div id="pieceTerritoryResults" class="territory-results compact"></div>
             <textarea id="pieceNotes" class="workshop-notes" rows="1" placeholder="Notas para imprimir…" aria-label="Notas da peza">${escapeHtml(draft.notes || "")}</textarea>
-            ${workshopLinksMarkup(draft)}
           </header>
           <div class="builder-sections">
             ${workshopPartsMarkup(draft, rhythmOptions)}
           </div>
           <button class="add-part" type="button" id="addSection">${uiIcon("plus", 16)} Parte</button>
+          ${workshopLinksMarkup(draft)}
         </section>
         <div class="add-fab">
           <button class="fab" type="button" id="pieceAddToggle" aria-expanded="${state.pieceAddMenu ? "true" : "false"}">${uiIcon("plus")}<span>Engadir</span></button>
@@ -3661,12 +3989,8 @@ function renderPiecesView() {
     all("[data-piece-view]", view).forEach(item => item.classList.toggle("active", item === button));
     updatePieceRepository(view);
   }));
-  $("#authorStripToggle")?.addEventListener("click", () => {
-    state.authorStripOpen = !state.authorStripOpen;
-    $("#authorStrip", view)?.classList.toggle("is-open", state.authorStripOpen);
-    $("#authorStripToggle", view).textContent = state.authorStripOpen ? "Ver menos" : "Ver todas";
-    $("#authorStripToggle", view).setAttribute("aria-expanded", String(state.authorStripOpen));
-  });
+  window.folearAuthorBox?.attach($("#pieceAuthorSearch", view), { items: authorEntries, onPick: openAuthor, free: false });
+  $("#authorDirectoryOpen")?.addEventListener("click", () => window.folearAuthorBox?.openDirectory({ items: authorEntries, onPick: openAuthor }));
   $("#pieceRhythmFilter")?.addEventListener("change", event => {
     state.pieceRhythmQuery = event.target.value;
     updatePieceRepository(view);
@@ -3701,6 +4025,8 @@ function renderPiecesView() {
   });
   $("#pieceTitle")?.addEventListener("input", event => saveDraft({ ...loadDraft(), title: event.target.value }));
   $("#pieceAuthor")?.addEventListener("input", event => saveDraft({ ...loadDraft(), author: event.target.value }));
+  $("#pieceLugar")?.addEventListener("input", event => saveDraft({ ...loadDraft(), lugar: event.target.value }));
+  window.folearAuthorBox?.attach($("#pieceAuthor", view), { items: authorEntries, free: true });
   $("#pieceNotes")?.addEventListener("input", event => saveDraft({ ...loadDraft(), notes: event.target.value }));
   $("#pieceAddToggle")?.addEventListener("click", () => {
     state.pieceAddMenu = !state.pieceAddMenu;
@@ -3753,7 +4079,8 @@ function renderPiecesView() {
   });
   $("#savePieceDirect")?.addEventListener("click", savePieceDirect);
   $("#addPieceLink")?.addEventListener("click", addPieceLink);
-  $("#pieceLinkUrl")?.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); addPieceLink(); } });
+  bindResourceFolds(view);
+  bindResourceForm("pl", view, { onEnter: addPieceLink });
   all("[data-remove-piece-link]", view).forEach(button => button.addEventListener("click", () => {
     const next = loadDraft();
     next.links = (next.links || []).filter((_, index) => index !== Number(button.dataset.removePieceLink));
@@ -3933,12 +4260,13 @@ function buildPieceDbPayload(overrides = {}) {
   return {
     pieces: [{
       ...(overrides.id ? { id: overrides.id } : {}),
-      ...(isAccount() ? { links: (draft.links || []).map(link => ({ title: link.title, url: link.url })) } : {}),
+      ...(isAccount() ? { links: (draft.links || []).map(cleanResource) } : {}),
       ...(overrides.visibility ? { visibility: overrides.visibility } : {}),
       title,
       slug: slugify(`${title}-${Date.now()}`),
       author: author || "Sen autoría",
       context_territory_id: draft.territoryId || state.selectedTerritory?.id || null,
+      lugar: (draft.lugar || "").trim() || null,
       description: "",
       notes: draft.notes || "",
       status: "published",
@@ -3973,6 +4301,7 @@ async function materializeDraftCoplas(draft) {
       territories,
       tags: [],
       is_volta: items[0].role === "retrouso",
+      ...((draft.lugar || "").trim() ? { lugar: draft.lugar.trim() } : {}),
       versions: [],
     })),
   };
@@ -4612,7 +4941,7 @@ function renderSubmitView() {
             </div>
             <div class="field checkbox-field"><label><input id="newIsVolta" type="checkbox" ${editing?.is_volta ? "checked" : ""}> Úsase como volta</label></div>
             <div id="mainTerritoryFields" class="field full territory-field-group">
-              <label>Lugar</label>
+              <label>Territorio</label>
               <input id="territoryQuery" type="search" placeholder="Sen asignar. Escribe para buscar parroquia, concello, comarca ou provincia...">
               <div id="territoryPickerResults" class="territory-results compact"></div>
               <div id="mainTerritoryChips"><div id="selectedTerritoryChips" class="selected-chips">${
@@ -4620,7 +4949,12 @@ function renderSubmitView() {
                   ? `<span class="selected-chip">Galiza enteira <small>Xeral</small><button type="button" id="clearGeneralTerritory" aria-label="Retirar Galiza enteira">×</button></span>`
                   : (selectedTerritories.map(item => selectedTerritoryChip(item, "copla")).join("") || `<p class="muted">Sen asignar.</p>`)
               }</div></div>
-              <button class="link-button" type="button" id="markGeneralTerritory">Marcar coma "Galiza enteira" (sen lugar concreto)</button>
+              <button class="link-button" type="button" id="markGeneralTerritory">Marcar coma "Galiza enteira" (sen territorio concreto)</button>
+            </div>
+            <div class="field full">
+              <label for="newLugar">Lugar (opcional, dentro da parroquia)</label>
+              <input id="newLugar" type="text" list="lugarList" maxlength="80" value="${escapeHtml(editing?.lugar || "")}" placeholder="Ex.: Laxoso, se a copla é dese lugar da parroquia" autocomplete="off">
+              <datalist id="lugarList">${state.submitGeneral ? "" : lugarOptionsMarkup(state.submitTerritoryIds)}</datalist>
             </div>
             <details class="advanced-fields field full">
               <summary>Axustes avanzados</summary>
@@ -4688,6 +5022,7 @@ function renderSubmitView() {
   bindPasteBlock();
   $("#cancelEdit")?.addEventListener("click", cancelEditCopla);
   all("[data-remove-batch]", view).forEach(button => button.addEventListener("click", () => removeQueuedCopla(Number(button.dataset.removeBatch))));
+  all("[data-remove-lot]", view).forEach(button => button.addEventListener("click", () => removeQueuedLot(Number(button.dataset.removeLot))));
   $("#importCoplaJson")?.addEventListener("click", importCoplaJson);
   $("#downloadCoplaTemplate")?.addEventListener("click", downloadCoplaTemplate);
   $("#coplaJsonFile")?.addEventListener("change", event => {
@@ -4735,7 +5070,7 @@ async function postMediaUpdate(payload) {
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Non se puido actualizar a media.");
   clearApiCache();
-  state.media = await getMedia();
+  state.media = await loadMedia();
 }
 
 async function linkMediaToCopla(mediaId, coplaId) {
@@ -4886,6 +5221,11 @@ function selectedCoplaChip(copla) {
   `;
 }
 
+// A dona dun recurso de peza (sen ser guía/admin) só edita os datos do recurso.
+function ownerMediaMode() {
+  return Boolean(state.mediaEditingSnapshot && ownPieceResource(state.mediaEditingSnapshot));
+}
+
 function mediaFormMarkup(selectedMediaTerritories, selectedMediaCoplas) {
   const editing = state.mediaEditingSnapshot;
   const defaultRole = editing ? mediaRole(editing) : (state.mediaDefaultRole || (state.territoryTab === "melodies" ? "melody" : "documental"));
@@ -4901,13 +5241,14 @@ function mediaFormMarkup(selectedMediaTerritories, selectedMediaCoplas) {
         <div class="field"><label>Fonte ou autoría</label><input id="mediaSource" type="text" value="${escapeHtml(editing?.author_or_source || "")}" placeholder="Canle, intérprete, arquivo..."></div>
         <div class="field"><label>Miniatura opcional</label><input id="mediaThumb" type="url" value="${escapeHtml(editing?.thumbnail_url || "")}" placeholder="https://..."></div>
         <div class="field full"><label>Descrición</label><textarea id="mediaDescription" rows="3" placeholder="Contexto, relación coa melodía, observacións...">${escapeHtml(editing?.description || "")}</textarea></div>
+        ${ownerMediaMode() ? `<p class="muted field full">Este recurso vai ligado a unha peza túa e, a través dela, ao seu territorio e ás súas coplas. Se o borras, desvincúlase de todo.</p>` : `
         <div class="field"><label>Territorios vinculados</label><input id="mediaTerritoryQuery" type="search" placeholder="Buscar e engadir territorios..."></div>
         <div class="field full"><div id="mediaTerritoryResults" class="territory-results compact"></div></div>
         <div class="field full"><div id="selectedMediaTerritoryChips" class="selected-chips">${selectedMediaTerritories.map(item => selectedTerritoryChip(item, "media")).join("") || `<p class="muted">Sen territorio seleccionado.</p>`}</div></div>
         <div class="field full"><label>Coplas vinculadas (opcional)</label><input id="mediaCoplaQuery" type="search" placeholder="Buscar coplas polo texto..."></div>
         <div class="field full"><div id="mediaCoplaResults" class="territory-results compact"></div></div>
         <div class="field full"><div id="selectedMediaCoplaChips" class="selected-chips">${selectedMediaCoplas.map(item => selectedCoplaChip(item)).join("") || `<p class="muted">Sen coplas seleccionadas.</p>`}</div></div>
-        ${mediaMelodyFieldMarkup()}
+        ${mediaMelodyFieldMarkup()}`}
       </div>
       <div class="gallery-actions">
         <button class="btn primary" type="button" id="saveMediaDirect">${editing ? "Gardar cambios" : "Gardar recurso"}</button>
@@ -4998,6 +5339,12 @@ function refreshSelectedTerritoryChips() {
   }
   refreshMediaMelodyOptions();
   bindSelectedTerritoryChips();
+  refreshLugarOptions();
+  // O lote pegado copia o lugar do formulario mentres non teña o seu propio.
+  if (!state.pastePlace && $("#pasteTerritoryChips")) {
+    paintPastePlace();
+    updatePasteBlockPreview({ keepDupes: true });
+  }
 }
 
 function bindSelectedTerritoryChips(root = document) {
@@ -5141,6 +5488,7 @@ function buildCoplaPayloadFromForm() {
     territories: territoryState === "assigned" ? territoryIds.map(id => ({ id })) : [],
     tags: Array.from(new Set(tags)),
     is_volta: Boolean($("#newIsVolta")?.checked),
+    lugar: $("#newLugar")?.value.trim() || null,
     versions,
   };
   if (state.submitEditingId) payload.id = state.submitEditingId;
@@ -5211,6 +5559,18 @@ function buildMediaPayloadFromForm() {
     feedback.textContent = "Indica título e URL.";
     return null;
   }
+  if (ownerMediaMode()) {
+    if (!safeUrl(url)) {
+      feedback.textContent = "Escribe unha URL completa que empece por http:// ou https://.";
+      return null;
+    }
+    return { media: [{
+      id: state.mediaEditingId, title, url, media_kind: kind, role,
+      description: $("#mediaDescription").value.trim() || null,
+      author_or_source: $("#mediaSource").value.trim() || null,
+      thumbnail_url: $("#mediaThumb").value.trim() || null,
+    }] };
+  }
   if (!territoryIds.length && !coplaIds.length && !preservedPieceLinks.length && !melodyIds.length) {
     feedback.textContent = "Selecciona polo menos un territorio ou unha copla para vincular este recurso.";
     return null;
@@ -5243,6 +5603,14 @@ async function saveCoplaDirect() {
     if (!payload) return;
     payloads = [payload];
   } else {
+    const pending = parseCoplaPasteBlock(state.pasteDraft).length;
+    if (pending) {
+      const message = `Hai ${pending} copla${pending === 1 ? "" : "s"} pegada${pending === 1 ? "" : "s"} sen engadir á lista. Preme «Engadir lote á lista» (ou limpa o texto) antes de gardar.`;
+      if (feedback) feedback.textContent = message;
+      const pasteFeedback = $("#pasteBlockFeedback");
+      if (pasteFeedback) pasteFeedback.textContent = message;
+      return;
+    }
     payloads = state.submitBatch.map(item => item.payload);
     const currentText = $("#newText")?.value.trim();
     if (currentText) {
@@ -5269,6 +5637,10 @@ async function saveCoplaDirect() {
     state.coplas = await getCoplas();
     const returnView = state.submitReturnView;
     state.submitBatch = [];
+    state.pastePlace = null;
+    state.pasteLugar = "";
+    state.pasteLotSeq = 0;
+    state.pasteFeedback = "";
     state.submitEditingId = null;
     state.submitEditingSnapshot = null;
     state.submitReturnView = null;
@@ -5309,7 +5681,7 @@ function queueCoplaFromForm() {
   const territories = payload.territories.map(item => state.territorios.find(t => t.id === item.id)).filter(Boolean);
   state.submitBatch.push({
     payload,
-    placeLabel: coplaPlaceLabel({ territories, territory_state: payload.territory_state }),
+    placeLabel: coplaPlaceLabel({ territories, territory_state: payload.territory_state, lugar: payload.lugar }),
     preview: firstLine(payload.text) || "Copla sen íncipit",
     versionCount: payload.versions.length,
     isVolta: payload.is_volta,
@@ -5325,21 +5697,40 @@ function removeQueuedCopla(index) {
   renderSubmitView();
 }
 
+function removeQueuedLot(lot) {
+  state.submitBatch = state.submitBatch.filter(item => item.lot !== lot);
+  renderSubmitView();
+}
+
 function submitBatchQueueMarkup() {
   if (!state.submitBatch.length) return "";
-  return `
-    <section class="panel submit-batch-panel">
-      <div class="section-title"><h2>Coplas pendentes de gardar</h2><span class="muted">${state.submitBatch.length}</span></div>
-      <div class="submit-batch-list">
-        ${state.submitBatch.map((item, index) => `
+  const perPlace = new Map();
+  state.submitBatch.forEach(item => perPlace.set(item.placeLabel, (perPlace.get(item.placeLabel) || 0) + 1));
+  const lotSizes = new Map();
+  state.submitBatch.forEach(item => { if (item.lot) lotSizes.set(item.lot, (lotSizes.get(item.lot) || 0) + 1); });
+  let lastLot = null;
+  const rows = state.submitBatch.map((item, index) => {
+    let head = "";
+    if (item.lot && item.lot !== lastLot) {
+      const size = lotSizes.get(item.lot);
+      head = `<div class="submit-batch-lot"><strong>Lote ${item.lot}</strong><span class="muted">${escapeHtml(item.placeLabel)} \\ ${size} copla${size === 1 ? "" : "s"}</span><button class="link-button" type="button" data-remove-lot="${item.lot}">Quitar lote</button></div>`;
+    }
+    lastLot = item.lot || null;
+    return `${head}
           <article class="submit-batch-item">
             <div>
               <strong>${escapeHtml(item.preview)}</strong>
               <span class="muted">${escapeHtml(item.placeLabel)}${item.versionCount ? ` \\ ${item.versionCount} variante(s)` : ""}${item.isVolta ? " \\ Volta" : ""}</span>
             </div>
             <button class="icon-button" type="button" data-remove-batch="${index}" aria-label="Retirar da lista" title="Retirar da lista">×</button>
-          </article>
-        `).join("")}
+          </article>`;
+  }).join("");
+  return `
+    <section class="panel submit-batch-panel">
+      <div class="section-title"><h2>Coplas pendentes de gardar</h2><span class="muted">${state.submitBatch.length}</span></div>
+      <p class="submit-batch-summary muted">${[...perPlace].map(([label, count]) => `${escapeHtml(label)}: ${count}`).join(" \\ ")}</p>
+      <div class="submit-batch-list">
+        ${rows}
       </div>
     </section>
   `;
@@ -5480,30 +5871,105 @@ function serializePasteBlock(stanzas) {
   return stanzas.map(item => (item.isVolta ? `>${item.text}<` : item.text)).join("\n\n");
 }
 
-// Lugar e estado co que se engadirán as coplas pegadas (os escollidos arriba).
+// Lugar e estado co que se engadirán as coplas pegadas. Cada lote ten o seu lugar (escóllese
+// no propio panel); mentres non se toca, copia o do formulario de arriba.
 function pasteDestination() {
-  const territoryIds = Array.from(new Set(state.submitTerritoryIds));
-  const territoryState = state.submitGeneral ? "general" : (territoryIds.length ? "assigned" : "unassigned");
+  const place = state.pastePlace || { ids: state.submitTerritoryIds, general: state.submitGeneral };
+  const territoryIds = Array.from(new Set(place.ids));
+  const territoryState = place.general ? "general" : (territoryIds.length ? "assigned" : "unassigned");
   const territories = territoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
-  return { territoryIds, territoryState, territories, label: coplaPlaceLabel({ territories, territory_state: territoryState }) };
+  return { territoryIds, territoryState, territories, lugar: state.pasteLugar.trim(), label: coplaPlaceLabel({ territories, territory_state: territoryState, lugar: state.pasteLugar.trim() }) };
+}
+
+function ownPastePlace() {
+  if (!state.pastePlace) state.pastePlace = { ids: [...new Set(state.submitTerritoryIds)], general: state.submitGeneral };
+  return state.pastePlace;
+}
+
+function paintPastePlace() {
+  const chips = $("#pasteTerritoryChips");
+  if (!chips) return;
+  const { territoryState, territories } = pasteDestination();
+  const lugarList = $("#pasteLugarList");
+  if (lugarList) lugarList.innerHTML = territoryState === "assigned" ? lugarOptionsMarkup(territories.map(item => item.id)) : "";
+  chips.innerHTML = territoryState === "general"
+    ? `<span class="selected-chip">Galiza enteira <small>Xeral</small><button type="button" data-remove-paste-territory="__general" aria-label="Retirar Galiza enteira">×</button></span>`
+    : (territories.map(item => `<span class="selected-chip">${escapeHtml(item.nome)} <small class="level-badge level-${item.tipo}">${escapeHtml(territoryLabel(item))}</small><button type="button" data-remove-paste-territory="${escapeHtml(item.id)}" aria-label="Retirar ${escapeHtml(item.nome)}">×</button></span>`).join("")
+      || `<p class="muted">Sen asignar.</p>`);
+  all("[data-remove-paste-territory]", chips).forEach(button => button.addEventListener("click", () => {
+    const place = ownPastePlace();
+    if (button.dataset.removePasteTerritory === "__general") place.general = false;
+    else place.ids = place.ids.filter(id => id !== button.dataset.removePasteTerritory);
+    paintPastePlace();
+    updatePasteBlockPreview({ keepDupes: true });
+  }));
+}
+
+function bindPastePlacePicker() {
+  const input = $("#pasteTerritoryQuery");
+  const results = $("#pasteTerritoryResults");
+  if (!input || !results) return;
+  input.addEventListener("input", () => {
+    const query = input.value.trim();
+    if (!query) { results.innerHTML = ""; return; }
+    const matches = searchTerritories(state.territorios, query).slice(0, 8);
+    results.innerHTML = matches.map(item => `
+      <button type="button" data-paste-pick-territory="${escapeHtml(item.id)}">
+        <strong>${escapeHtml(item.nome)}</strong>
+        <span>${escapeHtml(territorySearchMeta(item))}</span>
+      </button>`).join("") || `<p class="muted">Sen resultados.</p>`;
+    all("[data-paste-pick-territory]", results).forEach(button => button.addEventListener("click", () => {
+      const territory = state.territorios.find(item => item.id === button.dataset.pastePickTerritory);
+      if (!territory) return;
+      const place = ownPastePlace();
+      place.general = false;
+      if (!place.ids.includes(territory.id)) place.ids.push(territory.id);
+      input.value = "";
+      results.innerHTML = "";
+      paintPastePlace();
+      updatePasteBlockPreview({ keepDupes: true });
+    }));
+  });
+  $("#pasteMarkGeneral")?.addEventListener("click", () => {
+    const place = ownPastePlace();
+    place.general = true;
+    place.ids = [];
+    paintPastePlace();
+    updatePasteBlockPreview({ keepDupes: true });
+  });
+  $("#pasteLugar")?.addEventListener("input", event => {
+    state.pasteLugar = event.target.value;
+    updatePasteBlockPreview({ keepDupes: true });
+  });
+  paintPastePlace();
 }
 
 function pasteBlockPanelMarkup() {
   const count = parseCoplaPasteBlock(state.pasteDraft).length;
   return `
-    <details class="panel paste-panel"${count || state.pasteFeedback ? " open" : ""}>
+    <details class="panel paste-panel"${count || state.pasteFeedback || state.submitBatch.length ? " open" : ""}>
       <summary>
         <span class="paste-summary-title">Pegar varias coplas dun golpe</span>
-        <span class="paste-summary-sub">Unha liña en branco separa as coplas \\ as voltas van entre &gt; e &lt;</span>
+        <span class="paste-summary-sub">Unha liña en branco separa as coplas \\ as voltas van entre &gt; e &lt; \\ podes pegar varios lotes, cada un co seu territorio e lugar</span>
         <span class="paste-badge" id="pasteBadge"${count ? "" : " hidden"}>${count}</span>
       </summary>
       <div class="paste-body">
         <div class="paste-editor">
-          <label for="pasteBlock">Texto</label>
+          <label for="pasteBlock">Texto do lote</label>
           <textarea id="pasteBlock" rows="14" spellcheck="false" placeholder="Pega aquí as coplas...&#10;&#10;Cada copla separada da seguinte por unha liña en branco.&#10;&#10;&gt;Esta enteira é unha volta&#10;e remata así&lt;">${escapeHtml(state.pasteDraft)}</textarea>
           <div class="paste-legend">
             <span><kbd>liña en branco</kbd>separa unha copla da seguinte</span>
             <span><kbd>&gt; ... &lt;</kbd>marca a copla enteira como volta</span>
+          </div>
+          <div class="paste-place field">
+            <label for="pasteTerritoryQuery">Territorio deste lote</label>
+            <input id="pasteTerritoryQuery" type="search" placeholder="Sen asignar. Escribe para buscar parroquia, concello, comarca..." autocomplete="off">
+            <div id="pasteTerritoryResults" class="territory-results compact"></div>
+            <div id="pasteTerritoryChips" class="selected-chips"></div>
+            <button class="link-button" type="button" id="pasteMarkGeneral">Marcar coma "Galiza enteira"</button>
+            <label for="pasteLugar">Lugar (opcional, dentro da parroquia)</label>
+            <input id="pasteLugar" type="text" list="pasteLugarList" maxlength="80" value="${escapeHtml(state.pasteLugar)}" placeholder="Ex.: Laxoso" autocomplete="off">
+            <datalist id="pasteLugarList"></datalist>
           </div>
         </div>
         <div class="paste-preview" aria-live="polite">
@@ -5512,12 +5978,13 @@ function pasteBlockPanelMarkup() {
             <button class="link-button" type="button" id="pasteCheckDupes">Buscar parecidas no arquivo</button>
           </div>
           <ol id="pasteList" class="paste-list"></ol>
-          <p class="paste-dest">Engadiranse en <b id="pasteDest"></b>. O lugar cámbiase no formulario de arriba.</p>
+          <p class="paste-dest">Este lote engadirase en <b id="pasteDest"></b>. Despois podes pegar outro lote con outro territorio ou lugar.</p>
         </div>
       </div>
       <div class="paste-actions">
         <button class="btn" type="button" id="clearPasteBlock">Limpar</button>
-        <button class="btn primary" type="button" id="parsePasteBlock" disabled>Engadir á lista</button>
+        <button class="btn primary" type="button" id="parsePasteBlock" disabled>Engadir lote á lista</button>
+        <button class="btn" type="button" id="pasteSaveAll"${state.submitBatch.length ? "" : " hidden"}>Gardar todas (${state.submitBatch.length})</button>
       </div>
       <p id="pasteBlockFeedback" class="muted">${escapeHtml(state.pasteFeedback || "")}</p>
     </details>
@@ -5536,18 +6003,23 @@ function updatePasteBlockPreview({ keepDupes = false } = {}) {
   $("#pasteSummary").textContent = stanzas.length
     ? `${stanzas.length} copla${plural} detectada${plural}${voltas ? ` \\ ${voltas} volta${voltas === 1 ? "" : "s"}` : ""}`
     : "Aínda non hai nada que repartir";
-  $("#pasteDest").textContent = pasteDestination().label;
+  const destination = pasteDestination();
+  $("#pasteDest").textContent = destination.label;
   const badge = $("#pasteBadge");
   if (badge) {
     badge.textContent = String(stanzas.length);
     badge.hidden = !stanzas.length;
   }
   $("#parsePasteBlock").disabled = !stanzas.length;
-  $("#parsePasteBlock").textContent = stanzas.length ? `Engadir ${stanzas.length} copla${plural} á lista` : "Engadir á lista";
+  $("#parsePasteBlock").textContent = stanzas.length ? `Engadir ${stanzas.length} copla${plural} (${destination.label}) á lista` : "Engadir lote á lista";
   $("#pasteCheckDupes").hidden = !stanzas.length;
   list.innerHTML = stanzas.map((item, index) => {
     const lines = item.text.split(/\r?\n/).filter(line => line.trim());
     const dupe = state.pasteDupes?.[index];
+    // Só as voltas levan etiqueta; nas demais o botón de marcar volta aparece ao pasar por riba.
+    const voltaControl = item.isVolta
+      ? `<button type="button" class="paste-volta is-on" data-paste-volta="${index}" aria-pressed="true" title="Quitar a marca de volta"><span class="tag is-volta">Volta</span></button>`
+      : `<button type="button" class="paste-volta" data-paste-volta="${index}" aria-pressed="false" title="Marcar como volta">Marcar volta</button>`;
     return `
       <li class="paste-item${item.isVolta ? " is-volta" : ""}">
         <span class="paste-num">${index + 1}</span>
@@ -5557,7 +6029,7 @@ function updatePasteBlockPreview({ keepDupes = false } = {}) {
           ${dupe ? `<span class="paste-dupe">Parecida a <button type="button" class="link-button" data-paste-view-dupe="${dupe.id}">${escapeHtml(coplaTitle(dupe))}</button></span>` : ""}
         </div>
         <div class="paste-item-actions">
-          <button type="button" class="chip${item.isVolta ? " active" : ""}" data-paste-volta="${index}" aria-pressed="${item.isVolta}" title="Marcar como volta">Volta</button>
+          ${voltaControl}
           <button type="button" class="paste-remove" data-paste-remove="${index}" aria-label="Quitar a copla ${index + 1}" title="Quitar">×</button>
         </div>
       </li>`;
@@ -5603,9 +6075,13 @@ function bindPasteBlock() {
     updatePasteBlockPreview({ keepDupes: true });
   });
   $("#parsePasteBlock")?.addEventListener("click", queuePasteBlock);
+  $("#pasteSaveAll")?.addEventListener("click", saveCoplaDirect);
+  bindPastePlacePicker();
   updatePasteBlockPreview({ keepDupes: true });
 }
 
+// Pasa o lote pegado á lista de pendentes co seu lugar e deixa o panel listo para o seguinte
+// lote (texto baleiro e lugar sen escoller). Todo se garda xunto con «Gardar todas».
 function queuePasteBlock() {
   const textarea = $("#pasteBlock");
   const feedback = $("#pasteBlockFeedback");
@@ -5615,7 +6091,8 @@ function queuePasteBlock() {
     if (feedback) feedback.textContent = "Pega polo menos unha copla antes de repartir.";
     return;
   }
-  const { territoryIds, territoryState, territories } = pasteDestination();
+  const { territoryIds, territoryState, territories, label, lugar } = pasteDestination();
+  const lot = ++state.pasteLotSeq;
   stanzas.forEach(({ text, isVolta }) => {
     const payload = {
       text,
@@ -5625,22 +6102,27 @@ function queuePasteBlock() {
       territories: territoryState === "assigned" ? territoryIds.map(id => ({ id })) : [],
       tags: [],
       is_volta: isVolta,
+      lugar: lugar || null,
       versions: [],
     };
     state.submitBatch.push({
       payload,
-      placeLabel: coplaPlaceLabel({ territories, territory_state: territoryState }),
+      placeLabel: coplaPlaceLabel({ territories, territory_state: territoryState, lugar }),
       preview: firstLine(text) || "Copla sen íncipit",
       versionCount: 0,
       isVolta,
+      lot,
     });
   });
   const voltaCount = stanzas.filter(item => item.isVolta).length;
   state.pasteDraft = "";
   state.pasteDupes = null;
-  state.pasteFeedback = `Engadidas ${stanzas.length} coplas á lista (${voltaCount} volta${voltaCount === 1 ? "" : "s"}). Revisa a lista de pendentes e preme «Gardar todas» cando remates.`;
+  state.pastePlace = { ids: [], general: false };
+  state.pasteLugar = "";
+  state.pasteFeedback = `Lote engadido: ${stanzas.length} copla${stanzas.length === 1 ? "" : "s"} en ${label}${voltaCount ? ` (${voltaCount} volta${voltaCount === 1 ? "" : "s"})` : ""}. Pega outro lote con outro territorio ou lugar ou preme «Gardar todas (${state.submitBatch.length})».`;
   renderSubmitView();
-  $(".submit-batch-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Fica no panel de pegar para continuar co seguinte lote (a lista de pendentes está enriba).
+  $(".paste-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function startEditCopla(coplaId) {
@@ -5713,7 +6195,7 @@ async function saveMediaDirect() {
     if (!response.ok) throw new Error(result.error || "Non se puido gardar a media.");
     feedback.textContent = wasEditing ? "Cambios gardados." : `Media gardada. IDs afectados: ${result.ids.join(", ")}`;
     clearApiCache();
-    state.media = await getMedia();
+    state.media = await loadMedia();
     if (!wasEditing) {
       const firstTerritoryId = payload.media[0].links.find(link => link.entity_type === "territory")?.entity_id;
       if (firstTerritoryId) state.selectedTerritory = state.territorios.find(item => item.id === firstTerritoryId) || state.selectedTerritory;
@@ -5752,7 +6234,7 @@ function renderMediaView() {
         <div class="searchbox"><span>⌕</span><input id="mediaSearch" type="search" value="${escapeHtml(state.mediaQuery)}" placeholder="Buscar por título, fonte, territorio..."></div>
         <select id="mediaKindFilter" aria-label="Filtrar tipo de media">
           <option value="">Todos os tipos</option>
-          ${["youtube", "spotify", "soundcloud", "audio", "video", "image", "web"].map(kind => `<option value="${kind}" ${state.mediaKindFilter === kind ? "selected" : ""}>${mediaLabel(kind)}</option>`).join("")}
+          ${["youtube", "spotify", "soundcloud", "audio", "video", "image", "pdf", "web"].map(kind => `<option value="${kind}" ${state.mediaKindFilter === kind ? "selected" : ""}>${mediaLabel(kind)}</option>`).join("")}
         </select>
         <select id="mediaRoleFilter" aria-label="Filtrar uso">
           <option value="">Todos os usos</option>
@@ -5819,6 +6301,8 @@ function filteredMediaItems() {
       territoryContext.join(" "),
       (item.links || []).map(link => `${link.entity_type} ${link.entity_id} ${link.relation_type}`).join(" "),
       mediaMelodies(item).map(melodyName).join(" "),
+      mediaPieceTitle(item),
+      item.visibility === "private" ? "privada" : "",
     ].join(" ")).includes(query);
     return matchesKind && matchesRole && matchesText;
   });
@@ -5914,10 +6398,10 @@ function submitAboutCopla(event) {
 }
 
 const ABOUT_NAV = [
-  { view: "map", name: "Mapa", text: "Toca un lugar para ver as súas coplas, melodías e recursos. As parroquias están dentro dos concellos, e estes dentro das comarcas." },
-  { view: "territory", name: "Territorios", text: "Busca un lugar polo nome e móvete pola súa xerarquía: parroquia, concello, comarca e provincia." },
-  { view: "coplas", name: "Coplas", text: "Procura por verso, íncipit, lugar ou etiqueta. Cada ficha amosa as variantes e os recursos relacionados." },
-  { view: "melodies", name: "Melodías", text: "O inventario de melodías, agrupadas por ritmo e lugar, co recursos onde se poden escoitar." },
+  { view: "map", name: "Mapa", text: "Toca un territorio para ver as súas coplas, melodías e recursos. As parroquias están dentro dos concellos, e estes dentro das comarcas." },
+  { view: "territory", name: "Territorios", text: "Busca un territorio polo nome e móvete pola súa xerarquía: parroquia, concello, comarca e provincia." },
+  { view: "coplas", name: "Coplas", text: "Procura por verso, íncipit, territorio, lugar ou etiqueta. Cada ficha amosa as variantes e os recursos relacionados." },
+  { view: "melodies", name: "Melodías", text: "O inventario de melodías, agrupadas por ritmo e territorio, cos recursos onde se poden escoitar." },
   { view: "pieces", name: "Pezas", text: "A biblioteca de pezas montadas con coplas do arquivo e o obradoiro para compoñer as túas." },
   { view: "media", name: "Media", text: "Gravacións, vídeos, imaxes e documentos ligados ás coplas, ás melodías e ás pezas." },
   { view: "people", name: "Persoas", text: "O directorio de quen decidiu amosar o seu perfil, coas pezas que publicou.", accountsOnly: true },
@@ -5933,18 +6417,18 @@ function aboutAccountsMarkup() {
       <div class="about-section-head"><div class="eyebrow">Contas</div><h2>Para consultar non fai falta conta</h2></div>
       <div class="about-cards">
         <article class="panel"><h3>Sen conta</h3><p>Podes consultar todo o arquivo e compoñer pezas no obradoiro. Non se che pide ningún dato. Para descargar un PDF hai que entrar.</p></article>
-        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo e podes descargar PDFs (ata 15 ao día): favoritos de coplas, lugares, etiquetas, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
+        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo e podes descargar PDFs (ata 15 ao día): favoritos de coplas, territorios, etiquetas, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
         <article class="panel"><h3>Roles</h3><p>A maioría das contas son foleantes. As persoas guía axudan a editar o arquivo e a coidar a biblioteca de pezas; a administración xestiona os roles.</p></article>
       </div>
       <p class="about-cta">${cta}</p>
     </section>
     <section class="about-section">
       <div class="about-section-head"><div class="eyebrow">Pezas</div><h2>Gardar unha peza pide conta</h2></div>
-      <p class="about-lead">Compoñer está ao alcance de todas as persoas. Gardar unha peza require conta, para que quede no teu perfil. Cada peza é <strong>privada</strong> (só a ves ti) ou <strong>pública</strong> (aparece na biblioteca, aberta a calquera). Podes mudala de unha a outra, editala ou borrala cando queiras; se unha peza pública dá problemas, unha persoa guía pode agochala.</p>
+      <p class="about-lead">Compoñer está ao alcance de todas as persoas. Gardar unha peza require conta, para que quede no teu perfil. As pezas son <strong>privadas</strong> (só as ves ti). Só as persoas guía ou admin poden facelas <strong>públicas</strong> (aparecen na biblioteca, abertas a calquera) e, ao gardalas, as súas coplas soltas pasan ao arquivo co territorio e o lugar da peza. Podes editar ou borrar as túas pezas cando queiras; se unha peza pública dá problemas, unha persoa guía pode agochala.</p>
     </section>
     <section class="about-section">
       <div class="about-section-head"><div class="eyebrow">PDF</div><h2>Para xerar un PDF pedimos que entres</h2></div>
-      <p class="about-lead">Os PDFs de pezas e de lugares fanse cun servizo que ten unha cota diaria gratuíta. Pedir que a persoa estea logueada protexe esa cota de abusos e permite manter o arquivo aberto e gratuíto. Cada persoa pode descargar ata 15 PDFs ao día; consultar, buscar e compoñer non teñen límite nin piden conta.</p>
+      <p class="about-lead">Os PDFs de pezas e de territorios fanse cun servizo que ten unha cota diaria gratuíta. Pedir que a persoa estea logueada protexe esa cota de abusos e permite manter o arquivo aberto e gratuíto. Cada persoa pode descargar ata 15 PDFs ao día; consultar, buscar e compoñer non teñen límite nin piden conta.</p>
     </section>`;
 }
 
@@ -5961,12 +6445,13 @@ function aboutMarkup() {
       </div>
 
       <section class="about-section">
-        <div class="about-section-head"><div class="eyebrow">Como funciona</div><h2>Entrar polo lugar, polo texto ou polo son</h2></div>
-        <p class="about-lead">O arquivo reúne coplas e repertorio tradicional galego e ligaos entre si. Podes comezar por onde che pete (un lugar no mapa, un verso, unha melodía) e ir saltando dunha cousa a outra seguindo esas relacións.</p>
+        <div class="about-section-head"><div class="eyebrow">Como funciona</div><h2>Entrar polo territorio, polo texto ou polo son</h2></div>
+        <p class="about-lead">O arquivo reúne coplas e repertorio tradicional galego e ligaos entre si. Podes comezar por onde che pete (un territorio no mapa, un verso, unha melodía) e ir saltando dunha cousa a outra seguindo esas relacións.</p>
         <div class="about-cards about-relations">
-          <article class="panel"><h3>Copla</h3><p>É a peza básica: o texto, o seu íncipit (o primeiro verso), notas e etiquetas. Pode ter varias variantes e estar ligada a un ou varios lugares.</p></article>
-          <article class="panel"><h3>Lugar</h3><p>Onde se canta ou se recolleu. Os lugares van en niveis (provincia, comarca, concello e parroquia) e cada un contén os de abaixo: ao abrir un concello ves tamén as coplas, melodías e recursos das súas parroquias.</p></article>
-          <article class="panel"><h3>Melodía</h3><p>O inventario de melodías, agrupadas por ritmo e lugar. Unha melodía pode servir a moitas coplas e levar un ou varios recursos onde escoitala.</p></article>
+          <article class="panel"><h3>Copla</h3><p>É a peza básica: o texto, o seu íncipit (o primeiro verso), notas e etiquetas. Pode ter varias variantes e estar ligada a un ou varios territorios e, dentro dunha parroquia, a un lugar concreto (Laxoso...).</p></article>
+          <article class="panel"><h3>Territorio</h3><p>Onde se canta ou se recolleu. Os territorios van en niveis (provincia, comarca, concello e parroquia) e cada un contén os de abaixo: ao abrir un concello ves tamén as coplas, melodías e recursos das súas parroquias.</p></article>
+          <article class="panel"><h3>Lugar</h3><p>Opcional e máis fino ca o territorio: o nome dun lugar dentro dunha parroquia (Laxoso, por exemplo), que non ten mapa propio. Escríbese libremente, aparece diante do territorio e tamén se busca.</p></article>
+          <article class="panel"><h3>Melodía</h3><p>O inventario de melodías, agrupadas por ritmo e territorio. Unha melodía pode servir a moitas coplas e levar un ou varios recursos onde escoitala.</p></article>
           <article class="panel"><h3>Recurso (media)</h3><p>Gravacións, vídeos, imaxes e documentos. Cada recurso pode estar ligado a unha copla, a unha melodía ou a unha peza, e así levarte de unha ao outro.</p></article>
           <article class="panel"><h3>Peza</h3><p>Unha selección ordenada de coplas, por voltas, para cantar ou ensaiar. Pode ser un repertorio propio ou o arranxo dun grupo ou artista; todas as pezas dunha mesma autoría xúntanse na súa ficha.</p></article>
           ${accounts ? `<article class="panel"><h3>Persoa</h3><p>Quen usa o arquivo con conta. Pode ter un perfil público co seu username, as súas pezas publicadas e os seus favoritos (se quere amosalos).</p></article>` : ""}
@@ -5976,23 +6461,23 @@ function aboutMarkup() {
       <section class="about-section">
         <div class="about-section-head"><div class="eyebrow">Que podes facer</div><h2>Consultar, escoitar e montar repertorio</h2></div>
         <ul class="about-list">
-          <li><strong>Consultar.</strong> Busca coplas por verso, íncipit, lugar ou etiqueta; filtra por lugar no mapa ou no listado de territorios; abre unha ficha para ver variantes, melodía e recursos.</li>
+          <li><strong>Consultar.</strong> Busca coplas por verso, íncipit, territorio, lugar ou etiqueta; filtra por territorio no mapa ou no listado de territorios; abre unha ficha para ver variantes, melodía e recursos.</li>
           <li><strong>Escoitar.</strong> Desde unha copla, unha melodía ou unha peza chegas aos recursos ligados: gravacións, vídeos e documentos.</li>
           <li><strong>Montar pezas.</strong> Con «Seleccionar varias» marcas coplas das listas e levas a unha peza; no obradoiro ordénalas por voltas, engade notas e, se queres, pega ou escribe coplas novas.${accounts ? " Sen conta podes compoñer; para gardar a peza hai que entrar." : ""}</li>
-          <li><strong>Levar o repertorio en papel.</strong> Unha peza ou un lugar saen en PDF coas coplas completas, pensado para imprimir.${accounts ? " Para xerar o PDF pedimos que a persoa estea logueada." : ""}</li>
+          <li><strong>Levar o repertorio en papel.</strong> Unha peza ou un territorio saen en PDF coas coplas completas, pensado para imprimir.${accounts ? " Para xerar o PDF pedimos que a persoa estea logueada." : ""}</li>
           <li><strong>Achegar.</strong> Se tes unha copla que falta ou unha corrección, usa o formulario de máis abaixo.</li>
         </ul>
       </section>
 
       <section class="about-section">
-        <div class="about-section-head"><div class="eyebrow">Código de cores</div><h2>A cor di de que nivel é o lugar</h2></div>
-        <p class="about-lead">Nas coplas, listas e fichas, cada lugar aparece cun punto e o seu nome na cor do seu nivel. A cor só indica a escala do lugar, non a cantidade nin a calidade das coplas.</p>
+        <div class="about-section-head"><div class="eyebrow">Código de cores</div><h2>A cor di de que nivel é o territorio</h2></div>
+        <p class="about-lead">Nas coplas, listas e fichas, cada territorio aparece cun punto e o seu nome na cor do seu nivel. A cor só indica a escala do lugar, non a cantidade nin a calidade das coplas.</p>
         <ul class="about-legend">
-          <li><span class="level-text level-par">Parroquia</span><span>O lugar máis concreto: onde se cantou ou se recolleu a copla.</span></li>
+          <li><span class="level-text level-par">Parroquia</span><span>O territorio máis concreto: onde se cantou ou se recolleu a copla.</span></li>
           <li><span class="level-text level-con">Concello</span><span>Agrupa parroquias.</span></li>
           <li><span class="level-text level-com">Comarca</span><span>Agrupa concellos.</span></li>
           <li><span class="level-text level-prov">Provincia</span><span>O nivel máis xeral.</span></li>
-          <li><span class="level-text level-empty">Sen lugar</span><span>Unha copla cuxo lugar aínda non se coñece. En gris, sen punto de cor.</span></li>
+          <li><span class="level-text level-empty">Sen territorio</span><span>Unha copla cuxo territorio aínda non se coñece. En gris, sen punto de cor.</span></li>
         </ul>
       </section>
 
@@ -6266,7 +6751,7 @@ async function init() {
     getTerritorios(),
     getCoplas(),
     getPezas({ account: isAccount(), moderator: isEditorAccount() }),
-    getMedia(),
+    loadMedia(),
     getMelodias(),
   ]);
   state.territorios = territorios.status === "fulfilled" ? territorios.value : [];
@@ -6321,6 +6806,7 @@ window.folearApp = {
   refreshPezas,
   openAuthor,
   authors: () => authorDirectory().map(entry => entry.name),
+  authorEntries,
   openPrivacy: openAboutPrivacy,
   openPiece(id) { openPieceDrawer(Number(id)); },
   openMelody(id) { openMelodyDrawer(Number(id)); },

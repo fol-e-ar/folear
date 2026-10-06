@@ -1,16 +1,19 @@
 """E2E: fichas de autoría, ligazóns nas pezas, visor."""
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "harness"))
-from common import APP, DB, OUT, sql, Client, SAMPLE_PDF
+from common import APP, DB, OUT, sql, Client, SAMPLE_PDF, restore_coplas
+MAX_COPLA_ID = sql("select coalesce(max(id),0) from coplas")[0][0]
 import json, urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 import shoot_lib as S
 for t in ("piece_links",): sql(f"delete from {t}")
+sql("delete from media_links where media_id in (select id from media where piece_id is not null)"); sql("delete from media where piece_id is not null")
 sql("delete from piece_coplas where piece_id in (select id from pieces where owner_user_id is not null)")
 sql("delete from pieces where owner_user_id is not null"); 
 for t in ("follows","favorites","profiles","sessions","users"): sql(f"delete from {t}")
 ana=Client("g-ana","ana@example.com","Ana")
+sql("update users set role='guia' where email=?","ana@example.com")  # só guías/admin publican pezas
 coplas=json.load(urllib.request.urlopen(APP+"/data/exports/coplas/coplas.json"))
 def mk(title,author,links=(),vis="public",cop=None):
     return {"title":title,"author":author,"visibility":vis,"links":list(links),"coplas":[{"copla_id":cop,"text":None if cop else "Un verso solto","position":1}]}
@@ -25,6 +28,11 @@ def handler(route):
     u=route.request.url
     if u.startswith(APP): return route.continue_()
     return S.base_handle(route)
+def wait_value(pg,sel,tries=40):
+    for _ in range(tries):
+        if pg.input_value(sel): return True
+        pg.wait_for_timeout(200)
+    return False
 FAILS=[]
 def ok(l,c,x=""):
     print(("PASS " if c else "FAIL ")+l,x)
@@ -48,7 +56,7 @@ with sync_playwright() as p:
     ok("ficha shown", pg.locator(".author-ficha").count()==1)
     t=pg.locator(".author-ficha").inner_text().replace("\n"," | "); print(t)
     ok("3 pieces, 3 resources", "3 pezas" in t and "3 recursos" in t)
-    ok("link row", pg.locator(".author-ficha .link-row").count()==1)
+    ok("resource shown once, as a Media card (no duplicate link row)", pg.locator(".author-ficha .link-row").count()==0 and pg.locator(".author-ficha .media-card",has_text="Gravación no Auditorio").count()==1, pg.locator(".author-ficha .media-card").count())
     ok("only author's pieces listed", pg.locator("#pieceRepositoryList .piece-card").count()==3, pg.locator("#pieceRepositoryList .piece-card").count())
     ok("hash", "#/autoria/pandereteiras-soalleira" in pg.evaluate("location.href"), pg.evaluate("location.href"))
     pg.screenshot(path=str(OUT/"ficha.png"))
@@ -85,22 +93,94 @@ with sync_playwright() as p:
     pg.locator('[data-piece-scope="mine"]').click(); pg.wait_for_timeout(500)
     card=pg.locator("#pieceRepositoryList .piece-card",has_text="Canto e Muiñeira").first
     card.click(position={"x":12,"y":12}); pg.wait_for_selector("#pieceDrawer:not([hidden]) .piece-manage",timeout=8000); 
-    ok("drawer Ligazóns", "Gravación no Auditorio" in pg.locator("#pieceDrawer").inner_text())
+    ok("drawer shows the resource once (Media relacionada)", pg.locator("#pieceDrawer .media-card",has_text="Gravación no Auditorio").count()==1 and pg.locator("#pieceDrawer .link-row").count()==0)
+    ok("drawer has the same «Obter datos» form", pg.locator("#pieceDrawer #pmFetch").count()==1 and pg.locator("#pieceDrawer #pmKind").count()==1 and pg.locator("#pieceDrawer #pmRole").count()==1 and pg.locator("#pieceDrawer #pmTitle").count()==1)
+    ok("owner can remove a piece resource from the card", pg.locator("#pieceDrawer [data-remove-piece-resource]").count()==1)
     pg.click("#pieceDrawer [data-edit-piece]"); pg.wait_for_timeout(800)
+    ok("recursos ligados: pregados por defecto (discretos)", pg.locator("details#workshopLinks").count()==1 and pg.locator("details#workshopLinks[open]").count()==0 and not pg.locator("#plUrl").is_visible())
+    ok("recursos ligados van despois das partes", pg.evaluate("document.querySelector('#workshopLinks').getBoundingClientRect().top > document.querySelector('#addSection').getBoundingClientRect().top"))
+    ok("o resumo di cantos hai", "(1)" in pg.locator("#workshopLinks > summary").inner_text(), pg.locator("#workshopLinks > summary").inner_text())
+    pg.click("#workshopLinks > summary"); pg.wait_for_timeout(200)
     ok("editor loaded links", "Gravación no Auditorio" in pg.locator(".workshop-links").inner_text(), pg.locator(".workshop-links").inner_text()[:100])
-    pg.fill("#pieceLinkTitle","Partitura"); pg.fill("#pieceLinkUrl","https://exemplo.gal/p.pdf"); pg.click("#addPieceLink"); pg.wait_for_timeout(300)
-    ok("added link row", pg.locator(".workshop-link-item").count()==2)
-    pg.fill("#pieceLinkTitle","Mal"); pg.fill("#pieceLinkUrl","javascript:alert(1)"); pg.click("#addPieceLink"); pg.wait_for_timeout(300)
-    ok("bad url rejected", pg.locator(".workshop-link-item").count()==2 and not pg.locator("#pieceLinkError").is_hidden())
+    ok("workshop form has fetch + kind + role + source", all(pg.locator(sel).count()==1 for sel in ("#plFetch","#plKind","#plRole","#plSource","#plTitle","#plUrl")))
+    pg.route("**/api/link-preview*", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps({"title":"Gravación de proba","description":"Unha descrición","thumbnail_url":"","provider":"YouTube","author_or_source":"Canle Proba"})))
+    pg.fill("#plTitle","Partitura"); pg.fill("#plUrl","https://exemplo.gal/p.pdf"); pg.select_option("#plKind","pdf"); pg.select_option("#plRole","documental"); pg.click("#addPieceLink"); pg.wait_for_timeout(300)
+    ok("added manual resource", pg.locator(".workshop-link-item").count()==2)
+    pg.fill("#plUrl","https://youtu.be/zzz"); pg.click("#plFetch"); wait_value(pg,"#plTitle")
+    ok("Obter datos fills title, kind, source", pg.input_value("#plTitle")=="Gravación de proba" and pg.input_value("#plKind")=="youtube" and pg.input_value("#plSource")=="Canle Proba", [pg.input_value("#plTitle"),pg.input_value("#plKind"),pg.input_value("#plSource")])
+    ok("preview shown", not pg.locator("#plPreview").is_hidden() and "YouTube" in pg.locator("#plPreview").inner_text(), pg.locator("#plPreview").inner_text())
+    pg.click("#addPieceLink"); pg.wait_for_timeout(300)
+    ok("added fetched resource", pg.locator(".workshop-link-item").count()==3)
+    pg.fill("#plUrl","javascript:alert(1)"); pg.click("#addPieceLink"); pg.wait_for_timeout(300)
+    ok("bad url rejected", pg.locator(".workshop-link-item").count()==3 and "http" in pg.locator("#plFeedback").inner_text(), pg.locator("#plFeedback").inner_text())
     pg.screenshot(path=str(OUT/"editor.png"))
     pg.locator("[data-remove-piece-link]").first.click(); pg.wait_for_timeout(300)
-    ok("removed", pg.locator(".workshop-link-item").count()==1)
+    ok("removed", pg.locator(".workshop-link-item").count()==2)
+    ok("workshop has a «lugar» field", pg.locator("#pieceLugar").count()==1)
+    pg.fill("#pieceLugar","Laxoso")
     pg.click("#savePieceDirect"); pg.wait_for_selector(".fe-dialog form"); 
-    ok("author datalist", pg.locator("#fePieceAuthorList option").count()>=2, pg.locator("#fePieceAuthorList option").count())
+    pg.fill("#fePieceAuthor", ""); pg.click("#fePieceAuthor"); pg.wait_for_timeout(250)
+    ok("author suggestions in save dialog", pg.locator(".authorbox-option").count()>=2, pg.locator(".authorbox-option").count())
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
+    ok("Esc closes only the suggestions", pg.locator(".fe-dialog form").count()==1 and pg.locator(".authorbox-list:not([hidden])").count()==0)
     pg.screenshot(path=str(OUT/"dialog.png"))
     pg.click('.fe-dialog button[type=submit]'); pg.wait_for_timeout(1500)
-    print(sql("select title,url from piece_links"))
-    ok("saved link replaced", [r[0] for r in sql("select title from piece_links")]==["Partitura"])
+    ok("piece «lugar» saved", sql("select count(*) from pieces where lugar='Laxoso'")[0][0]>=1)
+    rows=sql("select title,media_kind,author_or_source,visibility from media where piece_id is not null order by id")
+    print(rows)
+    ok("saved resources live in Media", sorted(r[0] for r in rows)==["Gravación de proba","Partitura"], rows)
+    ok("kind / source saved", ("Gravación de proba","youtube","Canle Proba","public") in rows and any(r[1]=="pdf" for r in rows), rows)
+    # ficha da peza: engadir desde o formulario da ficha (mesmo «Obter datos»)
+    pg.click('[data-piece-tab="library"]'); pg.wait_for_timeout(500)
+    pg.locator("#pieceRepositoryList .piece-card",has_text="Canto e Muiñeira").first.click(position={"x":12,"y":12}); pg.wait_for_selector("#pieceDrawer:not([hidden]) .drawer-panel",timeout=8000)
+    ok("ficha: formulario de recursos pregado", pg.locator("#pieceDrawer details.piece-media-form").count()==1 and not pg.locator("#pmUrl").is_visible())
+    pg.click("#pieceDrawer details.piece-media-form > summary"); pg.wait_for_timeout(200)
+    pg.fill("#pmUrl","https://youtu.be/drw1"); pg.click("#pmFetch"); wait_value(pg,"#pmTitle")
+    pg.click("#pieceMediaAdd"); pg.wait_for_timeout(1200)
+    ok("resource added from the drawer", sql("select count(*) from media where piece_id is not null and url like '%drw1%'")[0][0]==1 and pg.locator("#pieceDrawer .media-card").count()==3, pg.locator("#pieceDrawer .media-card").count())
+    # peza privada con recurso: vese en Media coa marca «Privada» só á dona
+    ana.call("POST","/api/pieces",{"pieces":[{"title":"Peza privada con recurso","author":"Ana","visibility":"private","coplas":[{"copla_id":None,"text":"Un verso privado","position":1}],"links":[{"title":"Recurso privado de proba","url":"https://exemplo.gal/privado.mp3","media_kind":"audio","role":"melody"}]}]})
+    pg.click("#pieceDrawer [data-close-piece-drawer]"); pg.reload(); pg.wait_for_selector("#global-loading[hidden]",state="attached",timeout=30000); pg.wait_for_timeout(1500)
+    pg.click('.sidebar [data-view="media"]'); pg.wait_for_timeout(800)
+    pg.fill("#mediaSearch","Recurso privado"); pg.wait_for_timeout(500)
+    card=pg.locator("#mediaList .media-card",has_text="Recurso privado de proba")
+    ok("private resource visible to its owner in Media with «Privada» tag", card.count()==1 and card.locator(".tag.is-private").count()==1, card.count())
+    pg.fill("#mediaSearch","Gravación de proba"); pg.wait_for_timeout(500)
+    ok("public resource of a piece is in Media too", pg.locator("#mediaList .media-card",has_text="Gravación de proba").count()>=1)
+    pg.fill("#mediaSearch","Recurso privado"); pg.wait_for_timeout(400)
+    ok("Media: recurso de peza con Editar e Borrar", card.locator("[data-edit-media]").count()==1 and card.locator("[data-delete-media]").count()==1)
+    pg.locator("#mediaList .media-card",has_text="Recurso privado de proba").locator("[data-edit-media]").click(); pg.wait_for_selector("#mediaModal #mediaTitle")
+    ok("Media: edita un recurso de peza", pg.input_value("#mediaTitle")=="Recurso privado de proba")
+    pg.fill("#mediaTitle","Recurso privado editado"); pg.click("#saveMediaDirect"); pg.wait_for_timeout(1200)
+    ok("Media: cambio gardado", sql("select count(*) from media where title='Recurso privado editado' and piece_id is not null")[0][0]==1)
+    pg.fill("#mediaSearch","Recurso privado editado"); pg.wait_for_timeout(400)
+    pg.locator("#mediaList .media-card").first.locator("[data-delete-media]").click(); pg.wait_for_selector("#confirmDeleteAction")
+    ok("Media: o borrado avisa de que desvincula", "pezas" in pg.locator(".delete-confirm-modal").inner_text())
+    pg.click("#confirmDeleteAction"); pg.wait_for_timeout(1200)
+    ok("Media: borrado e desvinculado da peza", sql("select count(*) from media where title='Recurso privado editado'")[0][0]==0 and sql("select count(*) from media_links where media_id not in (select id from media)")[0][0]==0)
+    # biblioteca de pezas: o territorio da peza é clicable
+    ana.call("POST","/api/pieces",{"pieces":[{"title":"Peza con territorio","author":"Ana","visibility":"private","context_territory_id":"par:1502004","lugar":"Laxoso","coplas":[{"copla_id":None,"text":"Verso de proba\nsegundo","position":1,"section_label":"Canto","role":"copla"}]}]})
+    pg.reload(); pg.wait_for_selector("#global-loading[hidden]",state="attached",timeout=30000); pg.wait_for_timeout(1500)
+    pg.click('.sidebar [data-view="pieces"]'); pg.wait_for_timeout(500)
+    pg.click('[data-piece-tab="library"]'); pg.wait_for_timeout(500)
+    pg.locator('[data-piece-scope="mine"]').click(); pg.wait_for_timeout(500)
+    tcard=pg.locator("#pieceRepositoryList .piece-card",has_text="Peza con territorio").first
+    tag=tcard.locator("[data-territory-id]")
+    ok("peza: territorio clicable na tarxeta (con lugar)", tag.count()==1 and "Laxoso" in tag.inner_text() and "Lira" in tag.inner_text(), tag.inner_text() if tag.count() else "")
+    tag.click(); pg.wait_for_timeout(800)
+    ok("…leva ao territorio", pg.locator("#view-territory.active").count()==1 and "Lira" in pg.locator("#view-territory").inner_text())
+    pg.click('.sidebar [data-view="pieces"]'); pg.wait_for_timeout(500); pg.click('[data-piece-tab="library"]'); pg.wait_for_timeout(500)
+    pg.locator('[data-piece-scope="mine"]').click(); pg.wait_for_timeout(500)
+    pg.locator("#pieceRepositoryList .piece-card",has_text="Peza con territorio").first.click(position={"x":12,"y":12}); pg.wait_for_selector("#pieceDrawer:not([hidden]) .drawer-panel",timeout=8000)
+    ok("ficha: territorio clicable", pg.locator("#pieceDrawer [data-territory-id]").count()==1)
+    pg.click("#pieceDrawer [data-territory-id]"); pg.wait_for_timeout(800)
+    ok("…e pecha a ficha", pg.locator("#pieceDrawer:not([hidden])").count()==0 and pg.locator("#view-territory.active").count()==1)
+    ctx.close()
+    ctx,pg=newpage({"width":1440,"height":900})
+    pg.click('.sidebar [data-view="media"]'); pg.wait_for_timeout(800)
+    pg.fill("#mediaSearch","proba"); pg.wait_for_timeout(500)
+    ok("visitor does NOT see the private resource", pg.locator("#mediaList .media-card",has_text="Recurso privado de proba").count()==0)
+    ok("visitor sees the public piece resource", pg.locator("#mediaList .media-card",has_text="Gravación de proba").count()>=1)
     ctx.close()
     # PDF viewer
     for vp,name in (({"width":1440,"height":900},"d"),({"width":390,"height":844},"m")):
@@ -110,4 +190,5 @@ with sync_playwright() as p:
         print("openPdfViewer", fnd)
         ctx.close()
     b.close()
+restore_coplas(MAX_COPLA_ID)
 print("ERRS",errs); print("FAILS",FAILS)

@@ -153,6 +153,7 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
         status = copla.get("status", "published")
         territory_state = copla.get("territory_state", "assigned")
         is_volta = 1 if copla.get("is_volta") else 0
+        lugar = (str(copla.get("lugar") or "").strip()[:80]) or None
         copla_id = copla.get("id")
 
         if isinstance(copla_id, int):
@@ -172,6 +173,7 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
                 """,
                 (text, normalized, incipit, notes, status, territory_state, is_volta, copla_id),
             )
+            conn.execute("UPDATE coplas SET lugar = ? WHERE id = ?", (lugar, copla_id))
             conn.execute("DELETE FROM copla_territories WHERE copla_id = ?", (copla_id,))
             conn.execute("DELETE FROM copla_tags WHERE copla_id = ?", (copla_id,))
         else:
@@ -192,6 +194,8 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
                 (text, normalized, incipit, notes, status, territory_state, is_volta),
             )
             copla_id = cur.lastrowid
+            if lugar:
+                conn.execute("UPDATE coplas SET lugar = ? WHERE id = ?", (lugar, copla_id))
         imported_ids.append(copla_id)
 
         conn.execute("DELETE FROM copla_versions WHERE copla_id = ?", (copla_id,))
@@ -429,6 +433,9 @@ def import_pieces(conn: sqlite3.Connection, payload) -> list[int]:
         )
         piece_id = cur.lastrowid
         imported_ids.append(piece_id)
+        lugar = (str(piece.get("lugar") or "").strip()[:80]) or None
+        if lugar:
+            conn.execute("UPDATE pieces SET lugar = ? WHERE id = ?", (lugar, piece_id))
 
         for item in sorted(piece["coplas"], key=lambda value: value["position"]):
             conn.execute(

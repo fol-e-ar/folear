@@ -44,6 +44,20 @@ def sql(q, *args):
         conn.close()
 
 
+def restore_coplas(max_id):
+    """Borra as coplas dadas de alta polas probas (id > max_id) e invalida a caché dos exportes,
+    para que as probas seguintes vexan o arquivo orixinal (156 coplas)."""
+    for q in ("delete from piece_coplas where copla_id > ?",
+              "delete from copla_territories where copla_id > ?",
+              "delete from copla_tags where copla_id > ?",
+              "delete from copla_version_territories where version_id in (select id from copla_versions where copla_id > ?)",
+              "delete from copla_versions where copla_id > ?",
+              "delete from media_links where entity_type = 'copla' and cast(entity_id as integer) > ?",
+              "delete from coplas where id > ?"):
+        sql(q, max_id)
+    sql("update site_meta set value = cast(cast(value as integer) + 1 as text) where key = 'data_version'")
+
+
 def fake_login_as(sub, email, name="X"):
     urllib.request.urlopen(f"{FAKE}/set?sub={sub}&email={email}&name={name}").read()
 
