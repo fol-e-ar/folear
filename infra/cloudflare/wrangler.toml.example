@@ -40,6 +40,10 @@ bucket_name = "fol-e-ar-media"
 [vars]
 ALLOWED_ORIGIN = "https://folear.gal"
 ENVIRONMENT = "production"
+# Login con Google (ver README.md, «Usuarias e roles»). O secret
+# GOOGLE_CLIENT_SECRET pónse con `wrangler secret put`, nunca aquí.
+GOOGLE_CLIENT_ID = "REPLACE_WITH_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+ADMIN_EMAILS = "folear3@gmail.com"
 
 # --- Contorno de preview (rama/PR) ---
 [env.preview]
@@ -62,5 +66,6 @@ ENVIRONMENT = "preview"
 # produción coma en --env preview. Nesta primeira fase o único secret
 # previsto é o token de administración (ver README.md e
 # docs/arquitectura-cloudflare.md secc. "API e seguridade"):
+#   - GOOGLE_CLIENT_SECRET (login con Google, ver README.md)
 #   - ADMIN_TOKEN
 #   - TURNSTILE_SECRET_KEY (cando se active Turnstile no formulario público)

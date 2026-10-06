@@ -13,6 +13,7 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/auth.css">
   <script>
     window.FOL_E_AR_FILE_MODE = location.protocol === "file:";
     if (window.FOL_E_AR_FILE_MODE) {
@@ -38,7 +39,7 @@
 </head>
 <body class="fol-shell">
   <div id="global-loading" class="global-loading" role="status" aria-live="polite">
-    <svg class="global-loading-mark isotipo" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path pathLength="100" d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg>
+    <svg class="global-loading-mark fol-loader-mark isotipo" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path pathLength="100" d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg>
     <p>Cargando o arquivo…</p>
   </div>
   <div class="app">
@@ -84,10 +85,11 @@
 
         <div class="floating-reset">
           <button id="resetMapViewBtn" type="button" aria-label="Volver a toda Galiza" title="Toda Galiza">
-            <span class="galicia-icon" aria-hidden="true">⬢</span>
+            <svg class="isotipo" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg>
           </button>
         </div>
 
+        <div id="mapLoading" class="map-loading" hidden></div>
         <div id="mapResults" class="floating-results"></div>
         <article class="map-card">
           <button id="clearTerritory" class="card-close" type="button" aria-label="Limpar territorio">×</button>
@@ -143,5 +145,6 @@
   <script type="module">
     if (!window.FOL_E_AR_FILE_MODE) import("./js/archive_app.js");
   </script>
+  <script type="module" src="./js/auth.js"></script>
 </body>
 </html>

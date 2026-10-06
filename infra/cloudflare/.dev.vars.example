@@ -7,3 +7,12 @@ ADMIN_TOKEN=change-me-local-only
 TURNSTILE_SECRET_KEY=
 SITE_PASSWORD=
 BROWSER_RUN_API_TOKEN=
+
+# Login con Google (ver README.md, sección "Usuarias e roles").
+# GOOGLE_CLIENT_ID e ADMIN_EMAILS tamén poden ir en [vars] do wrangler.toml;
+# GOOGLE_CLIENT_SECRET só como secret (`wrangler secret put GOOGLE_CLIENT_SECRET`).
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+ADMIN_EMAILS=
+# Só en desenvolvemento: abre as escrituras sen login.
+AUTH_DISABLED=

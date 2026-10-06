@@ -1,5 +1,5 @@
 import { clearApiCache, getCoplas, getGeoLayer, getMedia, getMelodias, getPezas, getTerritorios, getTextAsset } from "./api.js";
-import { escapeHtml, nl2br, normalizeText, slugify } from "./utils.js";
+import { escapeHtml, loaderHtml, nl2br, normalizeText, setLoading, slugify } from "./utils.js";
 import { initPdfThumbs } from "./pdf_thumbs.js";
 import {
   TYPE_LABELS,
@@ -1152,7 +1152,7 @@ async function saveMelodyForm() {
     feedback.textContent = "Escolle o lugar da melodía.";
     return;
   }
-  feedback.textContent = "Gardando...";
+  setLoading(feedback, "Gardando");
   const entry = { territory_id: modal.territoryId, rhythm, notes: (modal.notes || "").trim() || null };
   if (modal.id) entry.id = modal.id;
   try {
@@ -1292,7 +1292,7 @@ function bindMediaMelodyPicker() {
       feedback.textContent = "Indica o ritmo da melodía.";
       return;
     }
-    feedback.textContent = "Creando...";
+    setLoading(feedback, "Creando");
     try {
       const [id] = await postMelodies([{ territory_id: territoryId, rhythm }]);
       state.mediaMelodyIds.push(id);
@@ -1470,7 +1470,23 @@ async function loadLayer(type = state.layerType) {
   if (layerSelect) layerSelect.value = type;
   if (!state.map || !window.L) return;
   if (state.layer) state.layer.remove();
-  let data = await geoLayerForMap(type);
+  const mapLoading = $("#mapLoading");
+  const layerName = layerSelect?.selectedOptions?.[0]?.textContent?.toLowerCase() || "mapa";
+  const loadingTimer = setTimeout(() => {
+    if (!mapLoading) return;
+    setLoading(mapLoading, `Cargando ${layerName}`);
+    mapLoading.hidden = false;
+  }, 150);
+  let data;
+  try {
+    data = await geoLayerForMap(type);
+  } finally {
+    clearTimeout(loadingTimer);
+    if (mapLoading) {
+      mapLoading.hidden = true;
+      mapLoading.innerHTML = "";
+    }
+  }
   state.layer = L.geoJSON(data, {
     style: feature => {
       const territory = findTerritoryByFeature(feature, type, state.territorios);
@@ -2142,7 +2158,7 @@ async function applyBatchTerritoryAssignment() {
     .filter(Boolean)
     .map(copla => coplaToEditPayload(copla, { territory_state: "assigned", territories }));
   if (!payloads.length) return;
-  if (feedback) feedback.textContent = "Aplicando...";
+  setLoading(feedback, "Aplicando");
   const button = $("#applyBatchAssign");
   if (button) button.disabled = true;
   try {
@@ -2204,7 +2220,7 @@ function deleteConfirmModalMarkup() {
           <p id="deleteConfirmFeedback" class="muted field full"></p>
           <div class="drawer-actions field full">
             <button class="btn" type="button" data-close-delete-confirm ${state.deleteConfirmBusy ? "disabled" : ""}>Cancelar</button>
-            <button class="btn danger" type="button" id="confirmDeleteAction" ${state.deleteConfirmBusy ? "disabled" : ""}>${state.deleteConfirmBusy ? "Borrando..." : `Borrar definitivamente`}</button>
+            <button class="btn danger" type="button" id="confirmDeleteAction" ${state.deleteConfirmBusy ? "disabled" : ""}>${state.deleteConfirmBusy ? loaderHtml("Borrando") : `Borrar definitivamente`}</button>
           </div>
         </div>
       </div>
@@ -2348,7 +2364,7 @@ async function linkMediaToPiece(piece, drawer) {
     if (feedback) feedback.textContent = "Indica título e URL.";
     return;
   }
-  if (feedback) feedback.textContent = "Gardando...";
+  setLoading(feedback, "Gardando");
   const kind = mediaKind({ url });
   try {
     const response = await fetch("../api/media", {
@@ -2388,7 +2404,7 @@ function closePieceDrawer() {
 async function downloadPieceRecordPdf(piece, button) {
   if (button) {
     button.disabled = true;
-    button.textContent = "Xerando PDF...";
+    button.innerHTML = loaderHtml("Xerando PDF");
   }
   try {
     const response = await fetch(`../api/pieces/${piece.id}/pdf`);
@@ -2792,7 +2808,7 @@ async function importPieceFile() {
     return;
   }
   try {
-    feedback.textContent = "Preparando a peza...";
+    setLoading(feedback, "Preparando a peza");
     const text = await file.text();
     const draft = file.name.toLowerCase().endsWith(".json")
       ? normalizeImportedPiece(JSON.parse(text), file.name.replace(/\.[^.]+$/, ""))
@@ -2922,7 +2938,7 @@ function renderPiecesView() {
             <button class="btn" type="button" id="clearPiece">Baleirar</button>
             <button class="btn" type="button" id="downloadPiece">Descargar estrutura</button>
             <button class="btn" type="button" id="savePieceDirect">Gardar peza</button>
-            <button class="btn primary" type="button" id="openA4" ${state.pdfBusy ? "disabled" : ""}>${state.pdfBusy ? "Xerando PDF..." : "Exportar PDF"}</button>
+            <button class="btn primary" type="button" id="openA4" ${state.pdfBusy ? "disabled" : ""}>${state.pdfBusy ? loaderHtml("Xerando PDF") : "Exportar PDF"}</button>
           </div>
         ` : ""}
       </div>
@@ -3317,12 +3333,12 @@ async function savePieceDirect() {
       return !Number.isInteger(numericId) || numericId <= 0;
     }));
     if (hasPending) {
-      if (feedback) feedback.textContent = "Incorporando as coplas soltas á base de datos...";
+      setLoading(feedback, "Incorporando as coplas soltas á base de datos");
       draft = await materializeDraftCoplas(draft);
       saveDraft(draft);
     }
     const payload = buildPieceDbPayload();
-    if (feedback) feedback.textContent = "Gardando peza na base local...";
+    setLoading(feedback, "Gardando peza na base local");
     const response = await fetch("../api/pieces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3403,9 +3419,9 @@ async function exportPiecePdf() {
   state.pdfBusy = true;
   if (button) {
     button.disabled = true;
-    button.textContent = "Xerando PDF...";
+    button.innerHTML = loaderHtml("Xerando PDF");
   }
-  setExportStatus("Xerando PDF...");
+  setExportStatus("");
   try {
     const response = await fetch("../api/pdf/piece-draft", {
       method: "POST",
@@ -3736,7 +3752,7 @@ async function saveTerritoryTrait(root = $("#view-territory")) {
     if (feedback) feedback.textContent = "Escribe o trazo antes de gardar.";
     return;
   }
-  if (feedback) feedback.textContent = "Gardando...";
+  setLoading(feedback, "Gardando");
   try {
     const response = await fetch("../api/territory-traits", {
       method: "POST",
@@ -4399,7 +4415,7 @@ async function importCoplaJson() {
     const text = await file.text();
     const payload = JSON.parse(text);
     if (!payload || !Array.isArray(payload.coplas)) throw new Error("O JSON debe ter a forma { \"coplas\": [...] }.");
-    if (feedback) feedback.textContent = "Importando coplas...";
+    setLoading(feedback, "Importando coplas");
     const response = await fetch("../api/coplas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4499,7 +4515,7 @@ async function saveCoplaDirect() {
       return;
     }
   }
-  feedback.textContent = "Gardando na base local...";
+  setLoading(feedback, "Gardando na base local");
   try {
     const response = await fetch("../api/coplas", {
       method: "POST",
@@ -4809,7 +4825,7 @@ async function fetchMediaMetadata(options = {}) {
     if (!options.silent && feedback) feedback.textContent = "Pega primeiro unha URL.";
     return;
   }
-  if (feedback && !options.silent) feedback.textContent = "Lendo metadatos da ligazón...";
+  if (feedback && !options.silent) setLoading(feedback, "Lendo metadatos da ligazón");
   try {
     const kind = mediaKind({ url });
     if ($("#mediaKind") && kind !== "web" && kind !== "media") $("#mediaKind").value = kind;
@@ -4832,7 +4848,7 @@ async function saveMediaDirect() {
   if (!payload) return;
   const wasEditing = Boolean(state.mediaEditingId);
   const feedback = $("#mediaFeedback");
-  feedback.textContent = wasEditing ? "Gardando cambios..." : "Gardando media na base local...";
+  setLoading(feedback, wasEditing ? "Gardando cambios" : "Gardando media na base local");
   try {
     const response = await fetch("../api/media", {
       method: "POST",

@@ -28,11 +28,11 @@
  *   - Xeración de PDF (depende de Cloudflare Browser Rendering, sen empezar).
  *   - POST /api/submissions (achegas públicas pendentes de revisión).
  *   - Turnstile + rate limiting nas rutas públicas de escritura.
- *   - Autenticación real de administración: por agora confíase en que
- *     Cloudflare Access garda TODO o Worker antes de que calquera petición
- *     chegue aquí (ver README.md "Acceso"); non hai ADMIN_TOKEN aplicado
- *     no código, aínda que a variable segue dispoñible por se fai falla
- *     coma defensa extra no futuro.
+ *   - Autenticación: login con Google e roles (foleante / guia / admin)
+ *     máis abaixo, na sección "Identidade e roles". A consulta é libre; as
+ *     escrituras (coplas, media, melodías) piden rol guía ou admin. O
+ *     contrasinal único SITE_PASSWORD segue dispoñible pero, se se quere o
+ *     sitio aberto ao público, hai que quitalo (`wrangler secret delete`).
  *   - Atomicidade parcial: cada copla do payload procésase coas súas
  *     propias escrituras secuenciais (non hai unha soa transacción que
  *     cubra TODAS as coplas dun payload con varias á vez); un fallo a
@@ -1606,6 +1606,302 @@ function pdfResponse(pdfBuffer, filename) {
 }
 
 // ---------------------------------------------------------------------
+// Identidade e roles (login con Google)
+//
+// Tres roles: "foleante" (consulta e ten o seu espazo), "guia" (da de alta,
+// edita e borra coplas, recursos e melodías) e "admin" (ademais, reparte
+// roles). A consulta segue sendo libre: só as escrituras piden sesión.
+//
+// Variables: GOOGLE_CLIENT_ID (var), GOOGLE_CLIENT_SECRET (secret),
+// ADMIN_EMAILS (var, correos separados por comas: sempre son admin ao entrar).
+// AUTH_DISABLED="true" abre as escrituras sen login (só para desenvolvemento).
+// Sen Google configurado e sen AUTH_DISABLED, as escrituras quedan PECHADAS.
+// A sesión é unha cookie HttpOnly co token; na D1 só se garda o seu hash.
+// ---------------------------------------------------------------------
+
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const ROLES = ["foleante", "guia", "admin"];
+const EDITOR_ROLES = ["guia", "admin"];
+const SESSION_COOKIE = "folear_session";
+const OAUTH_COOKIE = "folear_oauth";
+const SESSION_DAYS = 30;
+const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+
+function authMode(env) {
+  if (String(env.AUTH_DISABLED || "").toLowerCase() === "true") return "open";
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) return "google";
+  return "unconfigured";
+}
+
+function adminEmails(env) {
+  return String(env.ADMIN_EMAILS || "")
+    .split(",")
+    .map(item => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function parseCookies(request) {
+  const out = {};
+  for (const part of (request.headers.get("cookie") || "").split(";")) {
+    const index = part.indexOf("=");
+    if (index < 0) continue;
+    out[part.slice(0, index).trim()] = part.slice(index + 1).trim();
+  }
+  return out;
+}
+
+function buildCookie(name, value, url, { maxAge, path = "/" } = {}) {
+  const parts = [`${name}=${value}`, `Path=${path}`, "HttpOnly", "SameSite=Lax"];
+  if (url.protocol === "https:") parts.push("Secure");
+  if (maxAge !== undefined) parts.push(`Max-Age=${maxAge}`);
+  return parts.join("; ");
+}
+
+function randomToken(bytes = 32) {
+  const buffer = new Uint8Array(bytes);
+  crypto.getRandomValues(buffer);
+  return btoa(String.fromCharCode(...buffer)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function base64UrlToString(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
+  const binary = atob(padded);
+  return new TextDecoder().decode(Uint8Array.from(binary, char => char.charCodeAt(0)));
+}
+
+// Só rutas internas do propio sitio como destino despois do login.
+function safeNextPath(value) {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/";
+  return value;
+}
+
+function redirectResponse(location, cookies = []) {
+  const headers = new Headers({ location, "cache-control": "no-store" });
+  cookies.forEach(cookie => headers.append("set-cookie", cookie));
+  return new Response(null, { status: 302, headers });
+}
+
+function jsonNoStore(data, { env, status = 200, cookies = [] } = {}) {
+  const headers = new Headers({ ...JSON_HEADERS, ...corsHeaders(env), "cache-control": "no-store" });
+  cookies.forEach(cookie => headers.append("set-cookie", cookie));
+  return new Response(JSON.stringify(data), { status, headers });
+}
+
+// Defensa en profundidade contra CSRF (a cookie xa é SameSite=Lax): unha
+// escritura cunha orixe distinta da do propio sitio rexéitase.
+function assertSameOrigin(request, url) {
+  if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return;
+  const origin = request.headers.get("origin");
+  if (origin && origin !== url.origin) throw new HttpError(403, "Orixe non permitida.");
+}
+
+async function getViewer(request, env) {
+  const mode = authMode(env);
+  if (mode === "open") return { id: 0, name: "Acceso aberto", email: "", picture: null, role: "admin", open: true };
+  if (mode !== "google") return null;
+  const token = parseCookies(request)[SESSION_COOKIE];
+  if (!token) return null;
+  try {
+    const row = await env.DB.prepare(
+      `SELECT u.id, u.name, u.email, u.picture, u.role, s.expires_at
+       FROM sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = ?`
+    ).bind(await sha256Hex(token)).first();
+    if (!row || Date.parse(row.expires_at) <= Date.now()) return null;
+    return { id: row.id, name: row.name, email: row.email, picture: row.picture, role: row.role };
+  } catch (err) {
+    if (/no such table/i.test(String(err && err.message))) return null;
+    throw err;
+  }
+}
+
+async function requireRole(request, env, url, roles) {
+  assertSameOrigin(request, url);
+  const viewer = await getViewer(request, env);
+  if (!viewer) {
+    if (authMode(env) === "unconfigured") {
+      throw new HttpError(503, "O acceso con Google aínda non está configurado no servidor, así que as escrituras están pechadas.");
+    }
+    throw new HttpError(401, "Tes que entrar con Google para facer isto.");
+  }
+  if (!roles.includes(viewer.role)) {
+    throw new HttpError(403, roles.includes("guia") ? "O teu rol non permite facer isto: fai falla ser guía." : "Isto só o pode facer unha persoa admin.");
+  }
+  return viewer;
+}
+
+function publicViewer(viewer) {
+  return viewer && { id: viewer.id, name: viewer.name, email: viewer.email, picture: viewer.picture, role: viewer.role, open: Boolean(viewer.open) };
+}
+
+async function handleAuthMe(request, env) {
+  const viewer = await getViewer(request, env);
+  return jsonNoStore({ ok: true, mode: authMode(env), user: publicViewer(viewer) }, { env });
+}
+
+async function handleGoogleStart(request, env, url) {
+  if (authMode(env) !== "google") return redirectResponse("/?auth_error=config");
+  try {
+    await env.DB.prepare("SELECT 1 FROM users LIMIT 1").first();
+  } catch (err) {
+    return redirectResponse("/?auth_error=migration");
+  }
+  const state = randomToken(16);
+  const nonce = randomToken(16);
+  const next = safeNextPath(url.searchParams.get("next"));
+  const authUrl = new URL(env.GOOGLE_AUTH_URL || GOOGLE_AUTH_URL);
+  authUrl.search = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    redirect_uri: `${url.origin}/api/auth/google/callback`,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    nonce,
+    prompt: "select_account",
+  }).toString();
+  const cookie = buildCookie(OAUTH_COOKIE, `${state}.${nonce}.${encodeURIComponent(next)}`, url, { maxAge: 600, path: "/api/auth" });
+  return redirectResponse(authUrl.toString(), [cookie]);
+}
+
+// O id_token chega directamente de Google por HTTPS (endpoint de tokens),
+// polo que non fai falla verificar a sinatura, só os seus campos.
+async function exchangeGoogleCode(env, code, redirectUri, nonce) {
+  const response = await fetch(env.GOOGLE_TOKEN_URL || GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data || !data.id_token) {
+    throw new Error(`Google rexeitou o código (${response.status}${data && data.error ? `: ${data.error}` : ""})`);
+  }
+  const claims = JSON.parse(base64UrlToString(String(data.id_token).split(".")[1] || ""));
+  if (!["https://accounts.google.com", "accounts.google.com"].includes(claims.iss)) throw new Error("Emisor do token non válido");
+  if (claims.aud !== env.GOOGLE_CLIENT_ID) throw new Error("Audiencia do token non válida");
+  if (!claims.exp || claims.exp * 1000 < Date.now() - 60000) throw new Error("Token caducado");
+  if (!nonce || claims.nonce !== nonce) throw new Error("Nonce non válido");
+  if (!(claims.email_verified === true || claims.email_verified === "true")) throw new Error("O correo de Google non está verificado");
+  if (!claims.sub || !claims.email) throw new Error("O token non traía identidade");
+  return claims;
+}
+
+async function handleGoogleCallback(request, env, url) {
+  const clear = buildCookie(OAUTH_COOKIE, "", url, { maxAge: 0, path: "/api/auth" });
+  const fail = code => redirectResponse(`/?auth_error=${code}`, [clear]);
+  if (authMode(env) !== "google") return fail("config");
+  const [cookieState, nonce, ...rest] = (parseCookies(request)[OAUTH_COOKIE] || "").split(".");
+  let next = "/";
+  try {
+    next = safeNextPath(decodeURIComponent(rest.join(".")));
+  } catch (err) {
+    next = "/";
+  }
+  if (url.searchParams.get("error")) return fail("denied");
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  if (!code || !state || !cookieState || state !== cookieState) return fail("state");
+
+  let claims;
+  try {
+    claims = await exchangeGoogleCode(env, code, `${url.origin}/api/auth/google/callback`, nonce);
+  } catch (err) {
+    console.error("Login con Google fallou:", err && err.message);
+    return fail("google");
+  }
+
+  const db = env.DB;
+  const email = String(claims.email).toLowerCase();
+  const name = claims.name || email.split("@")[0];
+  const picture = claims.picture || null;
+  const isAdmin = adminEmails(env).includes(email);
+  let userId;
+  try {
+    const existing = await db.prepare("SELECT id, role FROM users WHERE google_sub = ?").bind(claims.sub).first();
+    if (existing) {
+      userId = existing.id;
+      const role = isAdmin ? "admin" : existing.role;
+      await db.prepare(
+        "UPDATE users SET email = ?, name = ?, picture = ?, role = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).bind(email, name, picture, role, userId).run();
+    } else {
+      const result = await db.prepare(
+        "INSERT INTO users (google_sub, email, name, picture, role, last_login_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)"
+      ).bind(claims.sub, email, name, picture, isAdmin ? "admin" : "foleante").run();
+      userId = result.meta.last_row_id;
+    }
+    const token = randomToken(32);
+    const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
+    await db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
+      .bind(await sha256Hex(token), userId, expires).run();
+    await db.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(new Date().toISOString()).run();
+    const session = buildCookie(SESSION_COOKIE, token, url, { maxAge: SESSION_DAYS * 86400 });
+    return redirectResponse(next, [session, clear]);
+  } catch (err) {
+    console.error("Non se puido gardar a sesión:", err && err.message);
+    return fail("db");
+  }
+}
+
+async function handleLogout(request, env, url) {
+  assertSameOrigin(request, url);
+  const token = parseCookies(request)[SESSION_COOKIE];
+  if (token) {
+    try {
+      await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256Hex(token)).run();
+    } catch (err) {
+      // Sen táboa non hai sesión que pechar.
+    }
+  }
+  return jsonNoStore({ ok: true }, { env, cookies: [buildCookie(SESSION_COOKIE, "", url, { maxAge: 0 })] });
+}
+
+async function handleUsersList(request, env, url) {
+  await requireRole(request, env, url, ["admin"]);
+  const { results } = await env.DB.prepare(
+    "SELECT id, email, name, picture, role, created_at, last_login_at FROM users ORDER BY role = 'admin' DESC, role = 'guia' DESC, created_at"
+  ).all();
+  const fixed = new Set(adminEmails(env));
+  return jsonNoStore({ ok: true, users: results.map(row => ({ ...row, fixed_admin: fixed.has(String(row.email).toLowerCase()) })) }, { env });
+}
+
+async function handleUserRole(request, env, url) {
+  const viewer = await requireRole(request, env, url, ["admin"]);
+  const payload = await request.json();
+  const id = payload && payload.id;
+  const role = payload && payload.role;
+  if (!Number.isInteger(id)) throw new HttpError(400, "Falta o id da persoa.");
+  if (!ROLES.includes(role)) throw new HttpError(400, `Rol descoñecido: ${role}.`);
+  const target = await env.DB.prepare("SELECT id, email, role FROM users WHERE id = ?").bind(id).first();
+  if (!target) throw new HttpError(404, "Non existe esa persoa.");
+  if (adminEmails(env).includes(String(target.email).toLowerCase()) && role !== "admin") {
+    throw new HttpError(400, "Esa conta é admin pola configuración do servidor; non se pode baixar de rol aquí.");
+  }
+  if (target.id === viewer.id && role !== "admin") {
+    throw new HttpError(400, "Non podes quitarte a ti mesma o rol de admin.");
+  }
+  await env.DB.prepare("UPDATE users SET role = ? WHERE id = ?").bind(role, id).run();
+  return jsonNoStore({ ok: true, id, role }, { env });
+}
+
+// ---------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------
 
@@ -1649,39 +1945,64 @@ export default {
       if (request.method === "GET" && url.pathname === "/data/exports/melodias/melodias.json") {
         return jsonResponse(await exportMelodiasJson(env), { env });
       }
+      if (request.method === "GET" && url.pathname === "/api/auth/me") {
+        return await handleAuthMe(request, env);
+      }
+      if (request.method === "GET" && url.pathname === "/api/auth/google") {
+        return await handleGoogleStart(request, env, url);
+      }
+      if (request.method === "GET" && url.pathname === "/api/auth/google/callback") {
+        return await handleGoogleCallback(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/auth/logout") {
+        return await handleLogout(request, env, url);
+      }
+      if (request.method === "GET" && url.pathname === "/api/users") {
+        return await handleUsersList(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/api/users/role") {
+        return await handleUserRole(request, env, url);
+      }
       if (request.method === "GET" && url.pathname === "/api/link-preview") {
+        await requireRole(request, env, url, EDITOR_ROLES);
         return await handleLinkPreview(env, url);
       }
       if (request.method === "GET" && url.pathname === "/api/pdf-proxy") {
         return await handlePdfProxy(env, url);
       }
       if (request.method === "POST" && url.pathname === "/api/melodies") {
+        await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json();
         const ids = await importMelodies(env, payload);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "DELETE" && url.pathname === "/api/melodies") {
+        await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json().catch(() => ({}));
         const ids = await deleteMelodies(env, payload.ids);
         return jsonResponse({ ok: true, ids }, { env });
       }
 
       if (request.method === "POST" && url.pathname === "/api/coplas") {
+        await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json();
         const ids = await importCoplas(env, payload);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "DELETE" && url.pathname === "/api/coplas") {
+        await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json().catch(() => ({}));
         const ids = await deleteCoplas(env, payload.ids);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "POST" && url.pathname === "/api/media") {
+        await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json();
         const ids = await importMedia(env, payload);
         return jsonResponse({ ok: true, ids }, { env });
       }
       if (request.method === "DELETE" && url.pathname === "/api/media") {
+        await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json().catch(() => ({}));
         const ids = await deleteMedia(env, payload.ids);
         return jsonResponse({ ok: true, ids }, { env });
@@ -1716,7 +2037,7 @@ export default {
       return errorResponse("Endpoint non atopado.", { status: 404, env });
     } catch (err) {
       return errorResponse(err instanceof Error ? err.message : String(err), {
-        status: 400,
+        status: err instanceof HttpError ? err.status : 400,
         env,
       });
     }

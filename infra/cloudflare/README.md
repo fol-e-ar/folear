@@ -186,6 +186,60 @@ provisional) chega; se no futuro hai orzamento, migrar a Cloudflare
 Access segue sendo unha mellora doada (a lóxica de `checkSitePassword`
 sinxelamente quitaríase).
 
+## Usuarias e roles (login con Google)
+
+A plataforma pódese **consultar libremente**, coma unha wikipedia. Para
+escribir fai falla entrar con Google e ter rol **guía** ou **admin**:
+
+| Rol | Que pode facer |
+|---|---|
+| visitante (sen entrar) | consultar todo |
+| `foleante` | consultar (rol por defecto de quen entra por primeira vez); no futuro, espazo propio con favoritos e pezas persoais |
+| `guia` | dar de alta, editar e borrar coplas, recursos e melodías |
+| `admin` | o mesmo ca guía + ver a lista de persoas e cambiar roles (botón «Persoas») |
+
+As contas listadas en `ADMIN_EMAILS` son **sempre admin** ao entrar (non se
+poden baixar desde a interface). O resto entra coma `foleante` e unha persoa
+admin promóveas a `guia` desde «Persoas».
+
+Implementación (`src/worker.js`, bloque «Identidade e roles»): fluxo OAuth 2.0
+«authorization code» con Google; a sesión é un token aleatorio nunha cookie
+`folear_session` (HttpOnly, SameSite=Lax, Secure en https) e en D1 só se
+garda o seu hash SHA-256 (táboas `users` e `sessions`, migración
+`0003_users.sql`). As peticións que escriben comproban ademais que a cabeceira
+`Origin` coincida co sitio (defensa CSRF). No navegador, `frontend/js/auth.js`
+só mostra/agocha botóns; quen manda é sempre o servidor.
+
+### Posta en marcha
+
+1. **Google Cloud** (gratis): crear proxecto → «Google Auth Platform» →
+   pantalla de consentimento (Externa, nome «Fol e ar», dominio autorizado
+   `folear.gal`, ámbitos `openid`, `email`, `profile`; publicar en
+   «Produción» para que non quede limitada a usuarias de proba) →
+   Credenciais → ID de cliente OAuth → «Aplicación web» → URIs de
+   redirección autorizados:
+   - `https://folear.gal/api/auth/google/callback`
+   - `https://fol-e-ar-api.<subdominio>.workers.dev/api/auth/google/callback` (proba)
+   - `http://localhost:8787/api/auth/google/callback` (só para `wrangler dev`)
+2. En `wrangler.toml` (non se sube a git) engadir en `[vars]`:
+   `GOOGLE_CLIENT_ID = "...apps.googleusercontent.com"` e
+   `ADMIN_EMAILS = "folear3@gmail.com"` (varias separadas por comas).
+3. `npx wrangler secret put GOOGLE_CLIENT_SECRET`
+4. Aplicar a migración na D1 remota:
+   `npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0003_users.sql`
+5. `npx wrangler deploy`
+6. Se estaba posto `SITE_PASSWORD` e se quere que o sitio sexa público:
+   `npx wrangler secret delete SITE_PASSWORD`.
+
+### Modos (`GET /api/auth/me` devolve o activo)
+
+- `google`: `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` presentes. Modo normal.
+- `unconfigured`: sen credenciais de Google. **Escritura pechada** (falla
+  pechado); a consulta segue aberta.
+- `open`: `AUTH_DISABLED = "true"`. Sen login, calquera pode escribir. Só para
+  desenvolvemento.
+- En local (`tools/local_server.py`) non hai login: a persoa é sempre admin.
+
 ## Xeración de PDF
 
 Pezas e territorios pódense exportar a PDF dende o propio Worker, usando

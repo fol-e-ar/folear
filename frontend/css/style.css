@@ -4667,7 +4667,107 @@ label {
   fill: var(--accent-on-dark);
 }
 
-/* Carga: o fol baleirándose e enchéndose sobre a trama */
+/* Carga: o anel do isotipo completándose; ao pecharse sae o ar (o punto).
+   Úsase en todo o que carga: loaderHtml()/setLoading() en utils.js. */
+
+.fol-loader {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.fol-loader-mark {
+  width: 1.15em;
+  height: 1.2em;
+}
+
+.fol-loader-mark path {
+  stroke-dasharray: 0 100;
+  animation: fol-completa 1.4s cubic-bezier(0.6, 0, 0.3, 1) infinite;
+}
+
+.fol-loader-mark circle {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ar-sae 1.4s ease-out infinite;
+}
+
+.btn.primary .fol-loader-mark circle,
+.mobile-nav .fol-loader-mark circle {
+  fill: var(--accent-on-dark);
+}
+
+@keyframes fol-completa {
+  0% { stroke-dasharray: 0 100; }
+  72%, 100% { stroke-dasharray: 100 100; }
+}
+
+@keyframes ar-sae {
+  0%, 66% { opacity: 0; transform: scale(0.3); }
+  80% { opacity: 1; transform: scale(1.3); }
+  90%, 100% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fol-loader-mark path,
+  .fol-loader-mark circle {
+    animation: none;
+    stroke-dasharray: none;
+    opacity: 1;
+  }
+}
+
+/* Botón de recentrar o mapa: o isotipo */
+
+.floating-reset .isotipo {
+  width: 19px;
+  height: 20px;
+  color: var(--ink);
+}
+
+/* Carga das capas do mapa */
+
+.map-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 820;
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--float-bg);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.map-loading[hidden] {
+  display: none;
+}
+
+.map-loading .fol-loader-mark {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+/* Miniaturas de PDF mentres se debuxan */
+
+.media-preview[data-pdf-state="loading"] {
+  position: relative;
+}
+
+.media-preview[data-pdf-state="loading"] .fol-loader {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  font-size: 15px;
+}
+
+/* Pantalla de carga inicial, sobre a trama */
 
 .global-loading {
   background-color: var(--bg);
@@ -4686,17 +4786,6 @@ label {
   border-radius: 50%;
 }
 
-.global-loading-mark path {
-  stroke-dasharray: 100 200;
-  animation: fol-respira 1.8s ease-in-out infinite alternate;
-}
-
-.global-loading-mark circle {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: ar-escapa 1.8s ease-in-out infinite alternate;
-}
-
 .global-loading p {
   margin: 0;
   padding: 4px 12px;
@@ -4704,16 +4793,6 @@ label {
   font-size: 12px;
   background: var(--bg);
   border-radius: 999px;
-}
-
-@keyframes fol-respira {
-  from { stroke-dasharray: 100 200; }
-  to { stroke-dasharray: 80 200; }
-}
-
-@keyframes ar-escapa {
-  from { transform: translate(0, 0); opacity: 1; }
-  to { transform: translate(5px, -5px); opacity: 0.35; }
 }
 
 /* Sobre o arquivo: logotipo grande e ondas de ar */

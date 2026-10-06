@@ -88,3 +88,15 @@ export function formatCount(n, singular, plural = null) {
 export function isNonEmptyArray(value) {
   return Array.isArray(value) && value.length > 0;
 }
+
+// Indicador de carga da marca: o anel do isotipo completándose
+// e o punto (o ar) aparecendo ao pechalo. Estilos en style.css (MARCA).
+export function loaderHtml(label = "") {
+  const text = label ? `<span class="fol-loader-label">${escapeHtml(label)}</span>` : "";
+  const name = label ? "" : ' aria-label="Cargando"';
+  return `<span class="fol-loader" role="status"${name}><svg class="isotipo fol-loader-mark" viewBox="8 9 48 50" aria-hidden="true" focusable="false"><path pathLength="100" d="M50.79 27.16A20 20 0 1 1 38.84 15.21"/><circle cx="51.1" cy="14.9" r="4.2"/></svg>${text}</span>`;
+}
+
+export function setLoading(node, label = "") {
+  if (node) node.innerHTML = loaderHtml(label);
+}

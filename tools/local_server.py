@@ -155,6 +155,16 @@ class LocalHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path == "/api/auth/me":
+            # Modo local: sen login, quen usa o servidor local é admin. O
+            # frontend le isto para saber que botóns de edición amosar.
+            self._send_json(200, {
+                "ok": True,
+                "mode": "local",
+                "user": {"id": 0, "name": "Modo local", "email": "", "picture": None, "role": "admin", "open": True},
+            })
+            return
+
         if path.startswith("/api/pieces/") and path.endswith("/pdf"):
             piece_id = path.removeprefix("/api/pieces/").removesuffix("/pdf").strip("/")
             try:

@@ -1,3 +1,4 @@
+import { loaderHtml } from "./utils.js";
 // Miniaturas da primeira páxina dos PDFs.
 //
 // As tarxetas de media con PDF levan `data-pdf-thumb="<url>"`. Cando unha
@@ -105,6 +106,8 @@ function pump() {
     const node = queue.shift();
     const url = node.dataset.pdfThumb;
     active += 1;
+    node.dataset.pdfState = "loading";
+    node.insertAdjacentHTML("beforeend", loaderHtml());
     renderFirstPage(url)
       .then(dataUrl => {
         cacheSet(url, dataUrl);
@@ -112,6 +115,7 @@ function pump() {
       })
       .catch(error => {
         console.warn("Sen miniatura de PDF:", url, error?.message || error);
+        node.querySelector(".fol-loader")?.remove();
         node.dataset.pdfState = "error";
       })
       .finally(() => {
