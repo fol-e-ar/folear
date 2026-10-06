@@ -4722,7 +4722,7 @@ label {
 /* Botón de recentrar o mapa: o isotipo */
 
 .floating-reset .isotipo {
-  width: 19px;
+  width: 20px;
   height: 20px;
   color: var(--ink);
 }
