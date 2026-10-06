@@ -1,5 +1,7 @@
 # Arquitectura de destino · Fol e ar en Cloudflare
 
+> **Documento de deseño inicial.** A arquitectura xa está despregada en produción; para o estado actual e a operación ver `README.md`, `docs/operacion.md` e `infra/cloudflare/README.md`. Os documentos citados abaixo (`auditoria-tecnica.md`, `redesign-plan.md`, `notes.md`) están agora en `docs/arquivo/`.
+
 Complementa `docs/auditoria-tecnica.md` (o diagnóstico) e
 `docs/redesign-plan.md`/`docs/notes.md` (xa vixentes e correctos para o
 modelo de datos actual). Este documento define a arquitectura de produción

@@ -736,7 +736,7 @@ function bindBack(view) {
   view.querySelectorAll("[data-people-back]").forEach(link => link.addEventListener("click", event => {
     event.preventDefault();
     S.personHandle = "";
-    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    history.pushState({ fv: "people" }, "", `${window.location.pathname}${window.location.search}`);
     renderPeople();
   }));
 }

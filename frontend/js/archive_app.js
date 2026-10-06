@@ -60,6 +60,7 @@ function saveViewPref(key, value) {
 }
 
 const state = {
+  historyReady: false,
   territorios: [],
   coplas: [],
   pezas: [],
@@ -198,6 +199,19 @@ function isEditorAccount() {
 
 function notify(message) {
   if (window.folearAuth?.toast) window.folearAuth.toast(message);
+}
+
+// Os PDFs xéranse no servidor con cota limitada: en produción só para contas.
+function pdfNeedsLogin() {
+  const info = authInfo();
+  return info.mode === "google" && !info.user;
+}
+
+function pdfErrorMessage(error) {
+  const text = String(error?.message || "");
+  // Mensaxes do servidor (galego) pásanse tal cal; o resto, xenérico.
+  if (text && !/^HTTP \d+$|^Resposta inesperada|Failed to fetch|NetworkError|Load failed/i.test(text)) return text;
+  return "Non foi posíbel xerar o PDF agora. Téntao de novo en pouco.";
 }
 
 function loginLink() {
@@ -1556,15 +1570,28 @@ function bindMobileExplore() {
   });
 }
 
-function setView(viewName) {
+// Historial: cada cambio de vista engade unha entrada (botón Atrás do navegador).
+// As entradas propias levan `history.state.fv`; unha entrada sen marcar (p. ex. a
+// que crea unha ligazón #/...) márcase en vez de duplicarse.
+
+function routeUrl(keepHash) {
+  return `${window.location.pathname}${window.location.search}${keepHash ? window.location.hash : ""}`;
+}
+
+function setView(viewName, { push = true } = {}) {
   const previousView = state.view;
   state.view = normalizeView(viewName);
-  if (state.dataReady && state.view !== "pieces" && window.location.hash.startsWith("#/autoria/")) {
-    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-  }
-  if (state.view !== "about" && state.aboutPrivacy) {
-    state.aboutPrivacy = false;
-    if (window.location.hash === "#/privacidade") history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  const hash = window.location.hash;
+  const leavesAuthor = state.dataReady && state.view !== "pieces" && hash.startsWith("#/autoria/");
+  const leavesPerson = state.view !== "people" && hash.startsWith("#/persoa/");
+  const leavesPrivacy = state.view !== "about" && state.aboutPrivacy;
+  if (leavesPrivacy) state.aboutPrivacy = false;
+  const clearHash = leavesAuthor || leavesPerson || (leavesPrivacy && hash === "#/privacidade");
+  if (state.historyReady) {
+    const changed = state.view !== previousView;
+    if (push && changed && history.state?.fv) history.pushState({ fv: state.view }, "", routeUrl(!clearHash));
+    else if (push && changed) history.replaceState({ fv: state.view }, "", routeUrl(!clearHash));
+    else if (clearHash) history.replaceState({ fv: state.view }, "", routeUrl(false));
   }
   all(".view").forEach(view => view.classList.toggle("active", view.id === `view-${state.view}`));
   all("[data-view]").forEach(button => button.classList.toggle("active", normalizeView(button.dataset.view) === state.view));
@@ -2544,7 +2571,9 @@ function openPieceDrawer(pieceId) {
       </div>
       ${pieceManageMarkup(piece)}
       <div class="drawer-actions">
-        <button class="btn primary" type="button" data-download-piece-pdf="${piece.id}">Descargar PDF</button>
+        ${pdfNeedsLogin()
+          ? `<a class="btn primary" href="${escapeHtml(loginLink())}">Entra para descargar o PDF</a>`
+          : `<button class="btn primary" type="button" data-download-piece-pdf="${piece.id}">Descargar PDF</button>`}
       </div>
     </aside>
   `;
@@ -2725,10 +2754,7 @@ async function downloadPieceRecordPdf(piece, button) {
     openPdfViewer(blob, filename);
   } catch (error) {
     console.error("Erro xerando PDF da peza", error);
-    const localHint = location.hostname.includes("localhost") || location.hostname === "127.0.0.1"
-      ? "Non foi posíbel xerar o PDF desta peza."
-      : "A exportación PDF require abrir Fol e Ar co servidor local.";
-    window.alert(localHint);
+    notify(pdfErrorMessage(error));
   } finally {
     if (button) {
       button.disabled = false;
@@ -2878,14 +2904,14 @@ function openAuthor(name) {
   state.pieceScope = "all";
   state.pieceRepositoryQuery = "";
   state.pieceRhythmQuery = "";
-  history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/autoria/${slugify(name)}`);
-  if (state.view === "pieces") renderPiecesView(); else setView("pieces");
+  history.pushState({ fv: "pieces" }, "", `${window.location.pathname}${window.location.search}#/autoria/${slugify(name)}`);
+  if (state.view === "pieces") renderPiecesView(); else setView("pieces", { push: false });
   window.scrollTo(0, 0);
 }
 
 function closeAuthor() {
   state.pieceAuthorFilter = "";
-  if (window.location.hash.startsWith("#/autoria/")) history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  if (window.location.hash.startsWith("#/autoria/")) history.pushState({ fv: "pieces" }, "", routeUrl(false));
   renderPiecesView();
 }
 
@@ -3365,7 +3391,7 @@ function pieceScopeMarkup() {
       </div>`;
   }
   if (isGoogleMode() && info.ready) {
-    return `<p class="piece-login-note muted">Para gardar as túas pezas (privadas ou na biblioteca) e velas no teu perfil, <a href="${escapeHtml(loginLink())}" id="pieceLoginToSave">entra con Google</a>. Podes compoñelas e exportalas en PDF sen conta.</p>`;
+    return `<p class="piece-login-note muted">Para gardar as túas pezas (privadas ou na biblioteca) e velas no teu perfil, <a href="${escapeHtml(loginLink())}" id="pieceLoginToSave">entra con Google</a>. Podes compoñelas sen conta; para exportalas en PDF tamén tes que entrar.</p>`;
   }
   return "";
 }
@@ -3867,13 +3893,13 @@ async function materializeDraftCoplas(draft) {
 }
 
 // Con login (modo google) gardar é cousa de contas: a peza queda na conta da
-// persoa, privada ou pública. Sen conta só se pode compoñer e exportar en PDF.
+// persoa, privada ou pública. Sen conta só se pode compoñer o borrador.
 function promptLoginToSave() {
   rememberWorkshopForLogin();
   const status = $("#pieceExportStatus");
   if (status) {
     status.classList.add("is-error");
-    status.innerHTML = `Para gardar a peza precisas unha conta. O borrador non se perde e podes exportalo en PDF igualmente. <a href="${escapeHtml(loginLink())}">Entrar con Google</a>`;
+    status.innerHTML = `Para gardar a peza precisas unha conta. O borrador non se perde. <a href="${escapeHtml(loginLink())}">Entrar con Google</a>`;
   }
   status?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
 }
@@ -3946,7 +3972,7 @@ async function savePieceDirect() {
       saveDraft(draft);
     }
     const payload = buildPieceDbPayload();
-    setLoading(feedback, "Gardando peza na base local");
+    setLoading(feedback, "Gardando peza");
     const response = await fetch("../api/pieces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4023,6 +4049,15 @@ function openPdfViewer(blob, filename) {
 
 async function exportPiecePdf() {
   if (state.pdfBusy) return;
+  if (pdfNeedsLogin()) {
+    rememberWorkshopForLogin();
+    const status = $("#pieceExportStatus");
+    if (status) {
+      status.classList.add("is-error");
+      status.innerHTML = `Para exportar en PDF tes que entrar con Google. O borrador non se perde. <a href="${escapeHtml(loginLink())}">Entrar con Google</a>`;
+    }
+    return;
+  }
   const button = $("#openA4");
   state.pdfBusy = true;
   if (button) {
@@ -4054,10 +4089,7 @@ async function exportPiecePdf() {
     setExportStatus("");
   } catch (error) {
     console.error("Erro xerando PDF", error);
-    const localHint = location.hostname.includes("localhost") || location.hostname === "127.0.0.1"
-      ? "Non foi posíbel xerar o PDF."
-      : "A exportación PDF require abrir Fol e Ar co servidor local.";
-    setExportStatus(localHint, true);
+    setExportStatus(pdfErrorMessage(error), true);
   } finally {
     state.pdfBusy = false;
     if (button) {
@@ -4523,7 +4555,7 @@ function renderSubmitView() {
             ${editing
               ? `<button class="btn primary" type="button" id="saveDirect">Gardar cambios</button>`
               : `<button class="btn" type="button" id="queueCopla">+ Engadir á lista</button>
-                 <button class="btn primary" type="button" id="saveDirect">${state.submitBatch.length ? `Gardar todas (${state.submitBatch.length})` : "Gardar na base local"}</button>`}
+                 <button class="btn primary" type="button" id="saveDirect">${state.submitBatch.length ? `Gardar todas (${state.submitBatch.length})` : "Gardar copla"}</button>`}
           </div>
           <p id="submitFeedback" class="muted"></p>
       </section>
@@ -4532,7 +4564,7 @@ function renderSubmitView() {
       <details class="panel batch-import-panel compact-import">
         <summary>Importar varias coplas desde JSON</summary>
         <div class="compact-import-body">
-          <p class="muted">Escolle un ficheiro co formato de Fol e ar. A importación gárdao na base local e actualiza o repertorio.</p>
+          <p class="muted">Escolle un ficheiro co formato de Fol e ar. A importación gárdao e actualiza o repertorio.</p>
           <div class="compact-import-actions">
             <div class="file-picker">
               <input id="coplaJsonFile" class="visually-hidden" type="file" accept="application/json,.json">
@@ -4778,7 +4810,7 @@ function mediaFormMarkup(selectedMediaTerritories, selectedMediaCoplas) {
         ${mediaMelodyFieldMarkup()}
       </div>
       <div class="gallery-actions">
-        <button class="btn primary" type="button" id="saveMediaDirect">${editing ? "Gardar cambios" : "Gardar media na base local"}</button>
+        <button class="btn primary" type="button" id="saveMediaDirect">${editing ? "Gardar cambios" : "Gardar recurso"}</button>
         <p id="mediaFeedback" class="muted"></p>
       </div>
     </section>
@@ -5123,7 +5155,7 @@ async function saveCoplaDirect() {
       return;
     }
   }
-  setLoading(feedback, "Gardando na base local");
+  setLoading(feedback, "Gardando");
   try {
     const response = await fetch("../api/coplas", {
       method: "POST",
@@ -5570,7 +5602,7 @@ async function saveMediaDirect() {
   if (!payload) return;
   const wasEditing = Boolean(state.mediaEditingId);
   const feedback = $("#mediaFeedback");
-  setLoading(feedback, wasEditing ? "Gardando cambios" : "Gardando media na base local");
+  setLoading(feedback, wasEditing ? "Gardando cambios" : "Gardando recurso");
   try {
     const response = await fetch("../api/media", {
       method: "POST",
@@ -5800,8 +5832,8 @@ function aboutAccountsMarkup() {
     <section class="about-section">
       <div class="about-section-head"><div class="eyebrow">Contas</div><h2>Para consultar non fai falta conta</h2></div>
       <div class="about-cards">
-        <article class="panel"><h3>Sen conta</h3><p>Podes consultar todo o arquivo e compoñer pezas no obradoiro, tamén exportalas en PDF. Non se che pide ningún dato.</p></article>
-        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo: favoritos de coplas, lugares, etiquetas, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
+        <article class="panel"><h3>Sen conta</h3><p>Podes consultar todo o arquivo e compoñer pezas no obradoiro. Non se che pide ningún dato.</p></article>
+        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo e podes exportar PDFs: favoritos de coplas, lugares, etiquetas, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
         <article class="panel"><h3>Roles</h3><p>A maioría das contas son foleantes. As persoas guía axudan a editar o arquivo e a coidar a biblioteca de pezas; a administración xestiona os roles.</p></article>
       </div>
       <p class="about-cta">${cta}</p>
@@ -5920,13 +5952,18 @@ async function renderAboutPrivacy() {
 
 function openAboutPrivacy() {
   state.aboutPrivacy = true;
-  if (window.location.hash !== "#/privacidade") history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/privacidade`);
-  if (state.view === "about") renderAboutView(); else setView("about");
+  if (window.location.hash !== "#/privacidade") history.pushState({ fv: "about" }, "", `${window.location.pathname}${window.location.search}#/privacidade`);
+  if (state.view === "about") renderAboutView(); else setView("about", { push: false });
+}
+
+function openAboutPrivacyFromRoute() {
+  state.aboutPrivacy = true;
+  if (state.view === "about") renderAboutView(); else setView("about", { push: false });
 }
 
 function closeAboutPrivacy() {
   state.aboutPrivacy = false;
-  if (window.location.hash === "#/privacidade") history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  if (window.location.hash === "#/privacidade") history.pushState({ fv: "about" }, "", routeUrl(false));
   renderAboutView();
   window.scrollTo(0, 0);
 }
@@ -5984,11 +6021,27 @@ function bindGlobalEvents() {
     setCoplaSelectMode(false);
   });
   window.addEventListener("hashchange", () => {
-    if (window.location.hash === "#/privacidade" && !state.aboutPrivacy) openAboutPrivacy();
+    if (!history.state?.fv) history.replaceState({ fv: state.view }, "", window.location.href);
+    if (window.location.hash === "#/privacidade" && !state.aboutPrivacy) openAboutPrivacyFromRoute();
     else if (window.location.hash.startsWith("#/autoria/") && state.dataReady && applyAuthorHash()) {
       closePieceDrawer();
-      if (state.view === "pieces") renderPiecesView(); else setView("pieces");
+      if (state.view === "pieces") renderPiecesView(); else setView("pieces", { push: false });
     }
+  });
+  // Botón Atrás/Adiante: a URL e o estado da entrada mandan.
+  window.addEventListener("popstate", event => {
+    if (!state.historyReady || !state.dataReady) return;
+    const hash = window.location.hash;
+    if (hash.startsWith("#/autoria/")) applyAuthorHash();
+    else state.pieceAuthorFilter = "";
+    state.aboutPrivacy = hash === "#/privacidade";
+    closeCoplaDrawer();
+    closePieceDrawer();
+    closeMelodyDrawer();
+    closePdfViewer();
+    const view = event.state?.fv
+      || (hash.startsWith("#/autoria/") ? "pieces" : hash === "#/privacidade" ? "about" : hash.startsWith("#/persoa/") ? "people" : state.view);
+    setView(view, { push: false });
   });
   document.addEventListener("click", event => {
     const nav = event.target.closest("[data-view]");
@@ -6118,6 +6171,8 @@ async function init() {
   const authorRoute = !coplaId && applyAuthorHash();
   updateMapCard();
   setView(coplaId ? "coplas" : authorRoute ? "pieces" : window.location.hash === "#/privacidade" ? "about" : state.resumeWorkshop ? "pieces" : normalizeView(params.get("mode") || params.get("view") || "map"));
+  history.replaceState({ fv: state.view }, "", window.location.href);
+  state.historyReady = true;
   if (coplaId) openCoplaDrawer(Number(coplaId));
 }
 

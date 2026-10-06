@@ -1,67 +1,44 @@
-# Fol e ar · Cloudflare (infraestrutura de produción, fase 1)
+# Fol e ar · Cloudflare (Worker + D1)
 
-Este directorio contén a arquitectura de produción en Cloudflare descrita en
-`docs/arquitectura-cloudflare.md`. É código novo e illado: **non modifica
-nada do frontend nin do backend Python actuais**, e **non toca
-`data/db/coplas.sqlite`** (todo o que le a SQLite real fai unha conexión de
-só lectura).
+Aquí vive a produción: un **Worker** que serve o frontend (Static Assets) e a API, e unha base **D1**. Para a visión xeral ver o `README.md` da raíz; para operar (desprega, copias, volver atrás) `docs/operacion.md`.
 
-Todo o que hai aquí está preparado e probado localmente (esquema, seed,
-lectura e escritura completas contra unha D1 local emulada por Wrangler).
-Non hai conta nin credenciais de Cloudflare configuradas neste repositorio,
-así que non hai ningún despregamento real feito nin simulado.
-
-## Estado actual (actualizado)
-
-- **Esquema D1** (`migrations/0001_init.sql`): agora coincide co esquema real
-  de `data/db/coplas.sqlite`, incluíndo `coplas.is_volta`,
-  `copla_version_territories` e `territory_traits` (faltaban na primeira
-  versión) e as columnas `inline_text`/`role` de `piece_coplas`.
-- **Lectura** (`src/worker.js`): ademais dos 2 endpoints orixinais
-  (`GET /api/territories`, `GET /api/coplas`, simplificados, de proba de
-  concepto), o Worker agora serve en directo dende D1 os TRES ficheiros que
-  o frontend real xa pide (`frontend/js/api.js`), coa MESMA forma aniñada
-  que xera `backend/services/exporters.py`:
-  - `GET /data/exports/territorios/territorios.json` (con `traits`)
-  - `GET /data/exports/coplas/coplas.json` (con `territories`, `tags`,
-    `versions` e as súas propias `territories` por versión)
-  - `GET /data/exports/media/media.json` (con `links`)
-
-  Todo o demais (`/`, `/js/*`, `/css/*`, `/pages/*`, `/assets/*`) cae ao
-  binding `ASSETS`, é dicir, serve `frontend/` tal cal está, sen tocar nada.
-- **Escritura** (`src/worker.js`): `POST /api/coplas` (crear/editar, coa
-  mesma validación que `import_coplas`/`validate_coplas_payload` en Python:
-  territorios, versións, etiquetas), `DELETE /api/coplas`,
-  `POST /api/media` e `DELETE /api/media` (ídem con `import_media` /
-  `delete_media`). O frontend xa chama a estas rutas exactas
-  (`../api/coplas`, `../api/media`) para gardar e borrar, así que non fixo
-  falla tocar nin unha liña de `frontend/js/archive_app.js` para isto.
-- **Probado**: as catro operacións (crear copla, borrar copla, crear media,
-  borrar media) e os tres exports probáronse de punta a punta contra
-  `wrangler dev` en local (D1 emulada, sen conta de Cloudflare), incluíndo
-  casos de erro (territorio obrigatorio, id inexistente, media sen links).
-  O propio frontend (HTML/CSS/JS/geojson) tamén se comprobou servido a
-  través do binding `ASSETS` do mesmo Worker.
-
-## Que hai aquí
+## O que hai
 
 ```text
 infra/cloudflare/
-├── wrangler.toml.example   # modelo de configuración (copiar a wrangler.toml)
+├── wrangler.toml.example   # modelo de configuración (copiar a wrangler.toml, que non se sube a git)
 ├── .dev.vars.example       # modelo de variables locais (copiar a .dev.vars)
-├── package.json            # dependencia de wrangler, illada do resto do repo
-├── migrations/
-│   └── 0001_init.sql       # esquema D1 completo (ver "Estado actual")
-├── seed/                   # xerado por scripts/export_sqlite_to_d1.py
-│   ├── 01_territories.sql … 12_territory_traits.sql
-│   └── _manifest.json      # reconto de filas exportadas/excluídas por táboa
+├── package.json            # wrangler, illado do resto do repo
+├── migrations/             # 0001..0007, aditivas (ver táboa)
+├── seed/                   # xerado por scripts/export_sqlite_to_d1.py (carga inicial)
 ├── scripts/
-│   ├── export_sqlite_to_d1.py   # SQLite (read-only) -> SQL de seed
-│   └── verify_migration.py      # verifica recontos e integridade do seed
-└── src/
-    └── worker.js            # API completa: lectura dinámica + escritura
-                              # de coplas e media (ver "Estado actual")
+│   ├── export_sqlite_to_d1.py    # SQLite (só lectura) -> SQL de seed
+│   ├── verify_migration.py       # verifica recontos e integridade do seed
+│   └── baseline_migrations.sql   # marca 0001-0005 como aplicadas (unha vez)
+└── src/worker.js           # API: lectura (exports), escritura, login, perfís, pezas, PDF
 ```
+
+## Rutas principais do Worker
+
+- Lectura pública: `GET /data/exports/{territorios,coplas,media,melodias,pezas}/*.json` (caché por versión con ETag), `GET /api/territories`, `GET /api/coplas`, `GET /api/people`, `GET /api/link-preview`, `GET /api/pdf-proxy` (só para PDFs rexistrados na media).
+- Escritura do arquivo (guía/admin): `POST|DELETE /api/coplas`, `/api/media`, `/api/melodies`, `POST /api/territory-traits`.
+- Conta (calquera rol): `/api/auth/*`, `/api/me/*` (perfil, favoritos, seguimentos), `/api/pieces*` (pezas persoais).
+- PDF (con sesión): `GET /api/pieces/:id/pdf`, `POST /api/pdf/piece-draft`, `GET /api/territories/:id/pdf`.
+- Todo o demais cae no binding `ASSETS` (`frontend/`).
+
+## Migracións
+
+| Ficheiro | Contido |
+|---|---|
+| `0001_init.sql` | esquema base (territorios, coplas, versións, etiquetas, media, pezas...) |
+| `0002_melodies.sql` | inventario de melodías |
+| `0003_users.sql` | contas e sesións (login con Google) |
+| `0004_profiles.sql` | perfís, favoritos e `site_meta.data_version` (caché) |
+| `0005_pieces_and_follows.sql` | dona e visibilidade das pezas, seguimentos (**non idempotente**) |
+| `0006_piece_links.sql` | ligazóns externas nas pezas |
+| `0007_pdf_usage.sql` | contador diario de PDFs por persoa |
+
+Aplícanse con `npx wrangler d1 migrations apply fol-e-ar-db --remote` (despois de executar unha vez `scripts/baseline_migrations.sql`; ver `docs/operacion.md`). Cada migración nova é un ficheiro `NNNN_nome.sql`, aditivo.
 
 ## Fluxo local (sen conta de Cloudflare)
 
@@ -101,7 +78,7 @@ infra/cloudflare/
 
    ```bash
    cd infra/cloudflare
-   npx wrangler d1 execute fol-e-ar-db --local --file=migrations/0001_init.sql
+   npx wrangler d1 migrations apply fol-e-ar-db --local
    for f in seed/*.sql; do
      npx wrangler d1 execute fol-e-ar-db --local --file="$f"
    done
@@ -128,73 +105,34 @@ infra/cloudflare/
 | Preview    | `wrangler deploy --env preview`| `fol-e-ar-db-preview`      | unha D1 real de proba, illada da de produción |
 | Produción  | `wrangler deploy`              | `fol-e-ar-db`              | require conta e créditos de Cloudflare |
 
-## Migracións futuras
-
-Migracións novas engádense como `migrations/0002_*.sql`, `0003_*.sql`, etc.,
-seguindo o mesmo patrón que `backend/schema/00N_*.sql` no proxecto Python.
-`wrangler d1 migrations apply` lévalles a conta. (A migración `0001` xa
-inclúe todo o esquema real coñecido a día de hoxe, ver "Estado actual".)
-
-### 0002 · inventario de melodías
-
-`migrations/0002_melodies.sql` crea a táboa `melodies` (espello de
-`backend/schema/008_melodies.sql`). É aditiva e idempotente. Para levala á D1
-de produción:
-
-```bash
-cd infra/cloudflare
-npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0002_melodies.sql
-npx wrangler deploy
-```
-
-Mentres a migración non estea aplicada, o Worker segue funcionando coma antes
-(`melodias.json` devolve `[]`); só falla gardar melodías. Rutas novas:
-`GET /data/exports/melodias/melodias.json`, `POST /api/melodies` e
-`DELETE /api/melodies`. Os recursos ligan coas melodías cunha ligazón
-`entity_type = "melody"` en `media_links`.
-
 ## Acceso e secrets
 
-O plan orixinal (2026-09-27) era Cloudflare Access, pero require un plan
-de pago que o equipo non ten. Optouse por unha alternativa gratuita e moito
-máis simple: **un contrasinal único compartido (HTTP Basic Auth)** que
-protexe TODO o Worker (frontend estático + API), comprobado en
-`checkSitePassword()` / `authRequiredResponse()` en `src/worker.js`, antes
-de calquera outra lóxica. O navegador amosa o seu diálogo nativo de login;
-o nome de usuario ignórase, só importa o contrasinal.
+A consulta é pública. As escrituras e os PDFs requiren login con Google (ver
+a sección seguinte). Non hai contrasinal compartido: o antigo
+`SITE_PASSWORD` (HTTP Basic) quitouse do código. Se ese secret aínda existe na
+conta, pódese borrar sen risco: `npx wrangler secret delete SITE_PASSWORD`.
 
-O contrasinal gárdase coma **secret de Wrangler**, nunca en `wrangler.toml`
-nin en `.dev.vars` con valor real (ambos os dous quedan fóra de git, ver
-`.gitignore`):
+Os secrets viven só en Wrangler (`npx wrangler secret put NOME`), nunca en
+`wrangler.toml` nin en `.dev.vars` con valores reais (ambos quedan fóra de git):
 
-```bash
-npx wrangler secret put SITE_PASSWORD
-# pide o valor por prompt interactivo, nunca queda en ficheiros nin en git
-npx wrangler deploy   # redespregar para que o Worker recolla o secret novo
-```
-
-Se `SITE_PASSWORD` non está configurado (por exemplo en local dev sen ese
-secret posto), o Worker NON bloquea nada -- útil para desenvolver sen ter
-que meter contrasinal cada vez.
-
-**Limitacións coñecidas desta alternativa** (fronte a Cloudflare Access):
-non hai identidade por persoa (un contrasinal compartido para os tres),
-non hai caducidade nin revogación individual (cambiar o contrasinal
-desloga a todos), e o navegador cachea as credenciais ata que se pecha
-(non hai "logout" real). Para o uso actual (equipo pequeno, contrasinal
-provisional) chega; se no futuro hai orzamento, migrar a Cloudflare
-Access segue sendo unha mellora doada (a lóxica de `checkSitePassword`
-sinxelamente quitaríase).
+| Nome | Tipo | Para que |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | variable (`[vars]`) | login con Google |
+| `GOOGLE_CLIENT_SECRET` | secret | login con Google |
+| `ADMIN_EMAILS` | variable (`[vars]`) | contas sempre admin |
+| `BROWSER_RUN_API_TOKEN` | secret | xerar PDFs (Cloudflare Browser Run) |
+| `CLOUDFLARE_ACCOUNT_ID` | variable (`[vars]`) | xerar PDFs |
 
 ## Usuarias e roles (login con Google)
 
 A plataforma pódese **consultar libremente**, coma unha wikipedia. Para
-escribir fai falla entrar con Google e ter rol **guía** ou **admin**:
+xerar PDFs fai falla entrar con Google (calquera rol; tope de 15 PDFs/día por
+persoa, `0007_pdf_usage.sql`). Para escribir fai falla entrar con Google e ter rol **guía** ou **admin**:
 
 | Rol | Que pode facer |
 |---|---|
-| visitante (sen entrar) | consultar todo |
-| `foleante` | consultar (rol por defecto de quen entra por primeira vez); no futuro, espazo propio con favoritos e pezas persoais |
+| visitante (sen entrar) | consultar todo (os PDFs piden login) |
+| `foleante` | consultar, ter perfil, pezas persoais, favoritos e **xerar PDFs** (rol por defecto de quen entra por primeira vez) |
 | `guia` | dar de alta, editar e borrar coplas, recursos e melodías |
 | `admin` | o mesmo ca guía + ver a lista de persoas e cambiar roles (botón «Persoas») |
 
@@ -225,11 +163,8 @@ só mostra/agocha botóns; quen manda é sempre o servidor.
    `GOOGLE_CLIENT_ID = "...apps.googleusercontent.com"` e
    `ADMIN_EMAILS = "folear3@gmail.com"` (varias separadas por comas).
 3. `npx wrangler secret put GOOGLE_CLIENT_SECRET`
-4. Aplicar a migración na D1 remota:
-   `npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0003_users.sql`
+4. Aplicar as migracións na D1 remota: `npx wrangler d1 migrations apply fol-e-ar-db --remote`
 5. `npx wrangler deploy`
-6. Se estaba posto `SITE_PASSWORD` e se quere que o sitio sexa público:
-   `npx wrangler secret delete SITE_PASSWORD`.
 
 ### Modos (`GET /api/auth/me` devolve o activo)
 
@@ -243,12 +178,7 @@ só mostra/agocha botóns; quen manda é sempre o servidor.
 ### Perfís, favoritos e caché (migración 0004)
 
 Migración aditiva `migrations/0004_profiles.sql` (non borra nada): táboas
-`profiles`, `favorites` e `site_meta`. Aplícase **antes** de despregar:
-
-```bash
-npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0004_profiles.sql
-npx wrangler deploy
-```
+`profiles`, `favorites` e `site_meta`.
 
 - **O meu espazo** (`frontend/js/profile.js`): nome que se amosa, enderezo
   curto, lugar (concello/parroquia/comarca), presentación, perfil público
@@ -275,18 +205,12 @@ npx wrangler deploy
 Migración aditiva `migrations/0005_pieces_and_follows.sql`: engade
 `owner_user_id` e `visibility` a `pieces` (as pezas que xa existen quedan
 **públicas e sen dona**, é dicir, editoriais) e crea a táboa `follows`. Os
-`ALTER TABLE` non son idempotentes: **aplícase unha soa vez**, despois da 0004 e
-**antes** de despregar:
-
-```bash
-npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0004_profiles.sql   # só se non está aplicada
-npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0005_pieces_and_follows.sql
-npx wrangler deploy
-```
+`ALTER TABLE` non son idempotentes: **aplícase unha soa vez**, e o rexistro de
+migracións (`d1_migrations`) encárgase diso.
 
 - **Gardar unha peza require conta** (`POST /api/pieces` devolve 401 sen
-  sesión). Sen conta pódese compoñer no obradoiro e exportar PDF
-  (`/api/pdf/piece-draft`); o borrador vive no navegador.
+  sesión). Sen conta pódese compoñer no obradoiro (o borrador vive no navegador);
+  exportar a PDF (`/api/pdf/piece-draft`) require sesión.
 - Cada peza é `private` (só a dona) ou `public` (biblioteca). O exporte público
   `/data/exports/pezas/pezas.json` (cacheado por versión) só leva as públicas e
   non agochadas; `GET /api/me/pieces` devolve as da persoa.
@@ -309,13 +233,7 @@ npx wrangler deploy
 ### Fichas de autoría e ligazóns nas pezas (migración 0006)
 
 Migración aditiva e **idempotente** `migrations/0006_piece_links.sql`: crea a
-táboa `piece_links` (ata 10 ligazóns externas por peza: título + URL). Aplícase
-despois da 0005:
-
-```
-npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0006_piece_links.sql
-npx wrangler deploy
-```
+táboa `piece_links` (ata 10 ligazóns externas por peza: título + URL).
 
 - Unha peza pode ser unha selección de coplas ou un arranxo dun grupo, artista
   ou persoa: o campo «Autoría» é texto libre. A web agrupa as autorías sen ter
@@ -351,7 +269,7 @@ POST https://api.cloudflare.com/client/v4/accounts/<CLOUDFLARE_ACCOUNT_ID>/brows
 Authorization: Bearer <BROWSER_RUN_API_TOKEN>
 ```
 
-Rutas novas no Worker (mesmos camiños que en local, ver `tools/local_server.py`):
+Rutas do Worker (mesmos camiños que en local, ver `tools/local_server.py`). **Todas piden sesión** (`requirePdfViewer`): gastan a cota gratuíta de Browser Run, así que hai ademais un tope de 15 PDFs por persoa e día (táboa `pdf_usage`, migración 0007; as contas admin non teñen tope):
 
 - `GET /api/pieces/:id/pdf`
 - `POST /api/pdf/piece-draft`
@@ -373,23 +291,8 @@ Para activalo hai que:
 Se falta o token ou o `CLOUDFLARE_ACCOUNT_ID`, as rutas de PDF devolven un
 erro claro explicando que falta configurar, en vez de fallar en seco.
 
-## O que NON está feito aquí (fase 2)
+## Pendente / ideas
 
-- **Pezas** (`pieces`/`piece_coplas`): sen endpoints de lectura nin
-  escritura. A pestana "Pezas" do frontend NON funciona aínda contra este
-  Worker (a táboa xa existe no esquema D1 e no seed, pero non hai handlers).
-- ~~Xeración de PDF~~: **xa implementado**, ver seccion "Xeración de PDF"
-  máis arriba (Cloudflare Browser Run). Falta só que crees o token
-  `BROWSER_RUN_API_TOKEN` na conta e fagas `wrangler secret put` +
-  `wrangler deploy` para que quede activo en produción.
-- **`POST /api/submissions`**: formulario público "Enviar unha copla"
-  pendente de revisión (a táboa `submissions` xa existe no esquema, sen uso).
-- **Turnstile + rate limiting** nas rutas públicas de escritura.
-- **R2** para ficheiros propios: sen uso real aínda.
-- **Atomicidade parcial**: cada copla dun payload escríbese secuencialmente
-  (non hai unha soa transacción D1 que cubra un payload con varias coplas á
-  vez); para o uso normal (editar unha copla de cada vez dende a web) isto
-  non chega a ser un problema real, pero é unha limitación coñecida.
-- **O propio despregamento**: require conta real de Cloudflare (o usuario
-  xa ten unha, conta "fol-e-ar"), dominio (pendente de merca) e configurar
-  Access + os IDs reais de D1/R2 en `wrangler.toml`.
+- Formulario público «Enviar unha copla» con revisión (`POST /api/submissions`; a táboa `submissions` existe, sen uso).
+- Limitar peticións nas rutas públicas de escritura (Turnstile / rate limiting) se algún día fai falla.
+- Atomicidade parcial: unha copla escríbese con varias operacións secuenciais; un payload con varias coplas non é unha soa transacción. Para o uso real (unha copla ou un lote pequeno desde a web) non é un problema.

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Comprobacións rápidas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Sintaxe JavaScript (frontend e Worker)
+        run: |
+          set -e
+          for f in frontend/js/*.js infra/cloudflare/src/worker.js; do node --check "$f"; done
+      - name: Smoke test do frontend
+        run: node tools/smoke_frontend.mjs
+      - name: Sintaxe Python
+        run: python3 -m compileall -q backend tools
+      - name: Sen dependencias de terceiros nin scripts inline
+        run: |
+          if grep -rnE "unpkg\.com|cdnjs\.|googleapis\.com|gstatic\.com" frontend --include=*.html --include=*.css --include=*.js --exclude-dir=vendor; then
+            echo "Hai recursos de terceiros: aloxaos en frontend/assets/vendor"; exit 1
+          fi
+          python3 - <<'PY'
+          import re, sys, pathlib
+          bad = []
+          for f in ("frontend/index.html", "frontend/privacidade.html"):
+              for m in re.finditer(r"<script\b([^>]*)>", pathlib.Path(f).read_text(encoding="utf-8")):
+                  if "src=" not in m.group(1):
+                      bad.append(f)
+          if bad:
+              sys.exit("Hai <script> inline (a CSP non o permite): " + ", ".join(bad))
+          PY
+
+  e2e:
+    name: Probas de API e navegador
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: infra/cloudflare/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Dependencias
+        run: |
+          npm ci --prefix infra/cloudflare
+          pip install playwright
+          playwright install --with-deps chromium
+      - name: Probas
+        run: tests/run.sh
+      - name: Capturas (se falla)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-out
+          path: |
+            tests/out
+            tests/.tmp/wrangler.log

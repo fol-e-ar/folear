@@ -30,9 +30,8 @@
  *   - Turnstile + rate limiting nas rutas públicas de escritura.
  *   - Autenticación: login con Google e roles (foleante / guia / admin)
  *     máis abaixo, na sección "Identidade e roles". A consulta é libre; as
- *     escrituras (coplas, media, melodías) piden rol guía ou admin. O
- *     contrasinal único SITE_PASSWORD segue dispoñible pero, se se quere o
- *     sitio aberto ao público, hai que quitalo (`wrangler secret delete`).
+ *     escrituras (coplas, media, melodías) piden rol guía ou admin e os
+ *     PDFs piden estar logueada (calquera rol).
  *   - Atomicidade parcial: cada copla do payload procésase coas súas
  *     propias escrituras secuenciais (non hai unha soa transacción que
  *     cubra TODAS as coplas dun payload con varias á vez); un fallo a
@@ -48,6 +47,7 @@ function corsHeaders(env) {
     "access-control-allow-origin": env.ALLOWED_ORIGIN || "*",
     "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-headers": "content-type",
+    "x-content-type-options": "nosniff",
   };
 }
 
@@ -60,36 +60,6 @@ function jsonResponse(data, { status = 200, env } = {}) {
 
 function errorResponse(message, { status = 400, env } = {}) {
   return jsonResponse({ ok: false, error: message }, { status, env });
-}
-
-// ---------------------------------------------------------------------
-// Contrasinal unico compartido (HTTP Basic Auth), alternativa gratuita a
-// Cloudflare Access (que require plan de pago). O navegador amosa o seu
-// dialogo nativo de login; o nome de usuario ignorase, so importa o
-// contrasinal. Se non hai SITE_PASSWORD configurado (p.ex. en local dev
-// sen secret posto), non bloquea nada.
-// ---------------------------------------------------------------------
-
-function checkSitePassword(request, env) {
-  if (!env.SITE_PASSWORD) return true;
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.startsWith("Basic ")) return false;
-  let decoded;
-  try {
-    decoded = atob(auth.slice(6));
-  } catch (err) {
-    return false;
-  }
-  const sepIndex = decoded.indexOf(":");
-  const password = sepIndex === -1 ? decoded : decoded.slice(sepIndex + 1);
-  return password === env.SITE_PASSWORD;
-}
-
-function authRequiredResponse() {
-  return new Response("Autenticacion necesaria.", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="fol e ar", charset="UTF-8"' },
-  });
 }
 
 // ---------------------------------------------------------------------
@@ -1053,10 +1023,22 @@ async function handlePdfProxy(env, url) {
   const known = await env.DB.prepare("SELECT 1 AS ok FROM media WHERE url = ? LIMIT 1").bind(target).first();
   if (!known) return errorResponse("Só se poden previsualizar PDFs rexistrados.", { status: 403, env });
 
-  const upstream = await fetch(target, {
-    headers: { "User-Agent": "Fol-e-ar-pdf-preview/1.0", Accept: "application/pdf,*/*" },
-    redirect: "follow",
-  });
+  // Redirecións manuais: cada salto revísase (sen hosts internos).
+  let upstream;
+  let current = target;
+  for (let hop = 0; hop <= 3; hop += 1) {
+    upstream = await fetch(current, {
+      headers: { "User-Agent": "Fol-e-ar-pdf-preview/1.0", Accept: "application/pdf,*/*" },
+      redirect: "manual",
+    });
+    if (upstream.status < 300 || upstream.status >= 400) break;
+    const next = upstream.headers.get("location");
+    if (!next || hop === 3) return errorResponse("Demasiadas redireccións.", { status: 502, env });
+    current = new URL(next, current).toString();
+    if (!isValidUrl(current) || isInternalHost(new URL(current).hostname)) {
+      return errorResponse("Enderezo non permitido.", { status: 403, env });
+    }
+  }
   if (!upstream.ok) return errorResponse(`O servidor do PDF respondeu ${upstream.status}.`, { status: 502, env });
   const declared = Number(upstream.headers.get("content-length") || 0);
   if (declared > MAX_PDF_BYTES) return errorResponse("O PDF é demasiado grande para previsualizalo.", { env });
@@ -1574,7 +1556,8 @@ async function renderPdfViaBrowserRun(env, htmlText) {
   );
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(`Cloudflare Browser Run devolveu un erro (${response.status}): ${detail.slice(0, 500)}`);
+    console.error("Browser Run:", response.status, detail.slice(0, 500));
+    throw new HttpError(502, `O servizo de PDF devolveu un erro (${response.status}). Téntao de novo máis tarde.`);
   }
   return response.arrayBuffer();
 }
@@ -1585,6 +1568,8 @@ function pdfResponse(pdfBuffer, filename) {
     headers: {
       "content-type": "application/pdf",
       "content-disposition": `inline; filename="${filename}"`,
+      "cache-control": "private, no-store",
+      "x-content-type-options": "nosniff",
     },
   });
 }
@@ -1722,6 +1707,37 @@ async function requireRole(request, env, url, roles) {
   }
   if (!roles.includes(viewer.role)) {
     throw new HttpError(403, roles.includes("guia") ? "O teu rol non permite facer isto: fai falla ser guía." : "Isto só o pode facer unha persoa admin.");
+  }
+  return viewer;
+}
+
+// Os PDFs gastan a cota gratuíta de Browser Run (10 min/día): só os pode xerar
+// unha persoa logueada (calquera rol) e hai un tope diario por persoa.
+const PDF_DAILY_LIMIT = 15;
+
+async function requirePdfViewer(request, env, url) {
+  assertSameOrigin(request, url);
+  const mode = authMode(env);
+  if (mode === "open") return null;
+  if (mode === "unconfigured") {
+    throw new HttpError(503, "O acceso con Google aínda non está configurado no servidor, así que non se poden xerar PDFs.");
+  }
+  const viewer = await getViewer(request, env);
+  if (!viewer) throw new HttpError(401, "Para xerar PDFs tes que entrar con Google.");
+  if (viewer.role !== "admin") {
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+      const row = await env.DB.prepare(
+        `INSERT INTO pdf_usage (user_id, day, n) VALUES (?, ?, 1)
+         ON CONFLICT(user_id, day) DO UPDATE SET n = n + 1 RETURNING n`
+      ).bind(viewer.id, day).first();
+      if (row && Number(row.n) > PDF_DAILY_LIMIT) {
+        throw new HttpError(429, `Chegaches ao límite de ${PDF_DAILY_LIMIT} PDFs por día. Volve tentalo mañá.`);
+      }
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      if (!/no such table/i.test(String(err && err.message))) throw err;
+    }
   }
   return viewer;
 }
@@ -2686,10 +2702,6 @@ async function handleToggleFollow(request, env, url) {
 
 export default {
   async fetch(request, env, ctx) {
-    if (!checkSitePassword(request, env)) {
-      return authRequiredResponse();
-    }
-
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
@@ -2842,6 +2854,7 @@ export default {
 
       const pieceIdMatch = url.pathname.match(/^\/api\/pieces\/(\d+)\/pdf$/);
       if (request.method === "GET" && pieceIdMatch) {
+        await requirePdfViewer(request, env, url);
         await assertPieceReadable(request, env, Number(pieceIdMatch[1]));
         const document = await buildPieceDocumentForPdf(env, Number(pieceIdMatch[1]));
         const pdf = await renderPdfViaBrowserRun(env, renderPiecePdfHtml(document));
@@ -2849,6 +2862,7 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/pdf/piece-draft") {
+        await requirePdfViewer(request, env, url);
         const payload = await request.json();
         const document = await buildPieceDraftDocumentForPdf(env, payload);
         const pdf = await renderPdfViaBrowserRun(env, renderPiecePdfHtml(document));
@@ -2857,6 +2871,7 @@ export default {
 
       const territoryIdMatch = url.pathname.match(/^\/api\/territories\/([^/]+)\/pdf$/);
       if (request.method === "GET" && territoryIdMatch) {
+        await requirePdfViewer(request, env, url);
         const document = await buildTerritoryDocumentForPdf(env, decodeURIComponent(territoryIdMatch[1]));
         const pdf = await renderPdfViaBrowserRun(env, renderTerritoryPdfHtml(document));
         return pdfResponse(pdf, `fol-e-ar-${pdfSafeFilename(document.title, "territorio")}.pdf`);
@@ -2869,10 +2884,13 @@ export default {
 
       return errorResponse("Endpoint non atopado.", { status: 404, env });
     } catch (err) {
-      return errorResponse(err instanceof Error ? err.message : String(err), {
-        status: err instanceof HttpError ? err.status : 400,
-        env,
-      });
+      const message = err instanceof Error ? err.message : String(err);
+      if (!(err instanceof HttpError) && /D1_|SQLITE_|no such (table|column)|constraint|binding/i.test(message)) {
+        // Detalle interno (esquema, SQL): vai ao log do Worker, non á persoa.
+        console.error("Erro interno:", message);
+        return errorResponse("Erro interno do servidor.", { status: 500, env });
+      }
+      return errorResponse(message, { status: err instanceof HttpError ? err.status : 400, env });
     }
   },
 };

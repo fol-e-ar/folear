@@ -14,7 +14,7 @@ Abre:
 http://localhost:8765/frontend/index.html
 ```
 
-Este servidor tamén activa a API local:
+Este servidor tamén activa a API local (no modo local non hai login):
 
 ```text
 POST /api/coplas
@@ -39,7 +39,7 @@ Se o porto está ocupado:
 2. Marca `Úsase como volta` se o texto é un retrouso e non unha copla de seu.
 3. Mentres escribes, se xa existe algo parecido no arquivo aparece un aviso con ligazón á copla existente (para evitar duplicados).
 4. Engade variantes se existen. Nacen numeradas automaticamente (Variante 1, 2...) co mesmo texto ca copla principal para editar só o que cambia, e o territorio amósase como texto editable que herda o da copla principal ata que se escribe outro no seu lugar.
-5. Para dar de alta varias coplas dun mesmo territorio nunha soa sesión, usa `+ Engadir á lista` despois de cada copla (mantén o territorio e o estado, limpa o resto do formulario) e remata con `Gardar todas`. Se só hai unha copla, `Gardar na base local` abonda.
+5. Para dar de alta varias coplas dun mesmo territorio nunha soa sesión, usa `+ Engadir á lista` despois de cada copla (mantén o territorio e o estado, limpa o resto do formulario) e remata con `Gardar todas`. Se só hai unha copla, `Gardar copla` abonda.
 6. Para editar unha copla xa existente (engadir variante, marcar como volta, cambiar de territorio...), ábrea e usa `Editar copla` na ficha.
 
 Para importar varias coplas desde un ficheiro xa preparado, abre `Importar varias coplas desde JSON` ao final da pantalla. Desde aí podes descargar o modelo, escoller un ficheiro e importalo directamente. O mesmo formato tamén funciona desde a terminal:
@@ -55,13 +55,7 @@ python3 tools/admin.py export-web
 python3 tools/admin.py check
 ```
 
-8. Publica en GitHub Pages:
-
-```bash
-git add .
-git commit -m "Actualizar corpus"
-git push
-```
+8. Para publicar en produción non se sobe un ficheiro: os datos viven na D1 de Cloudflare e a web edítase directamente en <https://folear.gal> con conta guía ou admin. O modo local é para desenvolver e probar (ver `docs/operacion.md`).
 
 ## Montar pezas e letras
 
@@ -77,7 +71,7 @@ O importador ofrece modelos descargábeis en TXT e JSON. O TXT admite metadatos 
 
 ## Exportación PDF
 
-A exportación PDF real é unha capacidade local/admin: require abrir Fol e Ar desde `./serve.sh`, porque GitHub Pages só serve a parte estática do arquivo.
+En produción o PDF xérase no Worker (Cloudflare Browser Run) e só o pode pedir unha persoa con sesión iniciada. En local xérase con Chrome (abaixo).
 
 O motor empregado é Google Chrome/Chromium en modo headless. Nun Mac con Google Chrome instalado non hai que instalar nada máis. Se queres usar outro binario:
 

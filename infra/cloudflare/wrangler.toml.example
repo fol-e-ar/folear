@@ -3,13 +3,12 @@
 # Copia este ficheiro a `wrangler.toml` dentro de infra/cloudflare/ cando
 # haxa unha conta de Cloudflare dispoñible, e axusta os IDs reais (database_id,
 # bucket_name, account_id, etc). NON subas wrangler.toml con IDs reais nin
-# secrets a un repositorio público sen revisalo antes; os IDs de D1/R2 non son
+# secrets a un repositorio público sen revisalo antes; os IDs de D1 non son
 # segredos críticos pero os tokens de API si.
 #
 # Hipótese validada nesta auditoría (ver docs/arquitectura-cloudflare.md):
 #   - frontend estático + API en Workers (Static Assets, non Pages)
 #   - datos relacionais en D1
-#   - ficheiros propios futuros en R2 (aínda sen uso real, ver seccion 8)
 #   - sen KV nin Durable Objects nesta fase (non hai caso de uso que os xustifique)
 
 name = "fol-e-ar-api"
@@ -30,13 +29,6 @@ binding = "DB"
 database_name = "fol-e-ar-db"
 database_id = "REPLACE_WITH_REAL_D1_DATABASE_ID"
 
-# R2 para ficheiros propios (audio/imaxe subidos polo equipo editorial).
-# Sen uso aínda: déixase preparado para cando existan gravacións propias
-# (ver docs/arquitectura-cloudflare.md secc. "Media").
-[[r2_buckets]]
-binding = "MEDIA_BUCKET"
-bucket_name = "fol-e-ar-media"
-
 [vars]
 ALLOWED_ORIGIN = "https://folear.gal"
 ENVIRONMENT = "production"
@@ -54,18 +46,11 @@ binding = "DB"
 database_name = "fol-e-ar-db-preview"
 database_id = "REPLACE_WITH_PREVIEW_D1_DATABASE_ID"
 
-[[env.preview.r2_buckets]]
-binding = "MEDIA_BUCKET"
-bucket_name = "fol-e-ar-media-preview"
-
 [env.preview.vars]
 ALLOWED_ORIGIN = "*"
 ENVIRONMENT = "preview"
 
-# Secrets (NUNCA aquí): configúranse con `wrangler secret put NOME`, tanto en
-# produción coma en --env preview. Nesta primeira fase o único secret
-# previsto é o token de administración (ver README.md e
-# docs/arquitectura-cloudflare.md secc. "API e seguridade"):
-#   - GOOGLE_CLIENT_SECRET (login con Google, ver README.md)
-#   - ADMIN_TOKEN
-#   - TURNSTILE_SECRET_KEY (cando se active Turnstile no formulario público)
+# Secrets (NUNCA aquí): `wrangler secret put NOME`, tanto en produción coma en
+# `--env preview`. Ver README.md, sección "Acceso e secrets":
+#   - GOOGLE_CLIENT_SECRET
+#   - BROWSER_RUN_API_TOKEN

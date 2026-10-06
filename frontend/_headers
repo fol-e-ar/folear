@@ -1,0 +1,16 @@
+# Cabeceiras de seguridade para os ficheiros estáticos (Cloudflare Static Assets).
+# A API (Worker) engade as súas propias cabeceiras en worker.js.
+#
+# CSP: só se executa JavaScript propio ('self'), sen scripts inline nin CDNs.
+# Estilos inline permitidos (a app usa style="" en pezas dinámicas).
+# img-src https: porque as miniaturas de YouTube/Spotify/etc. veñen das plataformas.
+# object-src/frame-src blob: para a previsualización do PDF xerado.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'self' blob:; frame-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  X-Frame-Options: DENY
+
+/assets/vendor/*
+  Cache-Control: public, max-age=31536000, immutable

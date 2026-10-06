@@ -5,30 +5,14 @@ function isLocalFrontendMode() {
   return window.location.pathname.includes("/frontend/");
 }
 
-function isInsidePages() {
-  return window.location.pathname.includes("/pages/");
-}
-
+// En local a app vive en /frontend/ e os datos un nivel por riba; en produción
+// (Cloudflare) frontend e datos cuelgan da mesma raíz.
 function getDataPrefix() {
-  const localFrontend = isLocalFrontendMode();
-  const insidePages = isInsidePages();
-
-  if (localFrontend) {
-    return insidePages ? "../../" : "../";
-  }
-
-  return insidePages ? "../" : "./";
+  return isLocalFrontendMode() ? "../" : "./";
 }
 
 function getAssetsPrefix() {
-  const localFrontend = isLocalFrontendMode();
-  const insidePages = isInsidePages();
-
-  if (localFrontend) {
-    return insidePages ? "../" : "./";
-  }
-
-  return insidePages ? "../" : "./";
+  return "./";
 }
 
 function buildPaths() {

@@ -8,8 +8,7 @@ import { loaderHtml } from "./utils.js";
 // permiten lelos directamente por CORS). A miniatura gárdase en localStorage
 // para non repetir o traballo; se algo falla, queda a icona de sempre.
 
-const PDFJS_VERSION = "3.11.174";
-const PDFJS_BASE = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/`;
+const PDFJS_BASE = new URL("../assets/vendor/pdfjs/", import.meta.url).href;
 const CACHE_PREFIX = "fol-e-ar-pdfthumb-v1:";
 const THUMB_WIDTH = 480;
 const THUMB_HEIGHT = 360;
@@ -48,14 +47,10 @@ function loadPdfjs() {
     pdfjsPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = `${PDFJS_BASE}pdf.min.js`;
-      script.onload = async () => {
+      script.onload = () => {
         try {
           const lib = window.pdfjsLib;
-          // O worker vén doutro dominio: cárgase como blob para que o
-          // navegador o deixe arrincar.
-          const response = await fetch(`${PDFJS_BASE}pdf.worker.min.js`);
-          const code = await response.text();
-          lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+          lib.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}pdf.worker.min.js`;
           resolve(lib);
         } catch (error) {
           reject(error);
@@ -70,7 +65,7 @@ function loadPdfjs() {
 
 async function renderFirstPage(url) {
   const lib = await loadPdfjs();
-  const task = lib.getDocument({ url: `../api/pdf-proxy?url=${encodeURIComponent(url)}` });
+  const task = lib.getDocument({ isEvalSupported: false, url: `../api/pdf-proxy?url=${encodeURIComponent(url)}` });
   const pdf = await task.promise;
   try {
     const page = await pdf.getPage(1);

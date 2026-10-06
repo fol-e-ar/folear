@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Inter:wght@400;500;600&display=swap");
 
 /* ==========================================================
    FOL-E-AR — ARQUIVO EDITORIAL
@@ -18,12 +17,16 @@
   --red: #B5322B;
   --red-soft: #F4E7E4;
   --level-par: #C84733;
+  --level-par-ink: #B4402E;
   --level-par-soft: #F3E5E0;
   --level-con: #A66D35;
+  --level-con-ink: #8D5D2D;
   --level-con-soft: #F0E9DF;
   --level-com: #685F7A;
+  --level-com-ink: #685F7A;
   --level-com-soft: #ECE9EF;
   --level-prov: #526A78;
+  --level-prov-ink: #526A78;
   --level-prov-soft: #E8ECEE;
   --font-mono: "DM Mono", "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -676,39 +679,39 @@ label textarea {
 }
 
 .level-badge.level-par {
-  color: var(--level-par);
+  color: var(--level-par-ink);
   background: var(--level-par-soft);
 }
 
 .level-badge.level-con {
-  color: var(--level-con);
+  color: var(--level-con-ink);
   background: var(--level-con-soft);
 }
 
 .level-badge.level-com {
-  color: var(--level-com);
+  color: var(--level-com-ink);
   background: var(--level-com-soft);
 }
 
 .level-badge.level-prov {
-  color: var(--level-prov);
+  color: var(--level-prov-ink);
   background: var(--level-prov-soft);
 }
 
 .level-text.level-par {
-  color: var(--level-par);
+  color: var(--level-par-ink);
 }
 
 .level-text.level-con {
-  color: var(--level-con);
+  color: var(--level-con-ink);
 }
 
 .level-text.level-com {
-  color: var(--level-com);
+  color: var(--level-com-ink);
 }
 
 .level-text.level-prov {
-  color: var(--level-prov);
+  color: var(--level-prov-ink);
 }
 
 .legend-list {
@@ -4863,22 +4866,22 @@ label {
 
 .level-chip.level-par,
 .level-text.level-par {
-  color: var(--level-par) !important;
+  color: var(--level-par-ink) !important;
 }
 
 .level-chip.level-con,
 .level-text.level-con {
-  color: var(--level-con) !important;
+  color: var(--level-con-ink) !important;
 }
 
 .level-chip.level-com,
 .level-text.level-com {
-  color: var(--level-com) !important;
+  color: var(--level-com-ink) !important;
 }
 
 .level-chip.level-prov,
 .level-text.level-prov {
-  color: var(--level-prov) !important;
+  color: var(--level-prov-ink) !important;
 }
 
 .level-text {
@@ -5625,5 +5628,58 @@ label {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "title star" "place role";
     row-gap: 3px;
+  }
+}
+
+/* ==========================================================
+   ACCESIBILIDADE (fase 5)
+   ========================================================== */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 5000;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 4px;
+  font: 500 13px var(--font-ui);
+  transform: translateY(-200%);
+}
+.skip-link:focus { transform: none; }
+.main:focus { outline: none; }
+[role="dialog"][tabindex="-1"]:focus { outline: none; }
+
+/* Zonas táctiles de polo menos 44 px en móbil e pantallas táctiles (WCAG 2.5.5). */
+@media (max-width: 920px), (pointer: coarse) {
+  .btn,
+  button.chip,
+  .icon-btn,
+  select,
+  .field input:not([type="checkbox"]):not([type="radio"]),
+  .workshop-author,
+  .part-rhythm,
+  .toolbar input:not([type="checkbox"]):not([type="radio"]) {
+    min-height: 44px;
+  }
+  button.chip.icon-view,
+  .icon-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .about-foot-link {
+    display: inline-block;
+    padding: 12px 8px;
+  }
+  .infinite-footer .btn,
+  #resetMapViewBtn,
+  input[type="search"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .map-wrap button:not(.btn):not(.chip),
+  #view-territory button:not(.btn):not(.chip) {
+    min-width: 44px;
+    min-height: 44px;
   }
 }

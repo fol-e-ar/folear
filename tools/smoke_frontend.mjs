@@ -88,6 +88,8 @@ globalThis.window = {
 
 elements.set("#global-loading", new ElementStub("#global-loading"));
 
+globalThis.history = { state: null, pushState() {}, replaceState() {} };
+
 globalThis.document = {
   getElementById(id) {
     return elements.get(`#${id}`) || null;

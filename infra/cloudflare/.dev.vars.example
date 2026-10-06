@@ -3,9 +3,6 @@
 # Copia a .dev.vars (xa ignorado por git) e substitúe os valores. Nunca
 # comitear .dev.vars nin ningún ficheiro con segredos reais.
 
-ADMIN_TOKEN=change-me-local-only
-TURNSTILE_SECRET_KEY=
-SITE_PASSWORD=
 BROWSER_RUN_API_TOKEN=
 
 # Login con Google (ver README.md, sección "Usuarias e roles").
