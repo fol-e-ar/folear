@@ -220,11 +220,11 @@ function decorate() {
     card.dataset.favDone = "1";
     appendMetaStar(card, "piece", card.dataset.openPiece);
   });
-  document.querySelectorAll(".media-card[data-media-id]:not([data-fav-done])").forEach(card => {
+  document.querySelectorAll(".media-card[data-media-id]:not([data-fav-done]), .media-row[data-media-id]:not([data-fav-done])").forEach(card => {
     card.dataset.favDone = "1";
     appendMetaStar(card, "media", card.dataset.mediaId);
   });
-  document.querySelectorAll(".melody-card[data-open-melody]:not([data-fav-done])").forEach(card => {
+  document.querySelectorAll(".melody-card[data-open-melody]:not([data-fav-done]), .melody-row[data-open-melody]:not([data-fav-done])").forEach(card => {
     card.dataset.favDone = "1";
     appendMetaStar(card, "melody", card.dataset.openMelody);
   });
@@ -816,7 +816,7 @@ function askPieceSave({ title = "", author = "", visibility = "private", editing
         <div class="eyebrow">${editing ? "Actualizar peza" : "Gardar peza"}</div>
         <h2 id="feDialogTitle">${editing ? "Gardar os cambios" : "Gardar na túa conta"}</h2>
         <div class="field"><label for="fePieceTitle">Título</label><input id="fePieceTitle" maxlength="160" value="${esc(title)}" placeholder="Título da peza"></div>
-        <div class="field"><label for="fePieceAuthor">Autoría (opcional)</label><input id="fePieceAuthor" maxlength="120" value="${esc(author)}" placeholder="Quen creou ou arranxou a peza"></div>
+        <div class="field"><label for="fePieceAuthor">Autoría (opcional)</label><input id="fePieceAuthor" maxlength="120" value="${esc(author)}" placeholder="Grupo, artista ou persoa que a creou ou arranxou" list="fePieceAuthorList" autocomplete="off"><datalist id="fePieceAuthorList">${(window.folearApp?.authors?.() || []).map(name => `<option value="${esc(name)}"></option>`).join("")}</datalist><small class="muted">Se xa existe a súa ficha, escolle o nome da lista para que quede xunto ao resto.</small></div>
         <fieldset class="field vis-field">
           <legend>Quen pode ver a peza</legend>
           <label class="vis-option"><input type="radio" name="vis" value="private" ${visibility !== "public" ? "checked" : ""}><span><strong>Privada</strong><small>Só ti. Aparece en «As miñas pezas».</small></span></label>

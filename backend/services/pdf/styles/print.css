@@ -26,20 +26,6 @@ body {
   margin: 0;
 }
 
-/* Filigrana: ondas de ar na esquina de cada páxina */
-.filigrana {
-  position: fixed;
-  right: -16mm;
-  bottom: -18mm;
-  z-index: -1;
-  width: 110mm;
-  height: 110mm;
-  fill: none;
-  stroke: #E6E6DF;
-  stroke-width: 0.5;
-  stroke-linecap: round;
-}
-
 .document-header {
   border-bottom: 0.4pt solid #D8D8D0;
   margin-bottom: 8mm;

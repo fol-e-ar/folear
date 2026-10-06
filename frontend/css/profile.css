@@ -851,3 +851,93 @@ a.btn {
 .people-page .profile-id {
   width: 100%;
 }
+
+/* --- Autorías e recursos ligados ------------------------------------------ */
+
+button.chip-link {
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.author-ficha .author-name {
+  margin: 4px 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.link-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.link-row {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  color: var(--ink);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.link-row strong {
+  font-weight: 600;
+}
+
+.link-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.link-row:hover,
+.link-row:focus-visible {
+  border-color: var(--accent);
+  outline: 0;
+}
+
+.workshop-links {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.workshop-links-head {
+  display: grid;
+  gap: 2px;
+}
+
+.workshop-links-head .muted {
+  font-size: 12px;
+}
+
+.workshop-link-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workshop-link-item a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.workshop-link-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workshop-link-add input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.piece-links-drawer {
+  margin: 12px 0;
+}

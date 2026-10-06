@@ -40,6 +40,25 @@ const DRAFT_KEY = "fol-e-ar-piece-cart-v2";
 const RESUME_KEY = "fol-e-ar-resume";
 const VIEWS = ["map", "coplas", "melodies", "pieces", "territory", "submit", "media", "about", "profile", "people"];
 
+const VIEW_PREFS_KEY = "fol-e-ar-view-prefs";
+
+// Vista escollida en cada listaxe (só unha comodidade por navegador).
+function loadViewPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(VIEW_PREFS_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveViewPref(key, value) {
+  try {
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify({ ...loadViewPrefs(), [key]: value }));
+  } catch {
+    // Sen almacenamento (modo privado): a escolla vale só ata recargar.
+  }
+}
+
 const state = {
   territorios: [],
   coplas: [],
@@ -56,6 +75,12 @@ const state = {
   view: "map",
   territoryTab: "coplas",
   coplaViewMode: "gallery",
+  mediaViewMode: "grid",
+  melodyViewMode: "grid",
+  coplaLastSelectedId: null,
+  pasteDraft: "",
+  pasteFeedback: "",
+  pasteDupes: null,
   pieceTab: "workshop",
   coplaQuery: "",
   coplaStateFilter: "all",
@@ -457,9 +482,9 @@ function coplaPlaceChipsHtml(copla) {
 function coplaPlaceTextHtml(copla) {
   const territories = copla.territories || [];
   if (territories.length) {
-    return territories.map(t => `<span class="level-text level-${t.tipo}">${escapeHtml(t.nome)}</span>`).join(", ");
+    return territories.map(t => `<span class="level-text level-${t.tipo}">${escapeHtml(t.nome)}</span>`).join("");
   }
-  return escapeHtml(coplaPlaceLabel(copla));
+  return `<span class="level-text level-empty">${escapeHtml(coplaPlaceLabel(copla))}</span>`;
 }
 
 function coplaPlaceLabel(copla) {
@@ -663,6 +688,36 @@ function mediaCard(item, options = {}) {
   `;
 }
 
+function levelPlacesHtml(territories, emptyLabel = "Sen lugar") {
+  if (!territories.length) return `<span class="level-text level-empty">${escapeHtml(emptyLabel)}</span>`;
+  return territories.map(territory => `<span class="level-text level-${territory.tipo}">${escapeHtml(territory.nome)}</span>`).join("");
+}
+
+// Vista compacta: unha liña por recurso, coas columnas aliñadas.
+function mediaRow(item, options = {}) {
+  const url = mediaUrl(item);
+  const kind = mediaKind(item);
+  const title = item.title || item.label || item.name || "Recurso sen título";
+  const role = mediaRole(item);
+  const territories = mediaTerritories(item);
+  const linkedCoplas = mediaCoplas(item);
+  const linkedMelodies = mediaMelodies(item);
+  const extras = [
+    linkedCoplas.length ? `${linkedCoplas.length} copla${linkedCoplas.length === 1 ? "" : "s"}` : "",
+    ...linkedMelodies.slice(0, 2).map(melodyShortName),
+    linkedMelodies.length > 2 ? `+${linkedMelodies.length - 2} melodías` : "",
+  ].filter(Boolean);
+  return `
+    <article class="media-row" tabindex="${url ? "0" : "-1"}" role="${url ? "link" : "article"}" data-open-media="${escapeHtml(url)}"${item.id != null ? ` data-media-id="${escapeHtml(item.id)}"` : ""} aria-label="${escapeHtml(title)}">
+      <span class="row-kind">${mediaKindIconSvg(kind)}<span>${escapeHtml(mediaLabel(kind))}</span></span>
+      <span class="row-title"><strong>${escapeHtml(title)}</strong>${extras.length ? `<small>${escapeHtml(extras.join(" \\ "))}</small>` : ""}${url ? "" : `<small>Sen ligazón pública</small>`}</span>
+      <span class="row-place" title="${escapeHtml(territories.map(territory => territory.nome).join(", "))}">${levelPlacesHtml(territories.slice(0, 2))}</span>
+      <span class="row-role">${escapeHtml(mediaRoleLabel(role))}</span>
+      ${options.editable ? `<span class="row-actions"><button class="btn" type="button" data-edit-media="${item.id}">Editar</button><button class="btn danger" type="button" data-delete-media="${item.id}">Borrar</button></span>` : ""}
+    </article>
+  `;
+}
+
 function mediaTerritories(item) {
   return (item.links || [])
     .filter(link => link.entity_type === "territory")
@@ -789,19 +844,33 @@ function melodyCard(melody, options = {}) {
   `;
 }
 
+// Vista compacta: unha liña por melodía, co lugar na súa propia columna.
+function melodyRow(melody) {
+  const territory = melodyTerritory(melody);
+  const resources = melodyMedia(melody).length;
+  const notes = (melody.notes || "").trim();
+  return `
+    <article class="melody-row" tabindex="0" role="button" data-open-melody="${melody.id}" aria-label="${escapeHtml(melodyName(melody))}">
+      <span class="row-title"><strong>${escapeHtml(melodyShortName(melody))}</strong>${notes ? `<small>${escapeHtml(notes.length > 90 ? `${notes.slice(0, 87)}…` : notes)}</small>` : ""}</span>
+      <span class="row-place" title="${escapeHtml(territory ? territorySearchMeta(territory) : "")}">${levelPlacesHtml(territory ? [territory] : [], "Sen lugar")}</span>
+      <span class="row-role">${resources ? `${resources} recurso${resources === 1 ? "" : "s"}` : "Sen recursos"}</span>
+    </article>
+  `;
+}
+
 // Lista plana (para poder cargar por tramos): a cabeceira de cada ritmo
 // ponse ao cambiar de ritmo, tendo en conta a melodía anterior ao tramo.
-function melodyItemsMarkup(slice, previous, counts, territoryId) {
+function melodyItemsMarkup(slice, previous, counts, territoryId, rows = false) {
   let last = previous ? normalizeText(previous.rhythm) : null;
   return slice.map(melody => {
     const key = normalizeText(melody.rhythm);
     const head = key !== last ? `<h3 class="melody-group-title melody-grid-title">${escapeHtml(melody.rhythm)} <span class="muted">${counts.get(key)}</span></h3>` : "";
     last = key;
-    return head + melodyCard(melody, { territoryId });
+    return head + (rows ? melodyRow(melody) : melodyCard(melody, { territoryId }));
   }).join("");
 }
 
-function mountMelodyList(list, melodias, key, territoryId) {
+function mountMelodyList(list, melodias, key, territoryId, rows = false) {
   const melodies = [...melodias].sort(compareMelodies);
   const counts = new Map();
   melodies.forEach(melody => {
@@ -810,7 +879,7 @@ function mountMelodyList(list, melodias, key, territoryId) {
   });
   mountInfiniteList(list, melodies, {
     key,
-    renderItems: (slice, previous) => melodyItemsMarkup(slice, previous, counts, territoryId),
+    renderItems: (slice, previous) => melodyItemsMarkup(slice, previous, counts, territoryId, rows),
   });
 }
 
@@ -921,7 +990,10 @@ function updateMelodiesResults(view = $("#view-melodies")) {
   empty.textContent = state.melodias.length
     ? "Ningunha melodía coincide cos filtros."
     : "Aínda non hai melodías inventariadas. Crea a primeira co botón de arriba e despois indica en que recursos aparece.";
-  mountMelodyList($("#melodiesList", view), melodies, `${state.melodyQuery}|${state.melodyRhythmFilter}`, null);
+  const rows = state.melodyViewMode === "rows";
+  const list = $("#melodiesList", view);
+  list.className = rows ? "melody-rows" : "melody-grid";
+  mountMelodyList(list, melodies, `${state.melodyQuery}|${state.melodyRhythmFilter}|${state.melodyViewMode}`, null, rows);
 }
 
 function renderMelodiesView() {
@@ -944,6 +1016,7 @@ function renderMelodiesView() {
           <option value="">Todos os ritmos</option>
           ${rhythms.map(rhythm => `<option value="${escapeHtml(rhythm)}" ${normalizeText(state.melodyRhythmFilter) === normalizeText(rhythm) ? "selected" : ""}>${escapeHtml(rhythm)}</option>`).join("")}
         </select>
+        ${listViewToggleMarkup("data-melody-view", state.melodyViewMode)}
       </div>
       <p class="muted melody-count" id="melodiesCount"></p>
       <div id="melodiesList" class="melody-grid"></div>
@@ -955,6 +1028,12 @@ function renderMelodiesView() {
     state.melodyQuery = event.target.value;
     update();
   });
+  all("[data-melody-view]", view).forEach(button => button.addEventListener("click", () => {
+    state.melodyViewMode = button.dataset.melodyView;
+    saveViewPref("melodies", state.melodyViewMode);
+    all("[data-melody-view]", view).forEach(item => item.classList.toggle("active", item === button));
+    update();
+  }));
   $("#melodiesRhythmFilter", view).addEventListener("change", event => {
     state.melodyRhythmFilter = event.target.value;
     update();
@@ -1480,6 +1559,9 @@ function bindMobileExplore() {
 function setView(viewName) {
   const previousView = state.view;
   state.view = normalizeView(viewName);
+  if (state.dataReady && state.view !== "pieces" && window.location.hash.startsWith("#/autoria/")) {
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
   if (state.view !== "about" && state.aboutPrivacy) {
     state.aboutPrivacy = false;
     if (window.location.hash === "#/privacidade") history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
@@ -1680,7 +1762,7 @@ function bindResultButtons(root = document) {
 
 function coplaSelectCheckbox(copla, options) {
   if (!options.selectMode) return "";
-  return `<label class="select-check" title="Seleccionar"><input type="checkbox" data-select-copla="${copla.id}" ${options.selected ? "checked" : ""}></label>`;
+  return `<label class="select-check" title="Seleccionar"><input type="checkbox" data-select-copla="${copla.id}" ${options.selected ? "checked" : ""} aria-label="Seleccionar ${escapeHtml(coplaTitle(copla))}"><span class="select-box" aria-hidden="true"></span></label>`;
 }
 
 // --- Carga progresiva ------------------------------------------------
@@ -1693,6 +1775,13 @@ function coplaSelectCheckbox(copla, options) {
 
 const PAGE_SIZE = Number(window.FOL_E_AR_PAGE_SIZE) || 48;
 const infiniteLists = new Map();
+
+(() => {
+  const prefs = loadViewPrefs();
+  if (["gallery", "list", "incipits"].includes(prefs.coplas)) state.coplaViewMode = prefs.coplas;
+  if (["grid", "rows"].includes(prefs.media)) state.mediaViewMode = prefs.media;
+  if (["grid", "rows"].includes(prefs.melodies)) state.melodyViewMode = prefs.melodies;
+})();
 
 function resetInfiniteLists() {
   infiniteLists.forEach(entry => entry.observer?.disconnect());
@@ -1828,10 +1917,21 @@ function coplaViewToggleMarkup() {
   `;
 }
 
+function listViewToggleMarkup(attr, current) {
+  const gridIcon = `<span class="grid-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`;
+  return `
+    <div class="view-toggle">
+      <button class="chip icon-view ${current === "grid" ? "active" : ""}" type="button" ${attr}="grid" title="Vista de tarxetas" aria-label="Vista de tarxetas">${gridIcon}</button>
+      <button class="chip icon-view ${current === "rows" ? "active" : ""}" type="button" ${attr}="rows" title="Vista compacta, unha liña por elemento" aria-label="Vista compacta">━</button>
+    </div>
+  `;
+}
+
 function coplaStreamClass() {
-  if (currentCoplaViewMode() === "list") return "copla-list";
-  if (currentCoplaViewMode() === "incipits") return "copla-incipits";
-  return "copla-gallery gallery-wide";
+  const selecting = state.coplaSelectMode ? " is-selecting" : "";
+  if (currentCoplaViewMode() === "list") return `copla-list${selecting}`;
+  if (currentCoplaViewMode() === "incipits") return `copla-incipits${selecting}`;
+  return `copla-gallery gallery-wide${selecting}`;
 }
 
 function coplaIncipitRow(copla, options = {}) {
@@ -1839,7 +1939,7 @@ function coplaIncipitRow(copla, options = {}) {
     <article class="incipit-row${options.selected ? " is-selected" : ""}" tabindex="0" role="button" data-open-copla="${copla.id}">
       ${coplaSelectCheckbox(copla, options)}
       <span class="incipit-text">${escapeHtml(coplaTitle(copla))}</span>
-      <span class="incipit-place${options.dimPlace ? " is-subtle" : ""}">${coplaPlaceTextHtml(copla)}</span>
+      <span class="incipit-place${options.dimPlace ? " is-subtle" : ""}" title="${escapeHtml(coplaPlaceLabel(copla))}">${coplaPlaceTextHtml(copla)}</span>
     </article>
   `;
 }
@@ -1887,8 +1987,9 @@ function updateCoplasResults(root = $("#view-coplas")) {
   }
   const toggleButton = $("#toggleCoplaSelect", root);
   if (toggleButton) {
-    toggleButton.textContent = state.coplaSelectMode ? "Saír da selección" : "Seleccionar varias";
+    toggleButton.innerHTML = selectToggleInner();
     toggleButton.classList.toggle("active", state.coplaSelectMode);
+    toggleButton.setAttribute("aria-pressed", String(state.coplaSelectMode));
   }
   const batchBar = $("#coplaBatchBar", root);
   if (batchBar) {
@@ -1897,28 +1998,63 @@ function updateCoplasResults(root = $("#view-coplas")) {
   }
 }
 
-function toggleCoplaSelection(coplaId) {
-  const index = state.coplaSelectedIds.indexOf(coplaId);
-  if (index === -1) state.coplaSelectedIds.push(coplaId);
-  else state.coplaSelectedIds.splice(index, 1);
+function selectToggleInner() {
+  return `<span class="select-toggle-icon" aria-hidden="true"></span>${state.coplaSelectMode ? "Saír da selección" : "Seleccionar varias"}`;
+}
+
+function setCoplaSelectMode(on) {
+  state.coplaSelectMode = Boolean(on);
+  if (!state.coplaSelectMode) {
+    state.coplaSelectedIds = [];
+    state.coplaLastSelectedId = null;
+  }
+  updateCoplasResults();
+}
+
+// Con `range` (Maiús + clic) marca ou desmarca todo o intervalo desde a
+// última copla tocada ata esta, segundo a orde da consulta actual.
+function toggleCoplaSelection(coplaId, { range = false } = {}) {
+  const visible = filteredCoplas().map(copla => copla.id);
+  const last = state.coplaLastSelectedId;
+  const selecting = !state.coplaSelectedIds.includes(coplaId);
+  if (range && last != null && visible.includes(last) && visible.includes(coplaId)) {
+    const from = visible.indexOf(last);
+    const to = visible.indexOf(coplaId);
+    const span = visible.slice(Math.min(from, to), Math.max(from, to) + 1);
+    if (selecting) state.coplaSelectedIds = Array.from(new Set([...state.coplaSelectedIds, ...span]));
+    else state.coplaSelectedIds = state.coplaSelectedIds.filter(id => !span.includes(id));
+  } else if (selecting) {
+    state.coplaSelectedIds.push(coplaId);
+  } else {
+    state.coplaSelectedIds = state.coplaSelectedIds.filter(id => id !== coplaId);
+  }
+  state.coplaLastSelectedId = coplaId;
   updateCoplasResults();
 }
 
 function coplaBatchBarMarkup(items) {
   if (!state.coplaSelectMode) return "";
   const count = state.coplaSelectedIds.length;
+  const plural = count === 1 ? "" : "s";
+  const everyVisible = items.length > 0 && items.every(copla => state.coplaSelectedIds.includes(copla.id));
   return `
-    <div class="batch-bar" role="toolbar" aria-label="Edición en lote">
-      <span>${count} copla${count === 1 ? "" : "s"} seleccionada${count === 1 ? "" : "s"}</span>
-      <button class="btn" type="button" id="batchSelectAllVisible">Seleccionar as ${items.length} da consulta</button>
-      <button class="btn" type="button" id="batchClearSelection" ${count ? "" : "disabled"}>Baleirar selección</button>
-      <button class="btn primary" type="button" id="openBatchAssign" ${count ? "" : "disabled"}>Asignar territorio...</button>
-      <button class="btn danger" type="button" id="openBatchDelete" ${count ? "" : "disabled"}>Borrar seleccionadas</button>
+    <div class="batch-dock${count ? " has-selection" : ""}" role="toolbar" aria-label="Edición en lote">
+      <div class="batch-dock-count"><b>${count}</b><div><span>copla${plural} seleccionada${plural}</span><small>${count ? "" : "Toca as coplas para marcalas. "}<span class="hint-shift">Maiús + clic marca un intervalo.</span></small></div></div>
+      <div class="batch-dock-tools">
+        <button class="link-button" type="button" id="batchSelectAllVisible" ${everyVisible || !items.length ? "disabled" : ""}>Seleccionar as ${items.length} da consulta</button>
+        <button class="link-button" type="button" id="batchClearSelection" ${count ? "" : "disabled"}>Baleirar</button>
+      </div>
+      <div class="batch-dock-actions">
+        <button class="btn primary" type="button" id="openBatchAssign" ${count ? "" : "disabled"}>Asignar territorio...</button>
+        <button class="btn danger" type="button" id="openBatchDelete" ${count ? "" : "disabled"}>Borrar</button>
+        <button class="btn dock-close" type="button" id="batchExit" title="Saír da selección" aria-label="Saír da selección">×</button>
+      </div>
     </div>
   `;
 }
 
 function bindCoplaBatchBar(root = $("#view-coplas")) {
+  $("#batchExit", root)?.addEventListener("click", () => setCoplaSelectMode(false));
   $("#batchSelectAllVisible", root)?.addEventListener("click", () => {
     const ids = filteredCoplas().map(copla => copla.id);
     state.coplaSelectedIds = Array.from(new Set([...state.coplaSelectedIds, ...ids]));
@@ -1954,16 +2090,16 @@ function renderCoplasView() {
       <div class="toolbar">
         <div class="searchbox"><span>⌕</span><input id="coplaSearch" type="search" value="${escapeHtml(state.coplaQuery)}" placeholder="Buscar por verso, íncipit, territorio..."></div>
         ${coplaViewToggleMarkup()}
-        <button class="btn ${state.coplaSelectMode ? "active" : ""}" type="button" id="toggleCoplaSelect">${state.coplaSelectMode ? "Saír da selección" : "Seleccionar varias"}</button>
+        <button class="btn select-toggle ${state.coplaSelectMode ? "active" : ""}" type="button" id="toggleCoplaSelect" aria-pressed="${state.coplaSelectMode}">${selectToggleInner()}</button>
       </div>
       <div class="chips">
         <button class="chip ${state.coplaStateFilter === "all" ? "active" : ""}" type="button" data-copla-total data-state-filter="all">Todas \\ ${items.length}</button>
         <button class="chip ${state.coplaStateFilter === "assigned" ? "active" : ""}" type="button" data-state-filter="assigned">Asignadas</button>
         <button class="chip ${state.coplaStateFilter === "unassigned" ? "active" : ""}" type="button" data-state-filter="unassigned">Sen asignar</button>
       </div>
-      <div id="coplaBatchBar">${coplaBatchBarMarkup(items)}</div>
       <div class="results-row"><span id="coplaResultCount" class="muted">Mostrando ${items.length} coplas</span><span id="coplaResultScope" class="muted">${state.coplaQuery ? "resultados da busca" : "arquivo completo"}</span></div>
       <div id="coplaList" class="${coplaStreamClass()}"></div>
+      <div id="coplaBatchBar">${coplaBatchBarMarkup(items)}</div>
       ${state.batchAssignModalOpen ? batchAssignModalMarkup() : ""}
     </div>
   `;
@@ -1973,17 +2109,14 @@ function renderCoplasView() {
   });
   all("[data-copla-view]", view).forEach(button => button.addEventListener("click", () => {
     state.coplaViewMode = button.dataset.coplaView;
+    saveViewPref("coplas", state.coplaViewMode);
     updateCoplasResults(view);
   }));
   all("[data-state-filter]", view).forEach(button => button.addEventListener("click", () => {
     state.coplaStateFilter = button.dataset.stateFilter;
     updateCoplasResults(view);
   }));
-  $("#toggleCoplaSelect")?.addEventListener("click", () => {
-    state.coplaSelectMode = !state.coplaSelectMode;
-    if (!state.coplaSelectMode) state.coplaSelectedIds = [];
-    updateCoplasResults(view);
-  });
+  $("#toggleCoplaSelect")?.addEventListener("click", () => setCoplaSelectMode(!state.coplaSelectMode));
   bindCoplaBatchBar(view);
   bindCoplaActions(view);
   mountCoplaList($("#coplaList", view), items, `${state.coplaQuery}|${state.coplaStateFilter}`);
@@ -1996,7 +2129,7 @@ function bindCoplaActions(root = document) {
     card.addEventListener("click", event => {
       if (event.target.closest("button, a, select, input, textarea")) return;
       if (state.coplaSelectMode) {
-        toggleCoplaSelection(Number(card.dataset.openCopla));
+        toggleCoplaSelection(Number(card.dataset.openCopla), { range: event.shiftKey });
         return;
       }
       openCoplaDrawer(Number(card.dataset.openCopla));
@@ -2014,7 +2147,7 @@ function bindCoplaActions(root = document) {
   });
   all("[data-select-copla]", root).forEach(checkbox => checkbox.addEventListener("click", event => {
     event.stopPropagation();
-    toggleCoplaSelection(Number(checkbox.dataset.selectCopla));
+    toggleCoplaSelection(Number(checkbox.dataset.selectCopla), { range: event.shiftKey });
   }));
   all("[data-add-copla]", root).forEach(button => button.addEventListener("click", event => {
     event.stopPropagation();
@@ -2398,6 +2531,7 @@ function openPieceDrawer(pieceId) {
         `).join("") || `<p class="muted">Esta peza aínda non ten coplas gardadas.</p>`}
       </div>
       ${piece.notes ? `<div class="drawer-section"><h3>Notas</h3><p class="muted">${nl2br(escapeHtml(piece.notes))}</p></div>` : ""}
+      ${(piece.links || []).length ? `<div class="drawer-section"><h3>Ligazóns</h3>${linkRowsMarkup(piece.links)}</div>` : ""}
       <div class="drawer-section">
         <h3>Media relacionada</h3>
         <div class="media-grid compact">${pieceMedia(piece).map(mediaCard).join("") || `<p class="muted">Sen recursos multimedia vinculados a esta peza.</p>`}</div>
@@ -2505,6 +2639,7 @@ function editPieceInWorkshop(piece) {
   draft.author = pieceAuthorName(piece) === "Sen autoría" ? "" : pieceAuthorName(piece);
   draft.notes = piece.notes || "";
   draft.territoryId = piece.context_territory?.id || piece.context_territory_id || "";
+  draft.links = (piece.links || []).map(link => ({ title: link.title, url: link.url }));
   draft.editingPieceId = piece.id;
   draft.visibility = piece.visibility === "public" ? "public" : "private";
   draft.sections = pieceSections(piece).map((section, index) => ({
@@ -2681,6 +2816,129 @@ function pieceMedia(piece) {
   return state.media.filter(item => (item.links || []).some(link => link.entity_type === "piece" && String(link.entity_id) === String(piece.id)));
 }
 
+// --- Autorías ---------------------------------------------------------------
+// A autoría é o nome que se escribe na peza (grupo, artista, unha persoa...).
+// Agrúpase sen ter en conta maiúsculas nin acentos; a ficha reúne as pezas e os
+// recursos que hai desa autoría na plataforma.
+
+function authorKey(name) {
+  return normalizeText(name || "");
+}
+
+function hasAuthor(piece) {
+  const name = pieceAuthorName(piece);
+  return Boolean(authorKey(name)) && authorKey(name) !== authorKey("Sen autoría");
+}
+
+// Nome para amosar: a variante máis usada; en empate, a que ten máis maiúsculas.
+function authorDisplayName(variants) {
+  const counts = new Map();
+  variants.forEach(name => counts.set(name, (counts.get(name) || 0) + 1));
+  const upper = name => (name.match(/\p{Lu}/gu) || []).length;
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || upper(b[0]) - upper(a[0]) || a[0].localeCompare(b[0], "gl"))[0][0];
+}
+
+function authorDirectory() {
+  const groups = new Map();
+  state.pezas.filter(hasAuthor).forEach(piece => {
+    const key = authorKey(pieceAuthorName(piece));
+    const entry = groups.get(key) || { key, variants: [], count: 0 };
+    entry.variants.push(pieceAuthorName(piece).trim().replace(/\s+/g, " "));
+    entry.count += 1;
+    groups.set(key, entry);
+  });
+  return [...groups.values()]
+    .map(entry => ({ key: entry.key, name: authorDisplayName(entry.variants), count: entry.count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "gl"));
+}
+
+function safeUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function linkRowsMarkup(links) {
+  const rows = links.map(link => {
+    const href = safeUrl(link.url);
+    if (!href) return "";
+    const host = new URL(href).hostname.replace(/^www\./, "");
+    return `<a class="link-row" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(link.title || host)}</strong><span>${escapeHtml(host)}${link.pieceTitle ? ` \\ ${escapeHtml(link.pieceTitle)}` : ""}</span></a>`;
+  }).join("");
+  return rows ? `<div class="link-list">${rows}</div>` : "";
+}
+
+function openAuthor(name) {
+  closePieceDrawer();
+  state.pieceAuthorFilter = name;
+  state.pieceTab = "library";
+  state.pieceScope = "all";
+  state.pieceRepositoryQuery = "";
+  state.pieceRhythmQuery = "";
+  history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/autoria/${slugify(name)}`);
+  if (state.view === "pieces") renderPiecesView(); else setView("pieces");
+  window.scrollTo(0, 0);
+}
+
+function closeAuthor() {
+  state.pieceAuthorFilter = "";
+  if (window.location.hash.startsWith("#/autoria/")) history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  renderPiecesView();
+}
+
+// Ligazón directa #/autoria/<nome-en-slug>: busca a autoría cando xa hai pezas.
+function applyAuthorHash() {
+  const match = window.location.hash.match(/^#\/autoria\/([^/]+)$/);
+  if (!match) return false;
+  const found = authorDirectory().find(entry => slugify(entry.name) === match[1]);
+  state.pieceAuthorFilter = found ? found.name : match[1].replace(/-/g, " ");
+  state.pieceTab = "library";
+  return true;
+}
+
+function authorFichaMarkup() {
+  const filter = state.pieceAuthorFilter;
+  if (!filter) return "";
+  const pieces = state.pezas.filter(piece => hasAuthor(piece) && authorKey(pieceAuthorName(piece)) === authorKey(filter));
+  const name = pieces.length ? authorDisplayName(pieces.map(piece => pieceAuthorName(piece).trim().replace(/\s+/g, " "))) : filter;
+  const links = pieces.flatMap(piece => (piece.links || []).map(link => ({ ...link, pieceTitle: piece.title })));
+  const seen = new Set();
+  const media = pieces.flatMap(pieceMedia).filter(item => (seen.has(item.id) ? false : seen.add(item.id)));
+  const owners = new Map();
+  pieces.forEach(piece => {
+    if (piece.owner?.handle && authorKey(piece.owner.display_name) === authorKey(name)) owners.set(piece.owner.handle, piece.owner);
+  });
+  const resourceTotal = links.length + media.length;
+  return `
+    <section class="panel author-ficha">
+      <p><button class="btn" type="button" id="clearPieceAuthorFilter">← Todas as pezas</button></p>
+      <div class="eyebrow">Autoría</div>
+      <h2 class="author-name">${escapeHtml(name)}</h2>
+      <p class="muted">${pieces.length} peza${pieces.length === 1 ? "" : "s"} \\ ${resourceTotal} recurso${resourceTotal === 1 ? "" : "s"}</p>
+      ${[...owners.values()].map(owner => `<p>Ten perfil na plataforma: <a href="#/persoa/${escapeHtml(owner.handle)}">${escapeHtml(owner.display_name)}</a></p>`).join("")}
+      ${pieces.length ? "" : `<p class="muted">Non hai pezas con esta autoría.</p>`}
+      ${resourceTotal ? `
+        <h3 class="sub-title">Recursos</h3>
+        ${linkRowsMarkup(links)}
+        ${media.length ? `<div class="media-grid compact">${media.map(mediaCard).join("")}</div>` : ""}` : ""}
+    </section>`;
+}
+
+function authorDirectoryMarkup() {
+  const authors = authorDirectory();
+  if (!authors.length) return "";
+  return `
+    <section class="panel creator-note">
+      <div class="eyebrow">Autorías</div>
+      <h2>Quen está detrás das pezas</h2>
+      <p class="muted">Grupos, artistas e persoas que figuran nas pezas. Toca unha para ver todo o que hai dela: pezas e recursos.</p>
+      <div class="people-chips author-chips">${authors.map(entry => `<button type="button" class="chip-link" data-piece-author="${escapeHtml(entry.name)}">${escapeHtml(entry.name)} <span class="muted">${entry.count}</span></button>`).join("")}</div>
+    </section>`;
+}
+
 function pieceOwnerLink(piece) {
   if (!piece.owner?.handle || piece.mine) return "";
   return `<a class="tag place as-link piece-owner" href="#/persoa/${escapeHtml(piece.owner.handle)}" title="Ver o perfil de ${escapeHtml(piece.owner.display_name)}">por ${escapeHtml(piece.owner.display_name)}</a>`;
@@ -2768,11 +3026,7 @@ function updatePieceLibrary(root = $("#view-pieces")) {
 }
 
 function bindPieceCardActions(root = $("#view-pieces")) {
-  all("[data-piece-author]", root).forEach(button => button.addEventListener("click", () => {
-    state.pieceAuthorFilter = button.dataset.pieceAuthor;
-    state.pieceTab = "library";
-    renderPiecesView();
-  }));
+  all("[data-piece-author]", root).forEach(button => button.addEventListener("click", () => openAuthor(button.dataset.pieceAuthor)));
   all("[data-open-piece]", root).forEach(card => {
     card.addEventListener("click", event => {
       if (event.target.closest("button, a, select, input, textarea")) return;
@@ -3123,6 +3377,39 @@ function pieceEmptyMarkup() {
   return `<article class="panel empty-panel"><p class="muted">Sen pezas gardadas.</p></article>`;
 }
 
+function workshopLinksMarkup(draft) {
+  if (!isAccount()) return "";
+  const links = draft.links || [];
+  return `
+    <div class="workshop-links">
+      <div class="workshop-links-head"><strong>Recursos ligados</strong><span class="muted">Opcional: gravación, vídeo, partitura... Aparecen na ficha da peza e na da autoría.</span></div>
+      ${links.map((link, index) => `<div class="workshop-link-item"><a href="${escapeHtml(safeUrl(link.url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.title)}</a><button type="button" class="btn" data-remove-piece-link="${index}" aria-label="Quitar ${escapeHtml(link.title)}">Quitar</button></div>`).join("")}
+      ${links.length < 10 ? `
+      <div class="workshop-link-add">
+        <input id="pieceLinkTitle" type="text" maxlength="120" placeholder="Nome (ex.: gravación do grupo)" aria-label="Nome da ligazón">
+        <input id="pieceLinkUrl" type="url" placeholder="https://..." aria-label="URL da ligazón">
+        <button class="btn" type="button" id="addPieceLink">Engadir</button>
+      </div>
+      <p id="pieceLinkError" class="muted is-error" role="alert" hidden></p>` : ""}
+    </div>`;
+}
+
+function addPieceLink() {
+  const urlInput = $("#pieceLinkUrl");
+  const error = $("#pieceLinkError");
+  const href = safeUrl(urlInput?.value.trim());
+  if (!href) {
+    if (error) { error.textContent = "Escribe unha URL completa que empece por http:// ou https://."; error.hidden = false; }
+    return;
+  }
+  const draft = loadDraft();
+  draft.links = draft.links || [];
+  if (draft.links.length >= 10) return;
+  draft.links.push({ title: ($("#pieceLinkTitle")?.value.trim() || new URL(href).hostname.replace(/^www\./, "")).slice(0, 120), url: href });
+  saveDraft(draft);
+  renderPiecesView();
+}
+
 function workshopNoticeMarkup(draft) {
   if (!isGoogleMode() || !authInfo().ready) return "";
   if (!isAccount()) {
@@ -3181,10 +3468,10 @@ function renderPiecesView() {
         <button class="${state.pieceTab === "workshop" ? "active" : ""}" type="button" data-piece-tab="workshop">Obradoiro <b class="cart-count" data-cart-count ${total ? "" : "hidden"}>${total}</b></button>
       </div>
       ${state.pieceTab === "library" ? `
+        ${authorFichaMarkup()}
         <section class="panel piece-repository">
-          <div class="section-title"><h2>${state.pieceAuthorFilter ? `Pezas de ${escapeHtml(state.pieceAuthorFilter)}` : state.pieceScope === "mine" && isAccount() ? "As miñas pezas" : "Pezas gardadas"}</h2><span id="pieceRepositoryCount" class="muted">${repo.length} pezas</span></div>
+          <div class="section-title"><h2>${state.pieceAuthorFilter ? "Pezas desta autoría" : state.pieceScope === "mine" && isAccount() ? "As miñas pezas" : "Pezas gardadas"}</h2><span id="pieceRepositoryCount" class="muted">${repo.length} pezas</span></div>
           ${pieceScopeMarkup()}
-          ${state.pieceAuthorFilter ? `<p class="muted">Só as pezas gardadas con esta autoría. <button class="btn" type="button" id="clearPieceAuthorFilter">Ver todas as pezas</button></p>` : ""}
           <div class="toolbar piece-filters">
             <div class="searchbox"><span>⌕</span><input id="pieceRepositorySearch" type="search" value="${escapeHtml(state.pieceRepositoryQuery)}" placeholder="Buscar por título, creador ou contexto..."></div>
             <select id="pieceRhythmFilter" aria-label="Filtrar por ritmo">
@@ -3196,13 +3483,7 @@ function renderPiecesView() {
             ${repo.map(pieceCard).join("") || pieceEmptyMarkup()}
           </div>
         </section>
-        <section class="panel creator-note">
-          <div>
-            <div class="eyebrow">Creadoras e artistas</div>
-            <h2>Páxinas de autoría</h2>
-            <p class="muted">Toca o nome dunha autoría en calquera peza para abrir a súa páxina, cos arranxos e seleccións que ten gardados.</p>
-          </div>
-        </section>
+        ${state.pieceAuthorFilter ? "" : authorDirectoryMarkup()}
       ` : `
         ${workshopNoticeMarkup(draft)}
         <div id="pieceExportStatus" class="export-status" role="status" aria-live="polite">${escapeHtml(state.pieceNotice)}</div>
@@ -3210,13 +3491,15 @@ function renderPiecesView() {
           <header class="workshop-head">
             <input id="pieceTitle" class="workshop-title" type="text" value="${escapeHtml(draft.title || "")}" placeholder="${escapeHtml(territoryContextTitle(territory) || "Título da peza")}" aria-label="Título da peza">
             <div class="workshop-meta">
-              <input id="pieceAuthor" class="workshop-author" type="text" value="${escapeHtml(draft.author || "")}" placeholder="Autoría" aria-label="Autoría">
+              <input id="pieceAuthor" class="workshop-author" type="text" list="pieceAuthorList" value="${escapeHtml(draft.author || "")}" placeholder="Autoría (grupo, artista, ti...)" aria-label="Autoría">
+              <datalist id="pieceAuthorList">${authorDirectory().map(entry => `<option value="${escapeHtml(entry.name)}"></option>`).join("")}</datalist>
               ${territory
                 ? `<button class="chip-btn" type="button" id="clearPieceTerritory" aria-label="Quitar territorio ${escapeHtml(territory.nome)}"><span>${escapeHtml(territory.nome)}</span>${uiIcon("close", 14)}</button>`
                 : `<div class="searchbox workshop-territory"><input id="pieceTerritorySearch" type="search" value="${escapeHtml(state.pieceTerritoryQuery)}" placeholder="Territorio…" aria-label="Centrar peza nun territorio"></div>`}
             </div>
             <div id="pieceTerritoryResults" class="territory-results compact"></div>
             <textarea id="pieceNotes" class="workshop-notes" rows="1" placeholder="Notas para imprimir…" aria-label="Notas da peza">${escapeHtml(draft.notes || "")}</textarea>
+            ${workshopLinksMarkup(draft)}
           </header>
           <div class="builder-sections">
             ${workshopPartsMarkup(draft, rhythmOptions)}
@@ -3260,10 +3543,7 @@ function renderPiecesView() {
     updatePieceRepository(view);
   });
   bindPieceCardActions(view);
-  $("#clearPieceAuthorFilter")?.addEventListener("click", () => {
-    state.pieceAuthorFilter = "";
-    renderPiecesView();
-  });
+  $("#clearPieceAuthorFilter")?.addEventListener("click", closeAuthor);
   all("[data-piece-scope]", view).forEach(button => button.addEventListener("click", () => {
     state.pieceScope = button.dataset.pieceScope;
     renderPiecesView();
@@ -3346,6 +3626,14 @@ function renderPiecesView() {
     downloadText("peza.json", JSON.stringify(buildPiecePayload(), null, 2), "application/json");
   });
   $("#savePieceDirect")?.addEventListener("click", savePieceDirect);
+  $("#addPieceLink")?.addEventListener("click", addPieceLink);
+  $("#pieceLinkUrl")?.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); addPieceLink(); } });
+  all("[data-remove-piece-link]", view).forEach(button => button.addEventListener("click", () => {
+    const next = loadDraft();
+    next.links = (next.links || []).filter((_, index) => index !== Number(button.dataset.removePieceLink));
+    saveDraft(next);
+    renderPiecesView();
+  }));
   $("#openA4")?.addEventListener("click", exportPiecePdf);
   all("[data-section-label]", view).forEach(select => select.addEventListener("change", () => {
     const next = loadDraft();
@@ -3519,6 +3807,7 @@ function buildPieceDbPayload(overrides = {}) {
   return {
     pieces: [{
       ...(overrides.id ? { id: overrides.id } : {}),
+      ...(isAccount() ? { links: (draft.links || []).map(link => ({ title: link.title, url: link.url })) } : {}),
       ...(overrides.visibility ? { visibility: overrides.visibility } : {}),
       title,
       slug: slugify(`${title}-${Date.now()}`),
@@ -4264,7 +4553,7 @@ function renderSubmitView() {
   $("#addVersion")?.addEventListener("click", () => addVersionRow());
   $("#saveDirect")?.addEventListener("click", saveCoplaDirect);
   $("#queueCopla")?.addEventListener("click", queueCoplaFromForm);
-  $("#parsePasteBlock")?.addEventListener("click", queuePasteBlock);
+  bindPasteBlock();
   $("#cancelEdit")?.addEventListener("click", cancelEditCopla);
   all("[data-remove-batch]", view).forEach(button => button.addEventListener("click", () => removeQueuedCopla(Number(button.dataset.removeBatch))));
   $("#importCoplaJson")?.addEventListener("click", importCoplaJson);
@@ -5055,20 +5344,134 @@ function parseCoplaPasteBlock(raw) {
     .filter(item => item.text);
 }
 
+function serializePasteBlock(stanzas) {
+  return stanzas.map(item => (item.isVolta ? `>${item.text}<` : item.text)).join("\n\n");
+}
+
+// Lugar e estado co que se engadirán as coplas pegadas (os escollidos arriba).
+function pasteDestination() {
+  const territoryIds = Array.from(new Set(state.submitTerritoryIds));
+  const territoryState = state.submitGeneral ? "general" : (territoryIds.length ? "assigned" : "unassigned");
+  const territories = territoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
+  return { territoryIds, territoryState, territories, label: coplaPlaceLabel({ territories, territory_state: territoryState }) };
+}
+
 function pasteBlockPanelMarkup() {
+  const count = parseCoplaPasteBlock(state.pasteDraft).length;
   return `
-    <details class="panel batch-import-panel compact-import">
-      <summary>Pegar varias coplas dun golpe (voltas entre &gt; e &lt;)</summary>
-      <div class="compact-import-body">
-        <p class="muted">Pega aquí varias coplas separadas por unha liña en branco. Para marcar unha delas como volta, escríbea enteira entre <code>&gt;</code> e <code>&lt;</code>. Engádense como coplas a coplas e como voltas a voltas, no territorio e estado escollidos arriba.</p>
-        <textarea id="pasteBlock" rows="8" placeholder="Escribe ou pega aquí varias coplas separadas por unha liña en branco..."></textarea>
-        <div class="compact-import-actions">
-          <button class="btn primary" type="button" id="parsePasteBlock">Repartir e engadir á lista</button>
+    <details class="panel paste-panel"${count || state.pasteFeedback ? " open" : ""}>
+      <summary>
+        <span class="paste-summary-title">Pegar varias coplas dun golpe</span>
+        <span class="paste-summary-sub">Unha liña en branco separa as coplas \\ as voltas van entre &gt; e &lt;</span>
+        <span class="paste-badge" id="pasteBadge"${count ? "" : " hidden"}>${count}</span>
+      </summary>
+      <div class="paste-body">
+        <div class="paste-editor">
+          <label for="pasteBlock">Texto</label>
+          <textarea id="pasteBlock" rows="14" spellcheck="false" placeholder="Pega aquí as coplas...&#10;&#10;Cada copla separada da seguinte por unha liña en branco.&#10;&#10;&gt;Esta enteira é unha volta&#10;e remata así&lt;">${escapeHtml(state.pasteDraft)}</textarea>
+          <div class="paste-legend">
+            <span><kbd>liña en branco</kbd>separa unha copla da seguinte</span>
+            <span><kbd>&gt; ... &lt;</kbd>marca a copla enteira como volta</span>
+          </div>
         </div>
-        <p id="pasteBlockFeedback" class="muted"></p>
+        <div class="paste-preview" aria-live="polite">
+          <div class="paste-preview-head">
+            <strong id="pasteSummary"></strong>
+            <button class="link-button" type="button" id="pasteCheckDupes">Buscar parecidas no arquivo</button>
+          </div>
+          <ol id="pasteList" class="paste-list"></ol>
+          <p class="paste-dest">Engadiranse en <b id="pasteDest"></b>. O lugar cámbiase no formulario de arriba.</p>
+        </div>
       </div>
+      <div class="paste-actions">
+        <button class="btn" type="button" id="clearPasteBlock">Limpar</button>
+        <button class="btn primary" type="button" id="parsePasteBlock" disabled>Engadir á lista</button>
+      </div>
+      <p id="pasteBlockFeedback" class="muted">${escapeHtml(state.pasteFeedback || "")}</p>
     </details>
   `;
+}
+
+function updatePasteBlockPreview({ keepDupes = false } = {}) {
+  const textarea = $("#pasteBlock");
+  const list = $("#pasteList");
+  if (!textarea || !list) return;
+  state.pasteDraft = textarea.value;
+  if (!keepDupes) state.pasteDupes = null;
+  const stanzas = parseCoplaPasteBlock(textarea.value);
+  const voltas = stanzas.filter(item => item.isVolta).length;
+  const plural = stanzas.length === 1 ? "" : "s";
+  $("#pasteSummary").textContent = stanzas.length
+    ? `${stanzas.length} copla${plural} detectada${plural}${voltas ? ` \\ ${voltas} volta${voltas === 1 ? "" : "s"}` : ""}`
+    : "Aínda non hai nada que repartir";
+  $("#pasteDest").textContent = pasteDestination().label;
+  const badge = $("#pasteBadge");
+  if (badge) {
+    badge.textContent = String(stanzas.length);
+    badge.hidden = !stanzas.length;
+  }
+  $("#parsePasteBlock").disabled = !stanzas.length;
+  $("#parsePasteBlock").textContent = stanzas.length ? `Engadir ${stanzas.length} copla${plural} á lista` : "Engadir á lista";
+  $("#pasteCheckDupes").hidden = !stanzas.length;
+  list.innerHTML = stanzas.map((item, index) => {
+    const lines = item.text.split(/\r?\n/).filter(line => line.trim());
+    const dupe = state.pasteDupes?.[index];
+    return `
+      <li class="paste-item${item.isVolta ? " is-volta" : ""}">
+        <span class="paste-num">${index + 1}</span>
+        <div class="paste-item-text">
+          <strong>${escapeHtml(lines[0] || "")}</strong>
+          <span>${lines.length} verso${lines.length === 1 ? "" : "s"}${lines[1] ? ` \\ ${escapeHtml(lines[1].length > 60 ? `${lines[1].slice(0, 57)}…` : lines[1])}` : ""}</span>
+          ${dupe ? `<span class="paste-dupe">Parecida a <button type="button" class="link-button" data-paste-view-dupe="${dupe.id}">${escapeHtml(coplaTitle(dupe))}</button></span>` : ""}
+        </div>
+        <div class="paste-item-actions">
+          <button type="button" class="chip${item.isVolta ? " active" : ""}" data-paste-volta="${index}" aria-pressed="${item.isVolta}" title="Marcar como volta">Volta</button>
+          <button type="button" class="paste-remove" data-paste-remove="${index}" aria-label="Quitar a copla ${index + 1}" title="Quitar">×</button>
+        </div>
+      </li>`;
+  }).join("");
+  all("[data-paste-volta]", list).forEach(button => button.addEventListener("click", () => {
+    const current = parseCoplaPasteBlock(textarea.value);
+    const target = current[Number(button.dataset.pasteVolta)];
+    if (!target) return;
+    target.isVolta = !target.isVolta;
+    textarea.value = serializePasteBlock(current);
+    updatePasteBlockPreview({ keepDupes: true });
+  }));
+  all("[data-paste-remove]", list).forEach(button => button.addEventListener("click", () => {
+    const current = parseCoplaPasteBlock(textarea.value);
+    current.splice(Number(button.dataset.pasteRemove), 1);
+    textarea.value = serializePasteBlock(current);
+    updatePasteBlockPreview();
+  }));
+  all("[data-paste-view-dupe]", list).forEach(button => button.addEventListener("click", () => openCoplaDrawer(Number(button.dataset.pasteViewDupe))));
+}
+
+function bindPasteBlock() {
+  const textarea = $("#pasteBlock");
+  if (!textarea) return;
+  textarea.addEventListener("input", () => {
+    state.pasteFeedback = "";
+    const feedback = $("#pasteBlockFeedback");
+    if (feedback) feedback.textContent = "";
+    updatePasteBlockPreview();
+  });
+  $("#clearPasteBlock")?.addEventListener("click", () => {
+    textarea.value = "";
+    state.pasteFeedback = "";
+    $("#pasteBlockFeedback").textContent = "";
+    updatePasteBlockPreview();
+    textarea.focus();
+  });
+  $("#pasteCheckDupes")?.addEventListener("click", () => {
+    const stanzas = parseCoplaPasteBlock(textarea.value).slice(0, 60);
+    state.pasteDupes = stanzas.map(item => similarCoplaMatches(item.text)[0] || null);
+    const found = state.pasteDupes.filter(Boolean).length;
+    $("#pasteBlockFeedback").textContent = found ? `${found} das coplas lémbranse a outras que xa están no arquivo. Revísaas antes de engadir.` : "Non se atopou ningunha parecida no arquivo.";
+    updatePasteBlockPreview({ keepDupes: true });
+  });
+  $("#parsePasteBlock")?.addEventListener("click", queuePasteBlock);
+  updatePasteBlockPreview({ keepDupes: true });
 }
 
 function queuePasteBlock() {
@@ -5080,9 +5483,7 @@ function queuePasteBlock() {
     if (feedback) feedback.textContent = "Pega polo menos unha copla antes de repartir.";
     return;
   }
-  const territoryIds = Array.from(new Set(state.submitTerritoryIds));
-  const territoryState = state.submitGeneral ? "general" : (territoryIds.length ? "assigned" : "unassigned");
-  const territories = territoryIds.map(id => state.territorios.find(item => item.id === id)).filter(Boolean);
+  const { territoryIds, territoryState, territories } = pasteDestination();
   stanzas.forEach(({ text, isVolta }) => {
     const payload = {
       text,
@@ -5102,10 +5503,12 @@ function queuePasteBlock() {
       isVolta,
     });
   });
-  textarea.value = "";
   const voltaCount = stanzas.filter(item => item.isVolta).length;
-  if (feedback) feedback.textContent = `Engadidas ${stanzas.length} coplas á lista (${voltaCount} volta${voltaCount === 1 ? "" : "s"}). Revisa a lista de pendentes e preme «Gardar todas» cando remates.`;
+  state.pasteDraft = "";
+  state.pasteDupes = null;
+  state.pasteFeedback = `Engadidas ${stanzas.length} coplas á lista (${voltaCount} volta${voltaCount === 1 ? "" : "s"}). Revisa a lista de pendentes e preme «Gardar todas» cando remates.`;
   renderSubmitView();
+  $(".submit-batch-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function startEditCopla(coplaId) {
@@ -5223,8 +5626,9 @@ function renderMediaView() {
           <option value="">Todos os usos</option>
           ${["documental", "melody", "mixed"].map(role => `<option value="${role}" ${state.mediaRoleFilter === role ? "selected" : ""}>${mediaRoleLabel(role)}</option>`).join("")}
         </select>
+        ${listViewToggleMarkup("data-media-view", state.mediaViewMode)}
       </div>
-      <div id="mediaList" class="media-grid">
+      <div id="mediaList" class="${state.mediaViewMode === "rows" ? "media-rows" : "media-grid"}">
       </div>
       ${mediaModalMarkup(selectedMediaTerritories, selectedMediaCoplas)}
     </div>
@@ -5242,6 +5646,12 @@ function renderMediaView() {
     state.mediaRoleFilter = event.target.value;
     updateMediaResults(view);
   });
+  all("[data-media-view]", view).forEach(button => button.addEventListener("click", () => {
+    state.mediaViewMode = button.dataset.mediaView;
+    saveViewPref("media", state.mediaViewMode);
+    all("[data-media-view]", view).forEach(item => item.classList.toggle("active", item === button));
+    updateMediaResults(view);
+  }));
   all("[data-close-media-modal]", view).forEach(item => item.addEventListener("click", closeMediaModal));
   bindMediaTerritoryPicker();
   bindMediaCoplaPicker();
@@ -5297,9 +5707,10 @@ function bindMediaCardActions(root) {
 function updateMediaResults(root = $("#view-media")) {
   const list = $("#mediaList", root);
   if (!list) return;
+  list.className = state.mediaViewMode === "rows" ? "media-rows" : "media-grid";
   mountInfiniteList(list, filteredMediaItems(), {
-    key: `${state.mediaQuery}|${state.mediaKindFilter}|${state.mediaRoleFilter}`,
-    renderItems: slice => slice.map(item => mediaCard(item, { editable: true })).join(""),
+    key: `${state.mediaQuery}|${state.mediaKindFilter}|${state.mediaRoleFilter}|${state.mediaViewMode}`,
+    renderItems: slice => slice.map(item => (state.mediaViewMode === "rows" ? mediaRow(item, { editable: true }) : mediaCard(item, { editable: true }))).join(""),
     bind: bindMediaCardActions,
     empty: `<article class="panel"><p class="muted">Aínda non hai recursos multimedia para mostrar.</p></article>`,
   });
@@ -5565,8 +5976,19 @@ function bindGlobalEvents() {
     event.preventDefault();
     openAboutPrivacy();
   });
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !state.coplaSelectMode || state.view !== "coplas") return;
+    if (state.batchAssignModalOpen || state.deleteConfirmOpen || !$("#coplaDrawer")?.hidden) return;
+    const field = document.activeElement;
+    if (field && ["INPUT", "TEXTAREA", "SELECT"].includes(field.tagName) && field.type !== "checkbox") return;
+    setCoplaSelectMode(false);
+  });
   window.addEventListener("hashchange", () => {
     if (window.location.hash === "#/privacidade" && !state.aboutPrivacy) openAboutPrivacy();
+    else if (window.location.hash.startsWith("#/autoria/") && state.dataReady && applyAuthorHash()) {
+      closePieceDrawer();
+      if (state.view === "pieces") renderPiecesView(); else setView("pieces");
+    }
   });
   document.addEventListener("click", event => {
     const nav = event.target.closest("[data-view]");
@@ -5693,8 +6115,9 @@ async function init() {
   if (coplaId) state.selectedCoplaId = Number(coplaId);
 
   if (window.location.hash === "#/privacidade") state.aboutPrivacy = true;
+  const authorRoute = !coplaId && applyAuthorHash();
   updateMapCard();
-  setView(coplaId ? "coplas" : window.location.hash === "#/privacidade" ? "about" : state.resumeWorkshop ? "pieces" : normalizeView(params.get("mode") || params.get("view") || "map"));
+  setView(coplaId ? "coplas" : authorRoute ? "pieces" : window.location.hash === "#/privacidade" ? "about" : state.resumeWorkshop ? "pieces" : normalizeView(params.get("mode") || params.get("view") || "map"));
   if (coplaId) openCoplaDrawer(Number(coplaId));
 }
 
@@ -5705,6 +6128,8 @@ window.folearApp = {
   media: () => state.media,
   melodies: () => state.melodias,
   refreshPezas,
+  openAuthor,
+  authors: () => authorDirectory().map(entry => entry.name),
   openPrivacy: openAboutPrivacy,
   openPiece(id) { openPieceDrawer(Number(id)); },
   openMelody(id) { openMelodyDrawer(Number(id)); },

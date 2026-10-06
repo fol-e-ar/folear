@@ -78,7 +78,7 @@ const navs = ["map", "coplas", "pieces", "territory", "submit", "media"].map(vie
 
 globalThis.window = {
   FOL_E_AR_FILE_MODE: false,
-  location: { href: "http://localhost:8765/frontend/index.html", protocol: "http:" },
+  location: { href: "http://localhost:8765/frontend/index.html", protocol: "http:", hash: "", pathname: "/frontend/index.html", search: "" },
   setTimeout: fn => fn(),
   addEventListener() {},
   scrollTo() {},

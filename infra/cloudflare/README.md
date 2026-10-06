@@ -306,6 +306,26 @@ npx wrangler deploy
 - Sen a 0005 a web segue funcionando: as pezas existentes saen como públicas e
   gardar devolve un erro claro que pide aplicar a migración.
 
+### Fichas de autoría e ligazóns nas pezas (migración 0006)
+
+Migración aditiva e **idempotente** `migrations/0006_piece_links.sql`: crea a
+táboa `piece_links` (ata 10 ligazóns externas por peza: título + URL). Aplícase
+despois da 0005:
+
+```
+npx wrangler d1 execute fol-e-ar-db --remote --file=migrations/0006_piece_links.sql
+npx wrangler deploy
+```
+
+- Unha peza pode ser unha selección de coplas ou un arranxo dun grupo, artista
+  ou persoa: o campo «Autoría» é texto libre. A web agrupa as autorías sen ter
+  en conta maiúsculas nin acentos e cada unha ten ficha en `#/autoria/<nome>`
+  coas súas pezas públicas, as ligazóns e os recursos de media ligados ás pezas.
+- As ligazóns viven coa peza (privada ⇒ ligazóns privadas; se se borra, bórranse)
+  e non entran no inventario público de media. Só aceptan `http(s)://`.
+- Sen a 0006 a web segue funcionando; gardar unha peza con ligazóns devolve un
+  erro claro que pide aplicar a migración.
+
 ### Escalabilidade (plan gratuíto)
 
 Límites do plan gratuíto de Cloudflare (mirar a documentación oficial antes de

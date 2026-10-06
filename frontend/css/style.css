@@ -1430,7 +1430,7 @@ label {
 
 .pdf-viewer {
   position: fixed;
-  z-index: 80;
+  z-index: 3000;
   inset: 0;
 }
 
@@ -1757,7 +1757,6 @@ label {
     inset: 10px;
   }
 
-  .pdf-head,
   .pdf-actions {
     align-items: stretch;
     flex-direction: column;
@@ -4853,4 +4852,778 @@ label {
 ::selection {
   background: var(--accent-soft);
   color: var(--ink);
+}
+
+/* ==========================================================
+   Lugares co código de cor, filas aliñadas, selección múltiple,
+   pegado de coplas e vistas compactas de Media e Melodías
+   ========================================================== */
+
+/* Lugares: o punto e o nome levan a cor do nivel (parroquia, concello, comarca, provincia) */
+
+.level-chip.level-par,
+.level-text.level-par {
+  color: var(--level-par) !important;
+}
+
+.level-chip.level-con,
+.level-text.level-con {
+  color: var(--level-con) !important;
+}
+
+.level-chip.level-com,
+.level-text.level-com {
+  color: var(--level-com) !important;
+}
+
+.level-chip.level-prov,
+.level-text.level-prov {
+  color: var(--level-prov) !important;
+}
+
+.level-text {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.level-text::before {
+  content: "\25CF";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 8px;
+  line-height: 1;
+  vertical-align: 1px;
+}
+
+.level-text.level-empty {
+  color: var(--muted);
+}
+
+/* Íncipits: título, lugar e estrela en columnas, o lugar sempre aliñado á esquerda */
+
+.copla-incipits .incipit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 30%) auto;
+  grid-template-areas: "title place star";
+  align-items: center;
+  column-gap: 18px;
+  justify-content: stretch;
+}
+
+.copla-incipits.is-selecting .incipit-row {
+  grid-template-columns: 26px minmax(0, 1fr) minmax(170px, 30%) auto;
+  grid-template-areas: "check title place star";
+}
+
+.incipit-row .select-check {
+  grid-area: check;
+}
+
+.incipit-row .incipit-text {
+  grid-area: title;
+  min-width: 0;
+}
+
+.incipit-row .incipit-place {
+  grid-area: place;
+  display: flex;
+  flex: initial;
+  gap: 2px 14px;
+  min-width: 0;
+  font-size: 12px;
+  text-align: left;
+}
+
+.incipit-row .fav-slot {
+  grid-area: star;
+  margin-left: 0;
+}
+
+@media (max-width: 920px) {
+  .copla-incipits .incipit-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title star" "place star";
+    row-gap: 2px;
+  }
+
+  .copla-incipits.is-selecting .incipit-row {
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    grid-template-areas: "check title star" "check place star";
+  }
+}
+
+/* Lista expandida: título, «+» e estrela alíñanse á dereita */
+
+.gallery-card.as-list .gallery-top {
+  align-items: center;
+  gap: 10px;
+}
+
+.gallery-card.as-list .gallery-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.gallery-card.as-list .gallery-top .fav-slot {
+  margin-left: 0;
+}
+
+/* Selección múltiple */
+
+.select-check {
+  position: relative;
+  width: 26px;
+  height: 26px;
+}
+
+.select-check input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.select-box {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  background: var(--float-bg);
+  border: 1.5px solid var(--line-strong);
+  border-radius: 6px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.select-box::after {
+  content: "";
+  width: 10px;
+  height: 5px;
+  margin-top: -2px;
+  border-bottom: 2px solid #fff;
+  border-left: 2px solid #fff;
+  transform: rotate(-45deg) scale(0);
+  transition: transform 0.12s ease;
+}
+
+.select-check:hover .select-box {
+  border-color: var(--ink);
+}
+
+.select-check input:checked + .select-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.select-check input:checked + .select-box::after {
+  transform: rotate(-45deg) scale(1);
+}
+
+.select-check input:focus-visible + .select-box {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.is-selecting .gallery-card,
+.is-selecting .incipit-row {
+  user-select: none;
+  cursor: pointer;
+}
+
+.is-selecting .icon-add,
+.is-selecting .card-float-add,
+.is-selecting .fav-slot {
+  display: none;
+}
+
+.incipit-row.is-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.gallery-card.is-selected {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 85%);
+}
+
+.select-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.select-toggle-icon {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+}
+
+.select-toggle-icon::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 7px;
+  height: 3.5px;
+  border-bottom: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.select-toggle.active {
+  color: var(--float-bg);
+  background: var(--ink);
+}
+
+#coplaBatchBar {
+  display: contents;
+}
+
+.batch-dock {
+  position: sticky;
+  bottom: 18px;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "count tools actions";
+  align-items: center;
+  gap: 8px 22px;
+  max-width: 900px;
+  padding: 12px 14px 12px 22px;
+  margin: 18px auto 0;
+  background: var(--float-bg);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow-lg);
+}
+
+.batch-dock-count {
+  grid-area: count;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.batch-dock-count b {
+  min-width: 1.4ch;
+  font: 500 28px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.batch-dock.has-selection .batch-dock-count b {
+  color: var(--accent);
+}
+
+.batch-dock-count span,
+.batch-dock-count small {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.batch-dock-count small {
+  margin-top: 1px;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.batch-dock-count small .hint-shift {
+  display: inline;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+}
+
+.batch-dock-tools {
+  grid-area: tools;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  justify-content: flex-end;
+}
+
+.batch-dock-tools .link-button {
+  margin: 0;
+  color: var(--ink);
+}
+
+.batch-dock-tools .link-button:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+  opacity: 0.55;
+}
+
+.batch-dock-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.batch-dock .dock-close {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 50%;
+}
+
+@media (hover: none) {
+  .hint-shift {
+    display: none !important;
+  }
+}
+
+@media (max-width: 920px) {
+  .batch-dock {
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "count count close" "assign assign del" "tools tools tools";
+    gap: 10px 10px;
+    padding: 12px 14px;
+    border-radius: 20px;
+  }
+
+  .batch-dock-actions {
+    display: contents;
+  }
+
+  #openBatchAssign {
+    grid-area: assign;
+    justify-content: center;
+  }
+
+  #openBatchDelete {
+    grid-area: del;
+  }
+
+  #batchExit {
+    grid-area: close;
+    justify-self: end;
+  }
+
+  .batch-dock-count span,
+  .batch-dock-count small {
+    white-space: nowrap;
+  }
+
+  .batch-dock-count small {
+    display: none;
+  }
+
+  .batch-dock-tools {
+    justify-content: flex-start;
+  }
+}
+
+/* Pegar varias coplas */
+
+.paste-panel {
+  max-width: 1080px;
+  padding: 0;
+  margin-top: 18px;
+}
+
+.paste-panel > summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 16px 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.paste-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.paste-panel > summary::before {
+  content: "+";
+  width: 14px;
+  font: 500 15px var(--font-mono);
+  color: var(--accent);
+}
+
+.paste-panel[open] > summary::before {
+  content: "\2212";
+}
+
+.paste-summary-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.paste-summary-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.paste-badge {
+  min-width: 26px;
+  padding: 2px 9px;
+  margin-left: auto;
+  font: 500 12px var(--font-mono);
+  text-align: center;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.paste-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px;
+  padding: 6px 18px 8px;
+}
+
+.paste-editor,
+.paste-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.paste-editor label {
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.paste-editor textarea {
+  width: 100%;
+  min-height: 300px;
+  padding: 14px 16px;
+  font: inherit;
+  line-height: 1.55;
+  resize: vertical;
+  background: var(--float-bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.paste-editor textarea:focus {
+  outline: 0;
+  border-color: var(--ink);
+}
+
+.paste-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.paste-legend kbd {
+  padding: 2px 7px;
+  margin-right: 8px;
+  font: 500 11px var(--font-mono);
+  color: var(--ink);
+  background: var(--tint);
+  border-radius: 6px;
+}
+
+.paste-preview-head {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: 24px;
+}
+
+.paste-preview-head strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.paste-preview-head .link-button {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.paste-list {
+  max-height: 340px;
+  padding: 0;
+  margin: 0;
+  overflow: auto;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.paste-list:empty::before {
+  content: "A previsualización aparecerá aquí cando pegues texto.";
+  display: block;
+  padding: 18px 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.paste-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.paste-item.is-volta {
+  background: var(--red-soft);
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.paste-num {
+  font: 500 12px var(--font-mono);
+  color: var(--muted);
+  text-align: right;
+}
+
+.paste-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.paste-item-text strong,
+.paste-item-text > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paste-item-text strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.paste-item-text > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.paste-item-text .paste-dupe {
+  color: var(--accent-hover);
+}
+
+.paste-item-text .paste-dupe .link-button {
+  margin: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.paste-item-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.paste-item-actions .chip {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.paste-remove {
+  width: 26px;
+  height: 26px;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+}
+
+.paste-remove:hover,
+.paste-remove:focus-visible {
+  color: var(--ink);
+  background: var(--tint-strong);
+  outline: 0;
+}
+
+.paste-dest {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.paste-dest b {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.paste-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 12px 18px 8px;
+}
+
+.paste-panel #pasteBlockFeedback {
+  padding: 0 18px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+@media (max-width: 920px) {
+  .paste-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .paste-editor textarea {
+    min-height: 220px;
+  }
+}
+
+/* Vistas compactas de Media e Melodías: unha liña por elemento */
+
+.media-rows,
+.melody-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.media-row,
+.melody-row {
+  display: grid;
+  align-items: center;
+  column-gap: 16px;
+  padding: 12px 6px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  transition: border-color 120ms ease;
+}
+
+.media-row {
+  grid-template-columns: 116px minmax(0, 1fr) minmax(150px, 26%) 124px auto auto;
+  grid-template-areas: "kind title place role star actions";
+}
+
+.melody-row {
+  grid-template-columns: minmax(0, 1.2fr) minmax(150px, 1fr) 130px auto;
+  grid-template-areas: "title place role star";
+}
+
+.media-row:hover,
+.media-row:focus-visible,
+.melody-row:hover,
+.melody-row:focus-visible {
+  border-color: var(--ink);
+  outline: 0;
+}
+
+.row-kind {
+  grid-area: kind;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.row-kind .media-kind-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--accent-hover);
+}
+
+.row-title {
+  grid-area: title;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.row-title strong,
+.row-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-title strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.row-title small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.row-place {
+  grid-area: place;
+  display: flex;
+  gap: 2px 14px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.row-role {
+  grid-area: role;
+  font: 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.row-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 6px;
+}
+
+.row-actions .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.media-row .fav-slot,
+.melody-row .fav-slot {
+  grid-area: star;
+  margin: 0;
+}
+
+.melody-rows .melody-group-title {
+  margin: 22px 0 4px;
+}
+
+.melody-rows .melody-group-title:first-child {
+  margin-top: 6px;
+}
+
+@media (max-width: 920px) {
+  .media-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "kind role star" "title title title" "place place actions";
+    row-gap: 3px;
+  }
+
+  .melody-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title star" "place role";
+    row-gap: 3px;
+  }
 }

@@ -1117,20 +1117,6 @@ body {
   margin: 0;
 }
 
-/* Filigrana: ondas de ar na esquina de cada páxina */
-.filigrana {
-  position: fixed;
-  right: -16mm;
-  bottom: -18mm;
-  z-index: -1;
-  width: 110mm;
-  height: 110mm;
-  fill: none;
-  stroke: #E6E6DF;
-  stroke-width: 0.5;
-  stroke-linecap: round;
-}
-
 .document-header {
   border-bottom: 0.4pt solid #D8D8D0;
   margin-bottom: 8mm;
@@ -1529,7 +1515,6 @@ function renderPiecePdfHtml(document) {
   <style>${PRINT_CSS}</style>
 </head>
 <body>
-  <svg class="filigrana" viewBox="0 0 100 100" aria-hidden="true"><path d="M93.5 93.3A8 8 0 1 1 88.7 88.5"/><path d="M102.0 90.2A17 17 0 1 1 91.8 80.0"/><path d="M112.3 86.4A28 28 0 1 1 95.6 69.7"/><path d="M124.5 82.0A41 41 0 1 1 100.0 57.5"/><path d="M138.6 76.8A56 56 0 1 1 105.2 43.4"/><path d="M154.6 71.0A73 73 0 1 1 111.0 27.4"/><path d="M172.5 64.5A92 92 0 1 1 117.5 9.5"/></svg>
   <header class="document-header">
     <div class="brand"><span class="wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</span><span class="brand-sub">arquivo e repertorio</span></div>
     <h1>${pdfHtmlEscape(document.title)}</h1>
@@ -1556,7 +1541,6 @@ function renderTerritoryPdfHtml(document) {
   <style>${PRINT_CSS}</style>
 </head>
 <body>
-  <svg class="filigrana" viewBox="0 0 100 100" aria-hidden="true"><path d="M93.5 93.3A8 8 0 1 1 88.7 88.5"/><path d="M102.0 90.2A17 17 0 1 1 91.8 80.0"/><path d="M112.3 86.4A28 28 0 1 1 95.6 69.7"/><path d="M124.5 82.0A41 41 0 1 1 100.0 57.5"/><path d="M138.6 76.8A56 56 0 1 1 105.2 43.4"/><path d="M154.6 71.0A73 73 0 1 1 111.0 27.4"/><path d="M172.5 64.5A92 92 0 1 1 117.5 9.5"/></svg>
   <header class="document-header">
     <div class="brand"><span class="wordmark">f<svg class="wordmark-o" viewBox="0 0 60 54" aria-hidden="true"><path d="M49.56 21.27A20.45 20.45 0 1 1 35.98 7.69"/><circle cx="49.52" cy="7.73" r="5.6"/></svg>l e ar</span><span class="brand-sub">arquivo e repertorio</span></div>
     <h1>${pdfHtmlEscape(document.title)}</h1>
@@ -2167,9 +2151,11 @@ async function handleDeleteAccount(request, env, url) {
   const payload = await request.json().catch(() => ({}));
   if (payload.confirm !== true) throw new HttpError(400, "Falta confirmar o borrado da conta.");
   // Borra todo o que é da persoa, incluídas as súas pezas (públicas e privadas).
+  const linksOk = await pieceLinksAvailable(env);
   await personalTables(env, async () => {
     try {
       await env.DB.batch([
+        ...(linksOk ? [env.DB.prepare("DELETE FROM piece_links WHERE piece_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id)] : []),
         env.DB.prepare("DELETE FROM favorites WHERE kind = 'piece' AND ref IN (SELECT CAST(id AS TEXT) FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
         env.DB.prepare("DELETE FROM media_links WHERE entity_type = 'piece' AND entity_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
         env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id IN (SELECT id FROM pieces WHERE owner_user_id = ?)").bind(viewer.id),
@@ -2264,6 +2250,35 @@ const PIECE_VISIBILITIES = ["private", "public"];
 const PUBLIC_PIECE_SQL = "p.visibility = 'public' AND p.status <> 'hidden'";
 const MAX_PIECES_PER_USER = 200;
 const MAX_COPLAS_PER_PIECE = 300;
+const MAX_LINKS_PER_PIECE = 10;
+
+// Ligazóns a recursos externos (migración 0006). Se a táboa aínda non existe, as
+// pezas seguen funcionando sen ligazóns.
+async function pieceLinksAvailable(env) {
+  try {
+    await env.DB.prepare("SELECT 1 FROM piece_links LIMIT 1").first();
+    return true;
+  } catch (err) {
+    if (/no such table/i.test(String(err && err.message))) return false;
+    throw err;
+  }
+}
+
+function cleanPieceLinks(raw) {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) throw new HttpError(400, "As ligazóns da peza non son válidas.");
+  if (raw.length > MAX_LINKS_PER_PIECE) throw new HttpError(400, `Unha peza non pode ter máis de ${MAX_LINKS_PER_PIECE} ligazóns.`);
+  return raw.map((item, index) => {
+    const text = String((item && item.url) ?? "").trim();
+    let parsed;
+    try { parsed = new URL(text); } catch { parsed = null; }
+    if (!parsed || !["http:", "https:"].includes(parsed.protocol) || text.length > 500 || parsed.username || parsed.password) {
+      throw new HttpError(400, `Ligazón ${index + 1}: a URL debe ser http(s) e non pasar de 500 caracteres.`);
+    }
+    const title = cleanText(item.title, 120) || parsed.hostname.replace(/^www\./, "");
+    return { title, url: parsed.toString(), position: index };
+  });
+}
 
 function cleanMultiline(value, max) {
   return String(value ?? "")
@@ -2357,7 +2372,8 @@ async function cleanPieceInput(env, raw) {
       }
     }
   }
-  return { title, author, description, notes, visibility, territoryId, items };
+  const links = cleanPieceLinks(raw.links);
+  return { title, author, description, notes, visibility, territoryId, items, links };
 }
 
 function pieceCoplaStatements(env, pieceId, items) {
@@ -2365,6 +2381,12 @@ function pieceCoplaStatements(env, pieceId, items) {
     `INSERT INTO piece_coplas (piece_id, copla_id, inline_text, position, section_label, role, notes)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).bind(pieceId, item.copla_id, item.inline_text, item.position, item.section_label, item.role, item.notes));
+}
+
+function pieceLinkStatements(env, pieceId, links) {
+  return links.map(link => env.DB.prepare(
+    "INSERT INTO piece_links (piece_id, title, url, position) VALUES (?, ?, ?, ?)"
+  ).bind(pieceId, link.title, link.url, link.position));
 }
 
 function canManagePiece(viewer, row) {
@@ -2394,6 +2416,8 @@ async function handleSavePiece(request, env, url) {
   const ids = [];
   for (const raw of list) {
     const input = await cleanPieceInput(env, raw);
+    const linksOk = await pieceLinksAvailable(env);
+    if (!linksOk && input.links.length) throw new HttpError(503, "Falta aplicar a migración 0006 (ligazóns das pezas) na base de datos.");
     const existingId = raw && raw.id != null ? Number(raw.id) : null;
     try {
       if (existingId !== null) {
@@ -2406,6 +2430,7 @@ async function handleSavePiece(request, env, url) {
           ).bind(input.title, input.author, input.territoryId, input.description, input.notes, input.visibility, existingId),
           env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id = ?").bind(existingId),
           ...pieceCoplaStatements(env, existingId, input.items),
+          ...(linksOk ? [env.DB.prepare("DELETE FROM piece_links WHERE piece_id = ?").bind(existingId), ...pieceLinkStatements(env, existingId, input.links)] : []),
         ]);
         ids.push(existingId);
       } else {
@@ -2419,7 +2444,7 @@ async function handleSavePiece(request, env, url) {
         ).bind(input.title, pieceSlugFor(input.title), input.author, input.territoryId, input.description, input.notes, input.visibility, ownerId).run();
         const pieceId = inserted.meta.last_row_id;
         try {
-          await env.DB.batch(pieceCoplaStatements(env, pieceId, input.items));
+          await env.DB.batch([...pieceCoplaStatements(env, pieceId, input.items), ...pieceLinkStatements(env, pieceId, input.links)]);
         } catch (err) {
           await env.DB.prepare("DELETE FROM pieces WHERE id = ?").bind(pieceId).run();
           throw err;
@@ -2446,8 +2471,10 @@ async function loadManagedPiece(env, viewer, id) {
 }
 
 async function deletePieceRows(env, ids) {
+  const linksOk = await pieceLinksAvailable(env);
   for (const id of ids) {
     await env.DB.batch([
+      ...(linksOk ? [env.DB.prepare("DELETE FROM piece_links WHERE piece_id = ?").bind(id)] : []),
       env.DB.prepare("DELETE FROM favorites WHERE kind = 'piece' AND ref = ?").bind(String(id)),
       env.DB.prepare("DELETE FROM media_links WHERE entity_type = 'piece' AND entity_id = ?").bind(id),
       env.DB.prepare("DELETE FROM piece_coplas WHERE piece_id = ?").bind(id),
@@ -2543,6 +2570,20 @@ async function exportPiecesJson(env, { ownerId = null, hiddenOnly = false } = {}
     pieces = legacy.results;
     coplaRows = legacyCoplas.results;
   }
+  let linkRows = [];
+  try {
+    ({ results: linkRows } = await env.DB.prepare(
+      `SELECT pl.piece_id, pl.title, pl.url FROM piece_links pl JOIN pieces p ON p.id = pl.piece_id WHERE ${condition} ORDER BY pl.piece_id, pl.position ASC`
+    ).bind(...binds).all());
+  } catch (err) {
+    if (!/no such (column|table)/i.test(String(err && err.message))) throw err;
+  }
+  const linksByPiece = new Map();
+  for (const row of linkRows) {
+    const list = linksByPiece.get(row.piece_id) || [];
+    list.push({ title: row.title, url: row.url });
+    linksByPiece.set(row.piece_id, list);
+  }
   const byPiece = new Map();
   for (const row of coplaRows) {
     const list = byPiece.get(row.piece_id) || [];
@@ -2568,6 +2609,7 @@ async function exportPiecesJson(env, { ownerId = null, hiddenOnly = false } = {}
       created_at: piece.created_at,
       updated_at: piece.updated_at,
       copla_count: coplas.length,
+      links: linksByPiece.get(piece.id) || [],
       coplas,
     };
   });
