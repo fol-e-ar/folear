@@ -1,6 +1,7 @@
 import { clearApiCache, getCoplas, getGeoLayer, getMedia, getMelodias, getPezas, getTerritorios, getTextAsset } from "./api.js";
-import { escapeHtml, loaderHtml, nl2br, normalizeText, setLoading, slugify } from "./utils.js";
-import { initPdfThumbs } from "./pdf_thumbs.js";
+import { deTerritorio, escapeHtml, loaderHtml, melodyLabel, nl2br, normalizeText, setLoading, shortTerritoryName, slugify } from "./utils.js";
+import { renderCoplaStory, STORY_THEMES, canShareFile, shareStory } from "./story.js";
+import { initPdfThumbs, browserNeedsPdfCanvas, renderPdfPages } from "./pdf_thumbs.js";
 import {
   TYPE_LABELS,
   buildHierarchy,
@@ -16,6 +17,8 @@ import {
 } from "./territory_data.js";
 
 const RHYTHMS = [
+  "Cantar popular",
+  "Canto",
   "Carballesa",
   "Charrasquiño",
   "Chiqui-chiqui",
@@ -219,6 +222,52 @@ function pdfErrorMessage(error) {
   // Mensaxes do servidor (galego) pásanse tal cal; o resto, xenérico.
   if (text && !/^HTTP \d+$|^Resposta inesperada|Failed to fetch|NetworkError|Load failed/i.test(text)) return text;
   return "Non foi posíbel xerar o PDF agora. Téntao de novo en pouco.";
+}
+
+// --- Volver do login á mesma páxina -----------------------------------
+// A aplicación é unha SPA (a vista non vai na URL), así que antes de ir a Google gárdase onde
+// estabamos (vista, territorio, pestana, buscas, ficha aberta, desprazamento e #hash) e, ao
+// volver (`?fe_back=1`), restáurase todo.
+const RETURN_KEY = "fol-e-ar-return";
+const RETURN_TTL = 30 * 60 * 1000;
+
+function saveReturnState() {
+  try {
+    const coplaDrawer = $("#coplaDrawer");
+    const snapshot = {
+      ts: Date.now(),
+      view: state.view,
+      hash: window.location.hash,
+      territoryId: state.selectedTerritory?.id || "",
+      territoryTab: state.territoryTab,
+      territoryCoplaQuery: state.territoryCoplaQuery || "",
+      coplaQuery: state.coplaQuery || "",
+      pieceTab: state.pieceTab,
+      mediaQuery: state.mediaQuery || "",
+      melodyQuery: state.melodyQuery || "",
+      coplaId: coplaDrawer && !coplaDrawer.hidden ? Number(coplaDrawer.querySelector("[data-sheet-copla]")?.dataset.sheetCopla) || null : null,
+      pieceId: state.pieceDrawerId || null,
+      scroll: [Math.round(window.scrollY || 0), Math.round(document.querySelector(".main")?.scrollTop || 0)],
+    };
+    storageSet(RETURN_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Sen almacenamento: o login volve á portada, como antes.
+  }
+}
+
+function takeReturnState() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("fe_back")) return null;
+  url.searchParams.delete("fe_back");
+  history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  try {
+    const snapshot = JSON.parse(storageGet(RETURN_KEY) || "null");
+    storageSet(RETURN_KEY, "");
+    if (!snapshot || Date.now() - Number(snapshot.ts) > RETURN_TTL) return null;
+    return snapshot;
+  } catch {
+    return null;
+  }
 }
 
 function loginLink() {
@@ -713,6 +762,7 @@ const MEDIA_KIND_ICONS = {
 };
 
 const UI_ICONS = {
+  share: '<path d="M12 15V4m0 0L8 8m4-4 4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   trash: '<path d="M5 7h14M10 7V5h4v2m-8 0 1 12h8l1-12M10 11v5m4-5v5"/>',
@@ -819,7 +869,8 @@ function mediaPieceTag(item) {
 
 function levelPlacesHtml(territories, emptyLabel = "Sen territorio") {
   if (!territories.length) return `<span class="level-text level-empty">${escapeHtml(emptyLabel)}</span>`;
-  return territories.map(territory => `<span class="level-text level-${territory.tipo}">${escapeHtml(territory.nome)}</span>`).join("");
+  // Media e Melodías: sen o santo da parroquia (o nome completo queda no tooltip)
+  return territories.map(territory => `<span class="level-text level-${territory.tipo}" title="${escapeHtml(territory.nome)}">${escapeHtml(shortTerritoryName(territory.nome))}</span>`).join("");
 }
 
 // Vista compacta: unha liña por recurso, coas columnas aliñadas.
@@ -889,7 +940,7 @@ function bindMediaCards(root = document) {
 //
 // Unha melodía é un ritmo + un número dentro dese ritmo e dese lugar,
 // rexistrada no territorio máis baixo no que se documenta. Non hai
-// xerarquía propia: o nome ("Xota número 1 de Moscoso") constrúese con eses
+// xerarquía propia: o nome ("Xota #1 de Moscoso", "Xota #1 da Ermida") constrúese con eses
 // tres datos, e iso é o que as fai distinguibles ao subir a un
 // supraterritorio. Cada melodía pode aparecer en varios recursos e cada
 // recurso pode conter varias melodías (ligazóns `melody` en media_links).
@@ -900,9 +951,9 @@ function melodyTerritory(melody) {
 }
 
 function melodyName(melody) {
-  if (melody.name) return melody.name;
   const territory = melodyTerritory(melody);
-  return `${melody.rhythm} número ${melody.number}${territory ? ` de ${territory.nome}` : ""}`;
+  if (!territory && melody.name) return melody.name;
+  return melodyLabel(melody.rhythm, melody.number, territory?.nome);
 }
 
 function melodyShortName(melody) {
@@ -937,8 +988,16 @@ function rhythmSuggestions() {
   return [...known.values()].sort((a, b) => a.localeCompare(b, "gl"));
 }
 
-function rhythmDatalist(id) {
-  return `<datalist id="${id}">${rhythmSuggestions().map(rhythm => `<option value="${escapeHtml(rhythm)}"></option>`).join("")}</datalist>`;
+// Os ritmos son pechados: só se pode escoller entre os do repertorio da plataforma (RHYTHMS) e os que
+// xa teñan melodías no inventario. Nunca se escribe un ritmo a man.
+function rhythmSelectOptions(selected = "") {
+  const key = normalizeText(selected);
+  return `<option value="">Escolle un ritmo…</option>${rhythmSuggestions().map(rhythm => `<option value="${escapeHtml(rhythm)}" ${normalizeText(rhythm) === key ? "selected" : ""}>${escapeHtml(rhythm)}</option>`).join("")}`;
+}
+
+function isKnownRhythm(rhythm) {
+  const key = normalizeText(rhythm);
+  return Boolean(key) && rhythmSuggestions().some(item => normalizeText(item) === key);
 }
 
 // Grafía do ritmo que quedará gardada (a mesma que xa se usa no inventario).
@@ -1017,7 +1076,7 @@ function melodiesTabMarkup(territory, ctx) {
   const loose = ctx.media.filter(item => ["melody", "mixed"].includes(mediaRole(item)) && !mediaMelodies(item).length);
   return `
     <div class="section-title">
-      <h2>Melodías${territory ? ` de ${escapeHtml(territory.nome)}` : " de Galiza"}</h2>
+      <h2>Melodías ${territory ? escapeHtml(deTerritorio(territory.nome)) : "de Galiza"}</h2>
       <span class="muted">${melodies.length} inventariada${melodies.length === 1 ? "" : "s"}</span>
     </div>
     <div class="melody-actions">
@@ -1191,7 +1250,7 @@ function openMelodyDrawer(melodyId) {
       <div class="drawer-section">
         <h3>Territorio</h3>
         <div class="territory-links">
-          ${territory ? `<button type="button" data-territory-id="${territory.id}"><strong>${escapeHtml(territory.nome)}</strong><span>${escapeHtml(territorySearchMeta(territory))}</span></button>` : `<p class="muted">Territorio non atopado.</p>`}
+          ${territory ? `<button type="button" data-territory-id="${territory.id}"><strong>${escapeHtml(shortTerritoryName(territory.nome))}</strong><span>${escapeHtml(territorySearchMeta(territory))}</span></button>` : `<p class="muted">Territorio non atopado.</p>`}
         </div>
       </div>
       <div class="drawer-section">
@@ -1307,7 +1366,7 @@ function melodyNamePreview() {
   const territory = state.territorios.find(item => item.id === modal?.territoryId);
   const rhythm = canonicalRhythm(modal?.rhythm || "");
   if (!territory || !rhythm) return "Escolle o ritmo para ver como se vai chamar.";
-  return `Chamarase: ${rhythm} número ${nextMelodyNumberFor(territory.id, rhythm, modal.id)} de ${territory.nome}`;
+  return `Chamarase: ${melodyLabel(rhythm, nextMelodyNumberFor(territory.id, rhythm, modal.id), territory.nome)}`;
 }
 
 function renderMelodyModal() {
@@ -1336,13 +1395,12 @@ function renderMelodyModal() {
           <div class="formgrid">
             <div class="field">
               <label for="melodyRhythm">Ritmo</label>
-              <input id="melodyRhythm" type="text" list="melodyRhythmList" autocomplete="off" value="${escapeHtml(modal.rhythm)}" placeholder="Xota, muiñeira, pandeirada...">
-              ${rhythmDatalist("melodyRhythmList")}
+              <select id="melodyRhythm">${rhythmSelectOptions(modal.rhythm)}</select>
             </div>
             <div class="field">
               <label>Territorio</label>
               <div class="melody-place">
-                ${territory ? `<span class="selected-chip">${escapeHtml(territory.nome)} <small class="level-badge level-${territory.tipo}">${escapeHtml(territoryLabel(territory))}</small></span>` : `<span class="muted">Sen territorio.</span>`}
+                ${territory ? `<span class="selected-chip" title="${escapeHtml(territory.nome)}">${escapeHtml(shortTerritoryName(territory.nome))} <small class="level-badge level-${territory.tipo}">${escapeHtml(territoryLabel(territory))}</small></span>` : `<span class="muted">Sen territorio.</span>`}
                 <button class="link-button" type="button" id="melodyChangeTerritory">${territory ? "Cambiar" : "Escoller"}</button>
               </div>
               <input id="melodyTerritoryQuery" type="search" placeholder="Buscar parroquia, concello, comarca..." ${modal.picking ? "" : "hidden"}>
@@ -1366,7 +1424,7 @@ function renderMelodyModal() {
     const preview = $("#melodyNamePreview");
     if (preview) preview.textContent = melodyNamePreview();
   };
-  $("#melodyRhythm", host)?.addEventListener("input", event => {
+  $("#melodyRhythm", host)?.addEventListener("change", event => {
     modal.rhythm = event.target.value;
     updatePreview();
   });
@@ -1411,8 +1469,8 @@ async function saveMelodyForm() {
   if (!modal) return;
   const feedback = $("#melodyFeedback");
   const rhythm = (modal.rhythm || "").trim();
-  if (!rhythm) {
-    feedback.textContent = "Indica o ritmo (xota, muiñeira...).";
+  if (!isKnownRhythm(rhythm)) {
+    feedback.textContent = "Escolle un ritmo da lista.";
     return;
   }
   if (!modal.territoryId) {
@@ -1469,7 +1527,7 @@ function mediaMelodyOptionsMarkup() {
       const territory = state.territorios.find(item => item.id === territoryId);
       return `
         <div class="melody-picker-group">
-          ${byTerritory.size > 1 ? `<div class="melody-picker-place">${escapeHtml(territory?.nome || territoryId)}</div>` : ""}
+          ${byTerritory.size > 1 ? `<div class="melody-picker-place">${escapeHtml(shortTerritoryName(territory?.nome || territoryId))}</div>` : ""}
           <div class="melody-picker-chips">
             ${melodies.map(melody => `
               <label class="melody-chip ${selected.has(Number(melody.id)) ? "is-on" : ""}" title="${escapeHtml(melodyName(melody))}">
@@ -1497,9 +1555,8 @@ function mediaMelodyFieldMarkup() {
       <details class="melody-new">
         <summary>+ Nova melodía</summary>
         <div class="melody-new-row">
-          <input id="mediaNewMelodyRhythm" type="text" list="mediaNewMelodyRhythmList" autocomplete="off" placeholder="Ritmo (xota, muiñeira...)">
-          ${rhythmDatalist("mediaNewMelodyRhythmList")}
-          <select id="mediaNewMelodyTerritory" aria-label="Territorio da nova melodía">${territories.map(territory => `<option value="${territory.id}">${escapeHtml(territory.nome)}</option>`).join("")}</select>
+          <select id="mediaNewMelodyRhythm" aria-label="Ritmo da nova melodía">${rhythmSelectOptions()}</select>
+          <select id="mediaNewMelodyTerritory" aria-label="Territorio da nova melodía">${territories.map(territory => `<option value="${territory.id}">${escapeHtml(shortTerritoryName(territory.nome))}</option>`).join("")}</select>
           <button class="btn" type="button" id="mediaNewMelodyCreate">Crear e marcar</button>
         </div>
         <p id="mediaNewMelodyFeedback" class="muted"></p>
@@ -1518,7 +1575,7 @@ function refreshMediaMelodyOptions() {
     select.innerHTML = state.mediaTerritoryIds
       .map(id => state.territorios.find(item => item.id === id))
       .filter(Boolean)
-      .map(territory => `<option value="${territory.id}">${escapeHtml(territory.nome)}</option>`)
+      .map(territory => `<option value="${territory.id}">${escapeHtml(shortTerritoryName(territory.nome))}</option>`)
       .join("");
     if (previous && state.mediaTerritoryIds.includes(previous)) select.value = previous;
   }
@@ -1555,8 +1612,8 @@ function bindMediaMelodyPicker() {
       feedback.textContent = "Escolle antes un territorio para este recurso.";
       return;
     }
-    if (!rhythm) {
-      feedback.textContent = "Indica o ritmo da melodía.";
+    if (!isKnownRhythm(rhythm)) {
+      feedback.textContent = "Escolle un ritmo da lista.";
       return;
     }
     setLoading(feedback, "Creando");
@@ -1714,7 +1771,17 @@ function setView(viewName, { push = true } = {}) {
   closeMobileExplore();
   if (state.view !== previousView) resetInfiniteLists();
   renderView();
-  if (state.view === "map" && state.map) window.setTimeout(() => state.map.invalidateSize(), 120);
+  if (state.view === "map" && state.map) {
+    window.setTimeout(() => {
+      if (state.view !== "map" || !state.map.getContainer().clientWidth) return;
+      try { state.map.invalidateSize(); } catch {}
+      if (state.pendingFit) {
+        const bounds = state.pendingFit;
+        state.pendingFit = null;
+        try { state.map.fitBounds(bounds, { padding: [40, 40], animate: false }); } catch {}
+      }
+    }, 120);
+  }
 }
 
 function clearTerritory() {
@@ -1809,9 +1876,14 @@ async function selectTerritory(territory, options = {}) {
     const found = findTerritoryByFeature(layer.feature, state.layerType, state.territorios);
     layer.setStyle(styleFeature(found?.id === territory.id, Boolean(layer.feature?.properties?.part), territoryHasCoplas(found)));
     if (found?.id === territory.id && options.fit !== false) {
-      try {
-        state.map.flyToBounds(layer.getBounds(), { padding: [40, 40], duration: 0.45 });
-      } catch {}
+      // Con o mapa agochado (outra vista) o contedor mide 0 e Leaflet daría LatLng NaN: axústase ao volver.
+      if (state.view !== "map" || !state.map.getSize().x) {
+        state.pendingFit = layer.getBounds();
+      } else {
+        try {
+          state.map.flyToBounds(layer.getBounds(), { padding: [40, 40], duration: 0.45 });
+        } catch {}
+      }
     }
   });
   updateMapCard();
@@ -1896,6 +1968,13 @@ function bindResultButtons(root = document) {
   all("[data-copla-id]", root).forEach(button => {
     button.addEventListener("click", () => {
       state.selectedCoplaId = Number(button.dataset.coplaId);
+      // Nas coplas favoritas (perfil) a ficha ábrese onde estás e navega só entre as favoritas.
+      const favList = button.closest(".fav-list");
+      if (favList) {
+        const ids = [...new Set([...favList.querySelectorAll("[data-copla-id]")].map(item => Number(item.dataset.coplaId)))];
+        openCoplaDrawer(state.selectedCoplaId, { ids });
+        return;
+      }
       setView("coplas");
       openCoplaDrawer(state.selectedCoplaId);
     });
@@ -2102,6 +2181,8 @@ function coplaItemsMarkup(items) {
 }
 
 function mountCoplaList(list, items, key) {
+  // As frechas e o swipe da ficha navegan só entre as coplas desta listaxe (a que se amosa), non por todo o arquivo.
+  if (list) coplaScopes.set(list, items.map(item => Number(item.id)));
   mountInfiniteList(list, items, {
     key,
     renderItems: slice => coplaItemsMarkup(slice),
@@ -2275,7 +2356,7 @@ function bindCoplaActions(root = document) {
         toggleCoplaSelection(Number(card.dataset.openCopla), { range: event.shiftKey });
         return;
       }
-      openCoplaDrawer(Number(card.dataset.openCopla));
+      openCoplaDrawer(Number(card.dataset.openCopla), { ids: coplaScopeIds(card) });
     });
     card.addEventListener("keydown", event => {
       if (event.key === "Enter" || event.key === " ") {
@@ -2284,7 +2365,7 @@ function bindCoplaActions(root = document) {
           toggleCoplaSelection(Number(card.dataset.openCopla));
           return;
         }
-        openCoplaDrawer(Number(card.dataset.openCopla));
+        openCoplaDrawer(Number(card.dataset.openCopla), { ids: coplaScopeIds(card) });
       }
     });
   });
@@ -2325,6 +2406,21 @@ function bindCoplaActions(root = document) {
 // Lista de coplas pola que se pode navegar coas frechas (a da consulta actual
 // en «Coplas»). Só vale mentres a ficha está aberta.
 let coplaNav = null;
+// Ids (en orde) das coplas que amosa cada listaxe; ao abrir unha copla desde ela, a ficha navega só entre esas.
+const coplaScopes = new WeakMap();
+
+function coplaScopeIds(card) {
+  if (!card || card.closest("#coplaDrawer")) return undefined;
+  for (let node = card.parentElement; node && node !== document.body; node = node.parentElement) {
+    if (coplaScopes.has(node)) return coplaScopes.get(node);
+  }
+  // Sen listaxe rexistrada (favoritas, outros paneis): as coplas que hai xuntas no DOM.
+  for (let node = card.parentElement; node && node !== document.body; node = node.parentElement) {
+    const found = node.querySelectorAll("[data-open-copla], [data-copla-id]");
+    if (found.length > 1) return [...new Set([...found].map(item => Number(item.dataset.openCopla ?? item.dataset.coplaId)).filter(Number.isFinite))];
+  }
+  return undefined;
+}
 
 function coplaPlacesMarkup(copla) {
   const territories = copla.territories || [];
@@ -2340,10 +2436,10 @@ function openCoplaDrawer(coplaId, options = {}) {
   const copla = state.coplas.find(item => Number(item.id) === Number(coplaId));
   const drawer = $("#coplaDrawer");
   if (!copla || !drawer) return;
-  if (options.ids) coplaNav = { ids: options.ids };
+  if (options.ids) coplaNav = { ids: options.ids.filter(id => state.coplas.some(item => Number(item.id) === Number(id))) };
   else if (!options.keepNav) coplaNav = state.view === "coplas" ? { ids: filteredCoplas().map(item => Number(item.id)) } : null;
   const position = coplaNav ? coplaNav.ids.indexOf(Number(copla.id)) : -1;
-  const pager = position === -1 ? "" : `
+  const pager = position === -1 || coplaNav.ids.length < 2 ? "" : `
       <div class="drawer-pager" role="group" aria-label="Navegar entre coplas">
         <button type="button" class="icon-btn" data-copla-step="-1" aria-label="Copla anterior" title="Anterior (←)" ${position === 0 ? "disabled" : ""}>‹</button>
         <span aria-live="polite">${position + 1} / ${coplaNav.ids.length}</span>
@@ -2381,6 +2477,7 @@ function openCoplaDrawer(coplaId, options = {}) {
       </div>
       <div class="copla-places">${coplaPlacesMarkup(copla)}</div>
       <div class="meta">${(copla.tags || []).map(tag => `<span class="tag" data-tag-name="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`).join("")}</div>
+      <div class="story-share-row"><button class="btn story-share" type="button" data-share-story="${copla.id}">${uiIcon("share", 16)} Compartir como story</button></div>
       ${folds ? `<div class="drawer-folds">${folds}</div>` : ""}
       <div class="drawer-actions edit-only">
         <button class="btn" type="button" data-edit-copla="${copla.id}">Editar copla</button>
@@ -2391,10 +2488,103 @@ function openCoplaDrawer(coplaId, options = {}) {
   `;
   all("[data-close-drawer]", drawer).forEach(item => item.addEventListener("click", closeCoplaDrawer));
   all("[data-copla-step]", drawer).forEach(button => button.addEventListener("click", () => stepCoplaDrawer(Number(button.dataset.coplaStep))));
+  $("[data-share-story]", drawer)?.addEventListener("click", () => openStoryModal(copla));
   $("[data-edit-copla]", drawer)?.addEventListener("click", () => startEditCopla(copla.id));
   $("[data-delete-copla]", drawer)?.addEventListener("click", () => openDeleteConfirm([copla.id]));
   bindResultButtons(drawer);
   bindCoplaActions(drawer);
+}
+
+// --- Compartir unha copla como story ------------------------------------------
+// Móbil: xérase unha imaxe 1080x1920 (ao estilo das tarxetas de letra de Spotify) e compártese co
+// menú do sistema (Instagram > Stories) ou descárgase para subila desde a galería.
+let storyModal = null;
+
+function closeStoryModal() {
+  if (!storyModal) return;
+  if (storyModal.url) URL.revokeObjectURL(storyModal.url);
+  storyModal.host.remove();
+  document.removeEventListener("keydown", storyModal.onKey, true);
+  storyModal = null;
+}
+
+async function paintStoryPreview() {
+  const modal = storyModal;
+  if (!modal) return;
+  const preview = modal.host.querySelector(".story-preview");
+  const actions = modal.host.querySelector(".story-actions");
+  preview.innerHTML = loaderHtml("Xerando a imaxe");
+  actions.querySelectorAll("button, a").forEach(node => { node.disabled = true; node.setAttribute("aria-disabled", "true"); });
+  try {
+    const blob = await renderCoplaStory({
+      text: modal.copla.text,
+      places: (modal.copla.territories || []).map(item => ({ label: territoryDisplayName(item), tipo: item.tipo })),
+      lugar: String(modal.copla.lugar || "").trim(),
+      volta: Boolean(modal.copla.is_volta),
+      themeId: modal.theme,
+    });
+    if (storyModal !== modal) return;
+    if (modal.url) URL.revokeObjectURL(modal.url);
+    modal.blob = blob;
+    modal.url = URL.createObjectURL(blob);
+    preview.innerHTML = `<img src="${modal.url}" alt="Previsualización da story con esta copla">`;
+    const download = actions.querySelector("[data-story-download]");
+    download.href = modal.url;
+    download.download = `fol-e-ar-copla-${modal.copla.id}.png`;
+    actions.querySelectorAll("button, a").forEach(node => { node.disabled = false; node.removeAttribute("aria-disabled"); });
+  } catch (error) {
+    console.error("Erro xerando a story", error);
+    preview.innerHTML = `<p class="muted">Non se puido xerar a imaxe neste navegador.</p>`;
+  }
+}
+
+async function openStoryModal(copla) {
+  closeStoryModal();
+  const host = document.createElement("div");
+  host.className = "story-modal";
+  host.id = "storyModal";
+  host.innerHTML = `
+    <div class="story-modal-backdrop" data-close-story></div>
+    <div class="story-modal-panel" role="dialog" aria-modal="true" aria-label="Compartir a copla como story">
+      <div class="story-modal-head">
+        <strong>Compartir como story</strong>
+        <button class="card-close" type="button" data-close-story aria-label="Pechar">×</button>
+      </div>
+      <div class="story-preview" aria-live="polite"></div>
+      <div class="story-themes" role="group" aria-label="Estilo">
+        ${STORY_THEMES.map((theme, index) => `<button type="button" class="story-theme${index === 0 ? " active" : ""}" data-story-theme="${theme.id}" style="--swatch:${theme.bg};--swatch-ink:${theme.ink}" aria-pressed="${index === 0}">${theme.label}</button>`).join("")}
+      </div>
+      <div class="story-actions">
+        <button class="btn primary" type="button" data-story-share hidden>Compartir</button>
+        <a class="btn" data-story-download href="#" download>Descargar imaxe</a>
+      </div>
+      <p class="muted story-hint">Escolle Instagram e despois «Stories» no menú de compartir. Se non che aparece, descarga a imaxe e súbea desde a galería.</p>
+    </div>`;
+  document.body.append(host);
+  const onKey = event => { if (event.key === "Escape") { event.stopPropagation(); closeStoryModal(); } };
+  document.addEventListener("keydown", onKey, true);
+  storyModal = { host, copla, theme: STORY_THEMES[0].id, blob: null, url: "", onKey };
+  all("[data-close-story]", host).forEach(node => node.addEventListener("click", closeStoryModal));
+  all("[data-story-theme]", host).forEach(button => button.addEventListener("click", () => {
+    if (!storyModal) return;
+    storyModal.theme = button.dataset.storyTheme;
+    all("[data-story-theme]", host).forEach(item => {
+      item.classList.toggle("active", item === button);
+      item.setAttribute("aria-pressed", String(item === button));
+    });
+    paintStoryPreview();
+  }));
+  const shareButton = $("[data-story-share]", host);
+  shareButton.addEventListener("click", async () => {
+    if (!storyModal?.blob) return;
+    try {
+      await shareStory(storyModal.blob, `fol-e-ar-copla-${copla.id}.png`);
+    } catch (error) {
+      if (error?.name !== "AbortError") console.warn("Non se puido compartir", error);
+    }
+  });
+  await paintStoryPreview();
+  if (storyModal && storyModal.blob && canShareFile(storyModal.blob)) shareButton.hidden = false;
 }
 
 function stepCoplaDrawer(delta) {
@@ -2405,7 +2595,7 @@ function stepCoplaDrawer(delta) {
   if (!current || index < 0 || index >= coplaNav.ids.length) return false;
   openCoplaDrawer(coplaNav.ids[index], { keepNav: true, direction: delta });
   // Deixa a lista de fondo na copla actual, para cando se peche a ficha.
-  document.querySelector(`#coplaList [data-open-copla="${coplaNav.ids[index]}"]`)?.scrollIntoView?.({ block: "nearest" });
+  document.querySelector(`.view.active [data-open-copla="${coplaNav.ids[index]}"]`)?.scrollIntoView?.({ block: "nearest" });
   return true;
 }
 
@@ -2695,6 +2885,7 @@ function openPieceDrawer(pieceId) {
   const piece = state.pezas.find(item => Number(item.id) === Number(pieceId));
   const drawer = $("#pieceDrawer");
   if (!piece || !drawer) return;
+  state.pieceDrawerId = piece.id;
   const author = pieceAuthorName(piece);
   const territory = piece.context_territory
     ? state.territorios.find(item => item.id === piece.context_territory.id) || piece.context_territory
@@ -2993,6 +3184,7 @@ async function linkMediaToPiece(piece, drawer, { useExisting = null } = {}) {
 function closePieceDrawer() {
   const drawer = $("#pieceDrawer");
   if (!drawer) return;
+  state.pieceDrawerId = null;
   drawer.hidden = true;
   drawer.innerHTML = "";
 }
@@ -3264,7 +3456,8 @@ function pieceTerritoryTag(piece) {
   const territory = pieceTerritoryOf(piece);
   const lugar = String(piece.lugar || "").trim();
   if (!territory) return lugar ? `<span class="tag place">${escapeHtml(lugar)}</span>` : "";
-  const label = lugar ? `${lugar}, ${territory.nome}` : territory.nome;
+  const shortName = shortTerritoryName(territory.nome);
+  const label = lugar ? `${lugar}, ${shortName}` : shortName;
   return territory.id
     ? `<button type="button" class="tag place as-link" data-territory-id="${escapeHtml(territory.id)}" title="Ver ${escapeHtml(territory.nome)} no arquivo">${escapeHtml(label)}</button>`
     : `<span class="tag place">${escapeHtml(label)}</span>`;
@@ -3642,7 +3835,7 @@ function workshopPartsMarkup(draft, rhythmOptions) {
           const isVolta = (item.role || "copla") === "retrouso";
           const rows = Math.max(2, String(item.text || "").split("\n").length);
           return `
-          <article class="seq-item ${isVolta ? "is-retrouso" : ""}" draggable="true" data-drag-copla="${uid}" data-section="${section.id}">
+          <article class="seq-item ${isVolta ? "is-retrouso" : ""}" draggable="false" data-drag-copla="${uid}" data-section="${section.id}">
             <div class="drag" aria-hidden="true">${uiIcon("grip", 16)}</div>
             <div class="seq-body">
               <textarea class="seq-edit-text" rows="${rows}" data-edit-item="${uid}" aria-label="Texto usado nesta peza (non altera a copla orixinal)" placeholder="${escapeHtml(item.incipit || "Copla sen texto")}">${escapeHtml(item.text || "")}</textarea>
@@ -4267,7 +4460,15 @@ function moveDraftCopla(coplaUid, targetSectionId, beforeCoplaUid = null) {
 
 function bindPieceDrag(root) {
   all("[data-drag-copla]", root).forEach(card => {
+    // A tarxeta só é arrastrable cando se preme fóra dos campos: un <textarea> dentro dun
+    // elemento draggable="true" non deixa picar co rato para poñer o cursor en Firefox
+    // (só se pode mover coas frechas) nin seleccionar texto.
+    card.addEventListener("pointerdown", event => {
+      card.draggable = !event.target.closest("textarea, input, select, button, a, [contenteditable]");
+    });
+    ["pointerup", "pointercancel", "dragend"].forEach(type => card.addEventListener(type, () => { card.draggable = false; }));
     card.addEventListener("dragstart", event => {
+      if (!card.draggable) { event.preventDefault(); return; }
       event.dataTransfer.setData("text/plain", card.dataset.dragCopla);
       event.dataTransfer.effectAllowed = "move";
       card.classList.add("dragging");
@@ -4556,6 +4757,9 @@ function openPdfViewer(blob, filename) {
   state.pdfFilename = filename;
   const viewer = $("#pdfViewer");
   if (!viewer) return;
+  // Safari (sobre todo iPhone/iPad) non amosa un PDF dentro dun <object>: alí debúxase con pdf.js.
+  const canvasViewer = browserNeedsPdfCanvas();
+  const viewerUrl = state.pdfUrl;
   viewer.innerHTML = `
     <div class="pdf-backdrop" data-close-pdf></div>
     <section class="pdf-panel" role="dialog" aria-modal="true" aria-label="Previsualización PDF">
@@ -4566,9 +4770,11 @@ function openPdfViewer(blob, filename) {
         </div>
         <button class="drawer-close" type="button" data-close-pdf aria-label="Pechar">×</button>
       </header>
-      <object class="pdf-frame" data="${state.pdfUrl}" type="application/pdf" aria-label="Previsualización PDF">
+      ${canvasViewer
+        ? `<div class="pdf-frame pdf-canvas-frame" id="pdfCanvasFrame" aria-label="Previsualización PDF"><p class="muted pdf-loading">${loaderHtml("Preparando a previsualización")}</p></div>`
+        : `<object class="pdf-frame" data="${state.pdfUrl}" type="application/pdf" aria-label="Previsualización PDF">
         <p>Non foi posíbel previsualizar o PDF neste navegador. Podes descargalo co botón inferior.</p>
-      </object>
+      </object>`}
       <footer class="pdf-actions">
         <a class="btn primary" id="downloadGeneratedPdf" href="${state.pdfUrl}" download="${escapeHtml(filename)}">Descargar PDF</a>
         <button class="btn" type="button" data-close-pdf>Pechar</button>
@@ -4577,6 +4783,13 @@ function openPdfViewer(blob, filename) {
   `;
   viewer.hidden = false;
   all("[data-close-pdf]", viewer).forEach(button => button.addEventListener("click", closePdfViewer));
+  if (canvasViewer) {
+    const frame = $("#pdfCanvasFrame", viewer);
+    renderPdfPages(frame, blob, { isCancelled: () => state.pdfUrl !== viewerUrl }).catch(error => {
+      console.warn("Visor de PDF con pdf.js:", error?.message || error);
+      if (state.pdfUrl === viewerUrl && frame) frame.innerHTML = `<p class="muted pdf-loading">Non foi posíbel previsualizar o PDF neste navegador. Podes descargalo co botón inferior.</p>`;
+    });
+  }
 }
 
 async function exportPiecePdf() {
@@ -5318,8 +5531,8 @@ function bindVersionRow(row) {
 
 function selectedTerritoryChip(territory, kind) {
   return `
-    <span class="selected-chip">
-      ${escapeHtml(territory.nome)} <small class="level-badge level-${territory.tipo}">${escapeHtml(territoryLabel(territory))}</small>
+    <span class="selected-chip"${kind === "media" ? ` title="${escapeHtml(territory.nome)}"` : ""}>
+      ${escapeHtml(kind === "media" ? shortTerritoryName(territory.nome) : territory.nome)} <small class="level-badge level-${territory.tipo}">${escapeHtml(territoryLabel(territory))}</small>
       <button type="button" data-remove-${kind}-territory="${territory.id}" aria-label="Retirar ${escapeHtml(territory.nome)}">×</button>
     </span>
   `;
@@ -6921,7 +7134,9 @@ async function init() {
   initPdfThumbs();
 
   if (window.L) {
-    state.map = L.map("map", { zoomControl: false, attributionControl: false, zoomSnap: 0.25 }).setView([42.8, -8.2], 8);
+    // trackResize desactivado: con outra vista activa o mapa mide 0 e Leaflet lanzaba «Invalid LatLng (NaN)».
+    state.map = L.map("map", { zoomControl: false, attributionControl: false, zoomSnap: 0.25, trackResize: false }).setView([42.8, -8.2], 8);
+    window.addEventListener("resize", () => { if (state.view === "map") state.map.invalidateSize(); });
     L.control.zoom({ position: "bottomleft" }).addTo(state.map);
     try {
       await loadLayer("con");
@@ -6935,26 +7150,50 @@ async function init() {
 
   document.getElementById("global-loading")?.setAttribute("hidden", "");
 
+  const back = takeReturnState();
+  if (back) {
+    if (back.hash && !window.location.hash) history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}${back.hash}`);
+    state.territoryTab = back.territoryTab || state.territoryTab;
+    state.territoryCoplaQuery = back.territoryCoplaQuery || "";
+    state.coplaQuery = back.coplaQuery || "";
+    state.mediaQuery = back.mediaQuery || "";
+    state.melodyQuery = back.melodyQuery || "";
+    if (back.pieceTab) state.pieceTab = back.pieceTab;
+  }
   const params = new URL(window.location.href).searchParams;
-  const territoryId = params.get("territory_id") || params.get("id");
+  const territoryId = params.get("territory_id") || params.get("id") || back?.territoryId;
   const coplaId = params.get("copla_id");
   if (territoryId) {
     const territory = state.territorios.find(item => item.id === territoryId);
-    if (territory) await selectTerritory(territory);
+    if (territory) {
+      await selectTerritory(territory);
+      if (back) { state.territoryTab = back.territoryTab || state.territoryTab; state.territoryCoplaQuery = back.territoryCoplaQuery || ""; }
+    }
   }
   if (coplaId) state.selectedCoplaId = Number(coplaId);
 
   if (window.location.hash === "#/privacidade") state.aboutPrivacy = true;
   const authorRoute = !coplaId && applyAuthorHash();
   updateMapCard();
-  setView(coplaId ? "coplas" : authorRoute ? "pieces" : window.location.hash === "#/privacidade" ? "about" : state.resumeWorkshop ? "pieces" : normalizeView(params.get("mode") || params.get("view") || "map"));
+  const explicitView = params.get("mode") || params.get("view");
+  setView(coplaId ? "coplas" : authorRoute ? "pieces" : window.location.hash === "#/privacidade" ? "about" : state.resumeWorkshop ? "pieces" : normalizeView(explicitView || back?.view || "map"));
   history.replaceState({ fv: state.view }, "", window.location.href);
   state.historyReady = true;
   if (coplaId) openCoplaDrawer(Number(coplaId));
+  else if (back?.coplaId) openCoplaDrawer(back.coplaId, { ids: state.view === "coplas" || state.view === "territory" ? undefined : [back.coplaId] });
+  if (back?.pieceId && state.pezas.some(item => Number(item.id) === Number(back.pieceId))) openPieceDrawer(back.pieceId);
+  if (back?.scroll) {
+    window.setTimeout(() => {
+      window.scrollTo(0, back.scroll[0] || 0);
+      const main = document.querySelector(".main");
+      if (main) main.scrollTop = back.scroll[1] || 0;
+    }, 350);
+  }
 }
 
 // Ganchos para js/profile.js (espazo persoal): reutiliza o apertado de resultados.
 window.folearApp = {
+  saveReturnState,
   bindResultButtons,
   pieces: () => state.pezas,
   media: () => state.media,

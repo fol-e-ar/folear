@@ -53,10 +53,24 @@ function isAdmin() {
   return Boolean(session.user && session.user.role === "admin");
 }
 
+// Volve á mesma páxina: `fe_back=1` avisa a app de que ven do login e debe restaurar a vista
+// (que se garda en `saveReturnState` ao premer calquera ligazón/botón de entrar).
 function loginUrl() {
-  const next = `${window.location.pathname}${window.location.search}`;
+  const search = new URLSearchParams(window.location.search);
+  search.set("fe_back", "1");
+  const next = `${window.location.pathname}?${search.toString()}`;
   return `../api/auth/google?next=${encodeURIComponent(next)}`;
 }
+
+function rememberWhereWeAre() {
+  try { window.folearApp?.saveReturnState?.(); } catch {}
+}
+
+// Calquera ligazón de entrada garda o sitio onde estamos antes de saír.
+document.addEventListener("click", event => {
+  const link = event.target.closest?.("a[href*='api/auth/google']");
+  if (link) rememberWhereWeAre();
+}, true);
 
 async function logout() {
   try {
@@ -247,7 +261,7 @@ function bindEvents() {
       const menu = document.getElementById("mobileExploreMenu");
       if (menu) menu.hidden = true;
       document.getElementById("mobileExploreBtn")?.setAttribute("aria-expanded", "false");
-      if (action === "login") window.location.href = loginUrl();
+      if (action === "login") { rememberWhereWeAre(); window.location.href = loginUrl(); }
       if (action === "logout") logout();
       if (action === "people") openPeople();
       return;

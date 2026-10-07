@@ -26,6 +26,35 @@ with sync_playwright() as p:
     n = pg.evaluate("document.getElementById('mapMelodyCount').textContent")
     ok("card do mapa: nº de melodías numérico", n.isdigit(), n)
 
+    # mapa: os resultados da busca non tapan o botón de recentrar
+    for w, h in ((1440, 900), (800, 900), (390, 844)):
+        pg.set_viewport_size({"width": w, "height": h}); pg.wait_for_timeout(300)
+        for q in ("zzzzqq", "Lira"):
+            pg.fill("#mapSearch", q); pg.wait_for_timeout(700)
+            r = pg.evaluate("() => { const b = document.getElementById('resetMapViewBtn').getBoundingClientRect(); const res = document.getElementById('mapResults'); const c = res.getBoundingClientRect(); return {btnBottom: b.bottom, btnLeft: b.left, btnRight: b.right, resTop: c.top, resLeft: c.left, resRight: c.right, empty: !res.children.length, text: res.innerText.slice(0, 40)}; }")
+            overlap = (not r["empty"]) and r["resTop"] < r["btnBottom"] and r["resLeft"] < r["btnRight"] and r["resRight"] > r["btnLeft"]
+            ok(f"mapa {w}px: resultados de «{q}» non tapan o botón de recentrar", not overlap and not r["empty"], r)
+    pg.set_viewport_size({"width": 1440, "height": 900}); pg.fill("#mapSearch", ""); pg.wait_for_timeout(200)
+
+    # obradoiro: a tarxeta só é arrastrable fóra dos campos (Firefox non deixa picar nun textarea dentro dun draggable)
+    pg.evaluate("() => localStorage.setItem('fol-e-ar-piece-cart-v2', JSON.stringify({title:'T', author:'A', sections:[{id:'s1', label:'Canto', coplas:[{uid:'u1', id:'u1', text:'Primeiro verso\\nsegundo verso', role:'copla'}]}]}))")
+    pg.reload(); pg.wait_for_selector("#global-loading[hidden]", state="attached", timeout=30000); pg.wait_for_timeout(1200)
+    pg.click('.sidebar [data-view="pieces"]'); pg.wait_for_timeout(500); pg.click('[data-piece-tab="workshop"]'); pg.wait_for_timeout(600)
+    item = pg.locator(".seq-item").first
+    ok("obradoiro: a tarxeta non é arrastrable en repouso", item.get_attribute("draggable") == "false", item.get_attribute("draggable"))
+    ta = item.locator(".seq-edit-text"); box = ta.bounding_box()
+    pg.mouse.move(box["x"] + 20, box["y"] + 10); pg.mouse.down()
+    ok("obradoiro: premer no texto non activa o arrastre", item.evaluate("e => e.draggable") is False)
+    pg.mouse.up(); ta.click(position={"x": 30, "y": 8}); pg.keyboard.type("XY"); pg.wait_for_timeout(200)
+    ok("obradoiro: pícase co rato e escríbese no punto", "XY" in ta.input_value() and not ta.input_value().startswith("XY"), ta.input_value())
+    hb = item.locator(".drag").bounding_box()
+    pg.mouse.move(hb["x"] + 5, hb["y"] + 5); pg.mouse.down()
+    ok("obradoiro: premer na asa activa o arrastre", item.evaluate("e => e.draggable") is True)
+    pg.mouse.up(); pg.wait_for_timeout(200)
+    ok("…e desactívase ao soltar", item.evaluate("e => e.draggable") is False)
+    pg.evaluate("() => localStorage.removeItem('fol-e-ar-piece-cart-v2')")
+    pg.reload(); pg.wait_for_selector("#global-loading[hidden]", state="attached", timeout=30000); pg.wait_for_timeout(1000)
+
     # pezas: pestanas no mesmo sitio
     pg.click('.sidebar [data-view="pieces"]'); pg.wait_for_timeout(600)
     pg.click('[data-piece-tab="library"]'); pg.wait_for_timeout(400)

@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 
 from .db_paths import (
@@ -282,7 +283,16 @@ def export_media(conn: sqlite3.Connection) -> list[dict]:
 
 
 def melody_name(rhythm: str, number: int, territory_name: str) -> str:
-    return f"{rhythm} número {number} de {territory_name}"
+    """«Xota #1 da Ermida»: sen o santo da parroquia e co «de» contraído co artigo."""
+    short = re.sub(r"\s*\([^()]*\)\s*$", "", territory_name or "").strip() or (territory_name or "").strip()
+    article = re.match(r"^(O|A|Os|As)\s+(.+)$", short)
+    if not short:
+        place = ""
+    elif article:
+        place = f" d{article.group(1).lower()} {article.group(2)}"
+    else:
+        place = f" de {short}"
+    return f"{rhythm} #{number}{place}"
 
 
 def export_melodies(conn: sqlite3.Connection) -> list[dict]:

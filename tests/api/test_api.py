@@ -1,5 +1,5 @@
 """Probas de API contra o Worker real (wrangler dev): permisos, orixe, privacidade, PDF, erros."""
-import sys, pathlib
+import sys, pathlib, json
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "harness"))
 from common import APP, sql, Client, ok, finish, restore_coplas
 MAX_COPLA_ID = sql("select coalesce(max(id),0) from coplas")[0][0]
@@ -340,6 +340,28 @@ for pid in (shared_piece,): gui.call("DELETE", "/api/pieces", {"id": pid})
 ana.call("DELETE", "/api/pieces", {"id": ana_shared}); ana.call("DELETE", "/api/pieces", {"id": sql("select id from pieces where title='Con recurso privado' and owner_user_id is not null order by id desc")[0][0]})
 if bru_piece2: bru.call("DELETE", "/api/pieces", {"id": bru_piece2})
 sql("delete from media_links where media_id in (select id from media where url like 'https://%dup.example%')"); sql("delete from media where url like 'https://%dup.example%'")
+
+# --- ritmos pechados
+c, j = gui.call("POST", "/api/melodies", {"melodies": [{"territory_id": PAR, "rhythm": "Ritmo inventado"}]})
+ok("melodía con ritmo inventado: rexeitada (400)", c == 400 and "ritmo non permitido" in json.dumps(j, ensure_ascii=False).lower(), (c, j))
+for nome in ("Canto", "cantar popular"):
+    c, j = gui.call("POST", "/api/melodies", {"melodies": [{"territory_id": PAR, "rhythm": nome}]})
+    ok(f"ritmo «{nome}» aceptado e con grafía canónica", c == 200 and sql("select rhythm from melodies where id=?", j["ids"][0])[0][0] == ("Canto" if nome == "Canto" else "Cantar popular"), (c, j))
+    gui.call("POST", "/api/melodies", {"melodies": [{"id": j["ids"][0], "_delete": True}]}) if c == 200 else None
+ok("…e limpas", sql("select count(*) from melodies where rhythm_key in ('canto','cantar popular')")[0][0] == 0)
+# --- nome das melodías: sen o santo da parroquia e co artigo contraído
+c, j = gui.call("POST", "/api/melodies", {"melodies": [{"territory_id": "par:3203601", "rhythm": "Canto"}, {"territory_id": PAR, "rhythm": "Canto"}, {"territory_id": "con:32003", "rhythm": "Canto"}]})
+mel_ids = j.get("ids", []) if c == 200 else []
+c2, lst = gui.call("GET", "/data/exports/melodias/melodias.json")
+names = {m["id"]: m["name"] for m in (lst if isinstance(lst, list) else lst.get("melodies", lst.get("items", [])))}
+got = [names.get(i, "") for i in mel_ids]
+ok("nome da melodía: «Canto #1 da Abeleda» (sen santo, de + A = da)", len(got) == 3 and got[0] == "Canto #1 da Abeleda", got)
+ok("…sen artigo: «Canto #1 de Lira»", len(got) == 3 and got[1] == "Canto #1 de Lira", got)
+ok("…concello con artigo: «Canto #1 da Arnoia»", len(got) == 3 and got[2] == "Canto #1 da Arnoia", got)
+for i in mel_ids:
+    gui.call("POST", "/api/melodies", {"melodies": [{"id": i, "_delete": True}]})
+c, j = ana.call("POST", "/api/melodies", {"melodies": [{"territory_id": PAR, "rhythm": "Canto"}]})
+ok("foleante non crea melodías (403)", c == 403, (c, j))
 
 restore_coplas(MAX_COPLA_ID)
 finish()

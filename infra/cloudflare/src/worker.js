@@ -72,6 +72,14 @@ function normalizeText(text) {
   return decomposed.split(/\s+/).filter(Boolean).join(" ");
 }
 
+// Nome dunha melodía: «Xota #1 da Ermida» (sen o santo da parroquia e co «de» contraído co artigo).
+function melodyLabel(rhythm, number, territoryName) {
+  const short = String(territoryName || "").replace(/\s*\([^()]*\)\s*$/, "").trim() || String(territoryName || "").trim();
+  const article = short.match(/^(O|A|Os|As)\s+(.+)$/);
+  const place = !short ? "" : article ? ` d${article[1].toLowerCase()} ${article[2]}` : ` de ${short}`;
+  return `${rhythm} #${number}${place}`;
+}
+
 function slugify(text) {
   return normalizeText(text).replace(/ /g, "-");
 }
@@ -356,7 +364,7 @@ async function exportMelodiasJson(env) {
     territory_id: row.territory_id,
     rhythm: row.rhythm,
     number: row.number,
-    name: `${row.rhythm} número ${row.number} de ${row.territory_nome}`,
+    name: melodyLabel(row.rhythm, row.number, row.territory_nome),
     notes: row.notes,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -852,6 +860,22 @@ async function updateOwnedPieceResources(env, access, payload) {
 
 const MAX_RHYTHM_LENGTH = 60;
 
+// Repertorio PECHADO de ritmos da plataforma (o mesmo que RHYTHMS en frontend/js/archive_app.js e
+// MELODY_RHYTHMS en backend/services/importers.py). Non se poden inventar ritmos: só valen estes
+// e os que xa teñan melodías no inventario (herdanza).
+const MELODY_RHYTHMS = [
+  "Cantar popular", "Canto", "Carballesa", "Charrasquiño", "Chiqui-chiqui", "Danza", "Dous pasos", "Esparabán",
+  "Fandango", "Maneo", "Mazurca", "Muiñeira", "Muiñeira corrida", "Pandeirada", "Pasodobre", "Polca",
+  "Ribeirana", "Rumba", "Valse", "Xota",
+];
+
+async function allowedRhythmKeys(db) {
+  const keys = new Set(MELODY_RHYTHMS.map(normalizeText));
+  const { results } = await db.prepare("SELECT DISTINCT rhythm_key FROM melodies").all();
+  results.forEach(row => keys.add(row.rhythm_key));
+  return keys;
+}
+
 async function validateMelodiesPayload(env, payload) {
   if (!payload || !Array.isArray(payload.melodies)) {
     return ["O JSON debe ser un obxecto con clave 'melodies' en forma de lista."];
@@ -859,6 +883,7 @@ async function validateMelodiesPayload(env, payload) {
   const { results: territoryRows } = await env.DB.prepare("SELECT id FROM territories").all();
   const knownTerritories = new Set(territoryRows.map(row => row.id));
   const knownMelodies = new Set((await env.DB.prepare("SELECT id FROM melodies").all()).results.map(row => row.id));
+  const allowedRhythms = await allowedRhythmKeys(env.DB);
   const errors = [];
   payload.melodies.forEach((melody, index) => {
     const label = `Melodía #${index + 1}`;
@@ -888,6 +913,8 @@ async function validateMelodiesPayload(env, payload) {
       errors.push(`${label}: falta 'rhythm' ou está baleiro.`);
     } else if (melody.rhythm.trim().length > MAX_RHYTHM_LENGTH) {
       errors.push(`${label}: o ritmo é demasiado longo.`);
+    } else if (!allowedRhythms.has(normalizeText(melody.rhythm))) {
+      errors.push(`${label}: ritmo non permitido: «${melody.rhythm.trim()}». Escolle un dos ritmos da plataforma.`);
     }
     if (melody.number !== undefined && melody.number !== null && (!Number.isInteger(melody.number) || melody.number < 1)) {
       errors.push(`${label}: 'number' debe ser un enteiro maior ca 0.`);
@@ -904,7 +931,8 @@ async function canonicalMelodyRhythm(db, rhythm, rhythmKey) {
     "SELECT rhythm FROM melodies WHERE rhythm_key = ? ORDER BY id LIMIT 1"
   ).bind(rhythmKey).first();
   if (row) return row.rhythm;
-  return rhythm.charAt(0).toUpperCase() + rhythm.slice(1);
+  const listed = MELODY_RHYTHMS.find(item => normalizeText(item) === rhythmKey);
+  return listed || rhythm.charAt(0).toUpperCase() + rhythm.slice(1);
 }
 
 async function nextMelodyNumber(db, territoryId, rhythmKey) {
@@ -968,7 +996,7 @@ async function importMelodies(env, payload) {
       `SELECT id FROM melodies
        WHERE territory_id = ? AND rhythm_key = ? AND number = ? AND id IS NOT ?`
     ).bind(territoryId, rhythmKey, number, melodyId).first();
-    if (clash) throw new Error(`Xa existe a melodía ${rhythm} número ${number} neste territorio.`);
+    if (clash) throw new Error(`Xa existe a melodía ${rhythm} #${number} neste territorio.`);
 
     if (current) {
       await db.prepare(

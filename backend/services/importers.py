@@ -686,6 +686,20 @@ def import_media(conn: sqlite3.Connection, payload) -> list[int]:
 
 MAX_RHYTHM_LENGTH = 60
 
+# Repertorio PECHADO de ritmos (o mesmo que MELODY_RHYTHMS no Worker e RHYTHMS no frontend).
+# Só valen estes e os que xa teñan melodías no inventario.
+MELODY_RHYTHMS = [
+    "Cantar popular", "Canto", "Carballesa", "Charrasquiño", "Chiqui-chiqui", "Danza", "Dous pasos", "Esparabán",
+    "Fandango", "Maneo", "Mazurca", "Muiñeira", "Muiñeira corrida", "Pandeirada", "Pasodobre", "Polca",
+    "Ribeirana", "Rumba", "Valse", "Xota",
+]
+
+
+def allowed_rhythm_keys(conn: sqlite3.Connection) -> set[str]:
+    keys = {normalize_text(item) for item in MELODY_RHYTHMS}
+    keys.update(row["rhythm_key"] for row in conn.execute("SELECT DISTINCT rhythm_key FROM melodies").fetchall())
+    return keys
+
 
 def load_known_melodies(conn: sqlite3.Connection) -> set[int]:
     rows = conn.execute("SELECT id FROM melodies").fetchall()
@@ -704,6 +718,9 @@ def canonical_rhythm(conn: sqlite3.Connection, rhythm: str, rhythm_key: str) -> 
     ).fetchone()
     if row:
         return row["rhythm"]
+    for item in MELODY_RHYTHMS:
+        if normalize_text(item) == rhythm_key:
+            return item
     return rhythm[:1].upper() + rhythm[1:]
 
 
@@ -720,6 +737,7 @@ def validate_melodies_payload(conn: sqlite3.Connection, payload) -> list[str]:
         return ["O JSON debe ser un obxecto con clave 'melodies' en forma de lista."]
     known_territories = load_known_territories(conn)
     known_melodies = load_known_melodies(conn)
+    allowed_rhythms = allowed_rhythm_keys(conn)
     errors: list[str] = []
     for index, melody in enumerate(payload["melodies"], start=1):
         if not isinstance(melody, dict):
@@ -745,6 +763,8 @@ def validate_melodies_payload(conn: sqlite3.Connection, payload) -> list[str]:
             errors.append(f"Melodía #{index}: falta 'rhythm' ou está baleiro.")
         elif len(rhythm.strip()) > MAX_RHYTHM_LENGTH:
             errors.append(f"Melodía #{index}: o ritmo é demasiado longo.")
+        elif normalize_text(rhythm) not in allowed_rhythms:
+            errors.append(f"Melodía #{index}: ritmo non permitido: «{rhythm.strip()}». Escolle un dos ritmos da plataforma.")
         number = melody.get("number")
         if number is not None and (not isinstance(number, int) or isinstance(number, bool) or number < 1):
             errors.append(f"Melodía #{index}: 'number' debe ser un enteiro maior ca 0.")
@@ -832,7 +852,7 @@ def import_melodies(conn: sqlite3.Connection, payload) -> list[int]:
         ).fetchone()
         if clash:
             raise ValueError(
-                f"Xa existe a melodía {rhythm} número {number} neste territorio."
+                f"Xa existe a melodía {rhythm} #{number} neste territorio."
             )
 
         if current is not None:

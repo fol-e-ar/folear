@@ -100,3 +100,25 @@ export function loaderHtml(label = "") {
 export function setLoading(node, label = "") {
   if (node) node.innerHTML = loaderHtml(label);
 }
+
+// Nomes de territorio para onde non cómpre o santo da parroquia («A Ermida (Nosa Señora da
+// Anunciación)» -> «A Ermida»): Media, Melodías e Pezas. Nas coplas e nas buscas vai o nome completo.
+export function shortTerritoryName(name = "") {
+  const text = String(name || "").trim();
+  return text.replace(/\s*\([^()]*\)\s*$/, "").trim() || text;
+}
+
+// «de» + nome do territorio, contraído co artigo: A Ermida -> «da Ermida», O Castro -> «do Castro»,
+// Os Blancos -> «dos Blancos», As Pontes -> «das Pontes»; sen artigo, «de Moscoso».
+export function deTerritorio(name = "") {
+  const text = shortTerritoryName(name);
+  const match = text.match(/^(O|A|Os|As)\s+(.+)$/);
+  if (!match) return `de ${text}`;
+  return `d${match[1].toLowerCase()} ${match[2]}`;
+}
+
+// Nome dunha melodía: «Xota #1 da Ermida»
+export function melodyLabel(rhythm, number, territoryName = "") {
+  const place = String(territoryName || "").trim();
+  return `${rhythm} #${number}${place ? ` ${deTerritorio(place)}` : ""}`;
+}

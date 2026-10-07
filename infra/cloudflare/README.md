@@ -364,6 +364,66 @@ Para activalo hai que:
 Se falta o token ou o `CLOUDFLARE_ACCOUNT_ID`, as rutas de PDF devolven un
 erro claro explicando que falta configurar, en vez de fallar en seco.
 
+## Ritmos pechados, navegación, login e story (2026-10-07)
+
+- **Ritmos pechados**: o ritmo dunha melodía escóllese nun desplegábel (`#melodyRhythm`,
+  `#mediaNewMelodyRhythm`), nunca se escribe. O repertorio é `RHYTHMS` (frontend), `MELODY_RHYTHMS`
+  (Worker) e `MELODY_RHYTHMS` (`backend/services/importers.py`): mantelos iguais. Inclúe «Cantar popular»
+  e «Canto». O servidor rexeita (`400`, «ritmo non permitido») calquera ritmo que non estea na lista nin
+  teña xa melodías no inventario (herdanza), e grava a grafía da lista.
+- **Frechas e swipe en todos os ámbitos de coplas**: `mountCoplaList` rexistra os ids que amosa cada
+  listaxe (`coplaScopes`) e a ficha (`openCoplaDrawer(..., {ids})`) navega só entre eles: Coplas,
+  Territorios > coplas (tamén nivel Galiza, todas e non só as cargadas) e, no perfil, as coplas
+  favoritas (a ficha ábrese sen saír do perfil). Nas listaxes sen rexistro úsanse as coplas que haxa
+  xuntas no DOM. Con menos de 2 coplas non se amosa o paxinador.
+- **Volver do login á mesma páxina**: antes de ir a Google (calquera ligazón/botón de entrar) gárdase en
+  `localStorage` (`fol-e-ar-return`, caduca aos 30 min) a vista, territorio, pestana, buscas, ficha de copla
+  ou de peza aberta, `#hash` e desprazamento; `loginUrl()` engade `fe_back=1` ao `next`, e ao arrancar
+  a app restáurao todo e limpa o parámetro.
+- **Compartir como story (móbil/táctil)**: na ficha dunha copla, «Compartir como story» abre un modal
+  (`js/story.js`) que debuxa nun canvas unha imaxe 1080x1920 e a comparte coa Web Share API con
+  ficheiro (Instagram > Stories) ou, se non se pode, a descarga. Deseño: contido dentro das zonas
+  seguras de Instagram (~270–1650 px), copla en DM Mono aliñada á esquerda e centrada en vertical con
+  corte de liñas equilibrado (verso a verso, tamaño automático 62→24 px), aro do isotipo moi tenue
+  de fondo, cabeceira co isotipo e «fol e ar» (pílula «VOLTA» se a copla é unha volta), barra de
+  acento, territorios con punto da cor do seu nivel (par/con/com/prov; o lugar en primeiro lugar),
+  nomes longos recortados con «…» e «+N territorios» se sobran, e `folear.gal`. Estilos Papel /
+  Tinta / Ar. A cápsula «VOLTA» non usa `roundRect` (Safari < 16).
+- **«x» nos buscadores** (`js/search_clear.js`): todos os `input[type=search]` levan un botón para
+  borrar a busca (o nativo agóchase por CSS), tamén en Firefox e móbiles. Zona táctil de 44px con
+  círculo visible de 20px (`::before`), recolócase con `ResizeObserver`/`visualViewport`/`resize`,
+  non perde o foco (o teclado móbil non se pecha) e o `focusout` non o agocha antes do `click`.
+- **Sen zoom en iPhone** (`js/no_zoom.js`, `css/profile.css`, `<meta viewport>`): viewport
+  `maximum-scale=1, user-scalable=no`; en táctil (`pointer: coarse` / `hover: none`) todos os campos
+  teñen `font-size: 16px` (iOS amplía a páxina ao enfocar campos de menos de 16px);
+  `touch-action: manipulation` (sen zoom por dobre toque) e `-webkit-text-size-adjust: 100%`;
+  `gesturestart/gesturechange` cancélanse (pinch de Safari) e os pinch de dous dedos só se permiten
+  dentro do mapa Leaflet e do visor de PDF. En escritorio non cambia nada.
+- **Nomes de territorio curtos** (`shortTerritoryName`, `deTerritorio`, `melodyLabel` en `js/utils.js`;
+  mesma lóxica en `worker.js` e `backend/services/exporters.py`): o nome completo da parroquia leva o
+  santo entre parénteses («A Ermida (Nosa Señora da Anunciación)»), pero en **Melodías, Media e
+  Pezas** amósase só «A Ermida» (o completo queda no tooltip). As melodías chámanse
+  «Xota #1 da Ermida» (sen «número»; «de» + artigo O/A/Os/As contrae en do/da/dos/das: «do Castro»,
+  «dos Blancos», «das Pontes»; sen artigo, «de Moscoso»). **Coplas** (listaxes, ficha, story),
+  buscadores, suxestións e a páxina do propio territorio manteñen o nome completo para distinguir.
+- Mapa: `trackResize` desactivado (con outra vista activa o mapa mide 0 e Leaflet lanzaba
+  «Invalid LatLng (NaN)»); o axuste ao territorio faise ao volver ao mapa (`state.pendingFit`).
+
+## Compatibilidade de navegadores (Firefox, Safari)
+
+- **Obradoiro (Firefox)**: a tarxeta dunha copla xa non é `draggable="true"` en repouso (un
+  `<textarea>` dentro dun elemento arrastrable non deixa picar co rato en Firefox, só mover o
+  cursor coas frechas). Actívase ao premer fóra dos campos (a asa) e desactívase ao soltar.
+- **Visor de PDF (Safari / iPhone / iPad)**: un `<object>` con PDF non se amosa en Safari, así
+  que `browserNeedsPdfCanvas()` (`js/pdf_thumbs.js`) detecta Safari/iOS (ou
+  `navigator.pdfViewerEnabled === false`) e debuxa as páxinas con pdf.js local nun `<canvas>`
+  por páxina (`renderPdfPages`; ata 60 páxinas). Chrome e Firefox seguen co visor nativo.
+  O botón «Descargar PDF» funciona igual.
+- Mapa: os resultados da busca saen debaixo do botón de recentrar; en móbil o mapa usa
+  `100dvh`.
+- As probas e2e corren só con Chromium: o visor de Safari simúlase co seu `User-Agent`; Firefox
+  e Safari reais pídese probalos a man.
+
 ## Pendente / ideas
 
 - Formulario público «Enviar unha copla» con revisión (`POST /api/submissions`; a táboa `submissions` existe, sen uso).

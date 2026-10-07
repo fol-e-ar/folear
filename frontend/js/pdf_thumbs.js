@@ -156,3 +156,50 @@ export function initPdfThumbs() {
   }).observe(document.body, { childList: true, subtree: true });
   scan();
 }
+
+// ---------------------------------------------------------------------------
+// Visor de PDF con pdf.js (para navegadores que non amosan un PDF dentro dun
+// <object>/<iframe>: Safari, sobre todo en iPhone/iPad). Debuxa cada páxina nun
+// <canvas> dentro de `container`. `isCancelled()` permite deixalo se se pecha o visor.
+// ---------------------------------------------------------------------------
+
+export function browserNeedsPdfCanvas() {
+  const ua = navigator.userAgent || "";
+  const ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const safari = /Safari\//.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android/.test(ua);
+  return ios || safari || navigator.pdfViewerEnabled === false;
+}
+
+export async function renderPdfPages(container, blob, { isCancelled = () => false, maxPages = 60 } = {}) {
+  const lib = await loadPdfjs();
+  const data = new Uint8Array(await blob.arrayBuffer());
+  const pdf = await lib.getDocument({ data, isEvalSupported: false }).promise;
+  try {
+    const total = Math.min(pdf.numPages, maxPages);
+    const width = Math.max(240, Math.min(container.clientWidth - 24, 1000));
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    for (let number = 1; number <= total; number += 1) {
+      if (isCancelled()) return;
+      const page = await pdf.getPage(number);
+      const base = page.getViewport({ scale: 1 });
+      const scale = width / base.width;
+      const viewport = page.getViewport({ scale: scale * ratio });
+      const canvas = document.createElement("canvas");
+      canvas.className = "pdf-page-canvas";
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      canvas.style.width = `${Math.floor(base.width * scale)}px`;
+      canvas.style.height = `${Math.floor(base.height * scale)}px`;
+      canvas.setAttribute("role", "img");
+      canvas.setAttribute("aria-label", `Páxina ${number} de ${pdf.numPages}`);
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      container.appendChild(canvas);
+      await page.render({ canvasContext: context, viewport }).promise;
+      if (number === 1) container.querySelector(".pdf-loading")?.remove();
+    }
+  } finally {
+    pdf.destroy();
+  }
+}
