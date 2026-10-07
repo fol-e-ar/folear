@@ -29,6 +29,9 @@ const S = {
   data: null,
   following: new Set(),
   followingList: [],
+  followers: [],
+  followersTotal: 0,
+  followersPrivate: 0,
   followsEnabled: false,
 };
 
@@ -126,6 +129,18 @@ async function loadFollows() {
     S.followsEnabled = true;
   } catch {
     S.followsEnabled = false; // sen migración 0005
+  }
+  // Quen me segue (só se ve no meu espazo)
+  S.followers = [];
+  S.followersTotal = 0;
+  S.followersPrivate = 0;
+  if (S.followsEnabled) {
+    try {
+      const data = await api("/me/followers");
+      S.followers = data.followers || [];
+      S.followersTotal = Number(data.total || S.followers.length);
+      S.followersPrivate = Number(data.private_count || 0);
+    } catch { /* sen o endpoint: simplemente non se amosa */ }
   }
 }
 
@@ -344,7 +359,8 @@ async function renderProfile() {
           <div>
             <div class="eyebrow">O meu espazo</div>
             <h1>${esc(shownName || "O meu espazo")}</h1>
-            <p>${profile.is_public && profile.handle ? `Perfil público · <a href="#/persoa/${esc(profile.handle)}" data-person-link="${esc(profile.handle)}">ver como o ven as outras persoas</a>` : "O teu perfil é privado: ninguén máis o ve."}</p>
+            ${profile.handle ? `<p class="profile-handle">@${esc(profile.handle)}</p>` : `<p class="profile-handle is-missing">Aínda non tes username: escolle un abaixo para poder ter perfil público.</p>`}
+            <p>${profile.is_public && profile.handle ? `Perfil público \\ <a href="#/persoa/${esc(profile.handle)}" data-person-link="${esc(profile.handle)}">ver como o ven as outras persoas</a>` : "O teu perfil é privado: ninguén máis o ve."}</p>
           </div>
         </div>
       </div>
@@ -360,7 +376,7 @@ async function renderProfile() {
           <div class="field">
             <label for="pfHandle">username</label>
             <input id="pfHandle" name="handle" maxlength="30" value="${esc(profile.handle)}" placeholder="por exemplo: maria-de-lugo" autocapitalize="none" spellcheck="false">
-            <small>Só minúsculas sen acentos, números e guións (3-30). A túa páxina sería <code>#/persoa/<span id="pfHandlePreview">${esc(profile.handle || "o-teu-username")}</span></code>.</small>
+            <small>É o teu identificador único e público (como o @ doutras redes): permite que te atopen, te distingan doutra persoa co mesmo nome e dá a ligazón do teu perfil. Só minúsculas sen acentos, números e guións (3-30). A túa páxina sería <code>#/persoa/<span id="pfHandlePreview">${esc(profile.handle || "o-teu-username")}</span></code>.</small>
           </div>
           <div class="field">
             <label for="pfPlace">Territorio (opcional)</label>
@@ -407,6 +423,7 @@ async function renderProfile() {
       </section>
 
       ${S.followsEnabled ? followingPanelHtml(allPieces) : ""}
+      ${S.followsEnabled ? followersPanelHtml() : ""}
 
       <section class="panel profile-danger">
         <div class="section-title"><h2>A miña conta</h2></div>
@@ -463,7 +480,7 @@ function followingPanelHtml(allPieces) {
     .filter(piece => piece.owner && handles.has(piece.owner.handle) && piece.status !== "hidden")
     .slice(0, 8);
   const people = S.followingList.length
-    ? `<div class="people-chips">${S.followingList.map(person => `<a class="chip-link" href="#/persoa/${esc(person.handle)}" data-person-link="${esc(person.handle)}">${esc(person.display_name)}</a>`).join("")}</div>`
+    ? `<div class="people-chips">${S.followingList.map(person => `<a class="chip-link" href="#/persoa/${esc(person.handle)}" data-person-link="${esc(person.handle)}">${esc(person.display_name)} <span class="chip-handle">@${esc(person.handle)}</span></a>`).join("")}</div>`
     : `<p class="muted">Aínda non segues a ninguén. Mira o <a href="#" data-go-people>directorio de persoas</a> e segue a quen publique pezas que che interesen.</p>`;
   const news = S.followingList.length
     ? (recent.length
@@ -471,6 +488,17 @@ function followingPanelHtml(allPieces) {
       : `<p class="muted small-print">As persoas que segues aínda non publicaron pezas.</p>`)
     : "";
   return `<section class="panel profile-following"><div class="section-title"><h2>Persoas que sigo <span class="muted">${S.followingList.length}</span></h2></div>${people}${news}</section>`;
+}
+
+function followersPanelHtml() {
+  const chips = S.followers.map(person => `<a class="chip-link" href="#/persoa/${esc(person.handle)}" data-person-link="${esc(person.handle)}" title="@${esc(person.handle)}${person.i_follow ? " \\ xa a segues" : ""}">${esc(person.display_name)} <span class="chip-handle">@${esc(person.handle)}</span></a>`).join("");
+  const hidden = S.followersPrivate > 0
+    ? `<p class="muted small-print">${S.followers.length ? "E " : ""}${S.followersPrivate} ${S.followersPrivate === 1 ? "persoa máis, que non ten" : "persoas máis, que non teñen"} perfil público.</p>`
+    : "";
+  const body = S.followersTotal
+    ? `${chips ? `<div class="people-chips">${chips}</div>` : ""}${hidden}`
+    : `<p class="muted">Aínda ninguén te segue. Cando teñas un perfil público con pezas publicadas, a xente poderá seguirte desde a túa páxina.</p>`;
+  return `<section class="panel profile-followers"><div class="section-title"><h2>Persoas que me seguen <span class="muted">${S.followersTotal}</span></h2></div>${body}<p class="muted small-print">Isto só o ves ti: o teu perfil público non amosa cantas persoas te seguen.</p></section>`;
 }
 
 function bindFollowing(view) {
@@ -644,12 +672,14 @@ async function renderPeople() {
   }
   const paint = query => {
     const q = normalize(query).trim();
-    const shown = people.filter(person => !q || normalize(`${person.display_name} ${person.territory_name} ${person.bio}`).includes(q));
+    const handleQuery = q.replace(/^@/, "");
+    const shown = people.filter(person => !q || normalize(`${person.display_name} ${person.handle} ${person.territory_name} ${person.bio}`).includes(handleQuery));
     view.querySelector("#peopleCards").innerHTML = shown.map(person => `
       <a class="person-card" href="#/persoa/${esc(person.handle)}" data-person-link="${esc(person.handle)}">
         ${avatarHtml(person.display_name, null)}
         <span class="person-card-body">
           <strong>${esc(person.display_name)}</strong>
+          <span class="person-handle">@${esc(person.handle)}</span>
           ${person.territory_name ? `<span class="person-place">${esc(person.territory_name)}</span>` : ""}
           ${person.bio ? `<span class="person-bio">${esc(person.bio)}</span>` : ""}
         </span>
@@ -660,7 +690,7 @@ async function renderPeople() {
     <div class="page people-page">
       <div class="page-head"><div><div class="eyebrow">Comunidade</div><h1>Persoas</h1>
       <p>Quen decidiu amosar o seu perfil. Cada persoa elixe que comparte.</p></div></div>
-      <div class="toolbar"><div class="searchbox"><span>⌕</span><input id="peopleSearch" type="search" placeholder="Buscar por nome, territorio..."></div></div>
+      <div class="toolbar"><div class="searchbox"><span>⌕</span><input id="peopleSearch" type="search" placeholder="Buscar por nome, @username, territorio..."></div></div>
       <div id="peopleCards" class="people-cards"></div>
     </div>`;
   view.querySelector("#peopleSearch").addEventListener("input", event => paint(event.target.value));
@@ -706,6 +736,7 @@ async function renderPerson(view, handle) {
           <div>
             <div class="eyebrow">Perfil</div>
             <h1>${esc(person.display_name)}</h1>
+            <p class="profile-handle">@${esc(person.handle)}</p>
             ${person.territory_name ? `<p class="person-place">${esc(person.territory_name)}</p>` : ""}
           </div>
           ${loggedIn() && !isSelf && S.followsEnabled ? `<button type="button" class="btn ${following ? "" : "primary"} follow-btn" id="followBtn">${following ? "Deixar de seguir" : "Seguir"}</button>` : ""}

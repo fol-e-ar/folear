@@ -180,12 +180,27 @@ async function lugarAvailable(env) {
   }
 }
 
+// «Variante = outra copla» (migración 0010): `coplas.variant_of`. Sen a migración, todo segue coma antes.
+let variantColumnKnown = false;
+async function variantAvailable(env) {
+  if (variantColumnKnown) return true;
+  try {
+    await env.DB.prepare("SELECT variant_of FROM coplas LIMIT 1").first();
+    variantColumnKnown = true;
+    return true;
+  } catch (err) {
+    if (/no such (column|table)/i.test(String(err && err.message))) return false;
+    throw err;
+  }
+}
+
 function cleanLugar(value) {
   return cleanText(value, 80) || null;
 }
 
 async function exportCoplasJson(env) {
   const lugarSql = (await lugarAvailable(env)) ? "lugar" : "NULL AS lugar";
+  const variantSql = (await variantAvailable(env)) ? "variant_of" : "NULL AS variant_of";
   // Consultas en bloque (5 no total), en paralelo, en vez dunha consulta
   // por copla/version (chegaba a ~472 voltas de rede para 156 coplas).
   // Verificado byte-a-byte idéntico á versión anterior antes de trocalo
@@ -199,7 +214,7 @@ async function exportCoplasJson(env) {
   ] = await Promise.all([
     env.DB.prepare(
       `SELECT id, text, normalized_text, incipit, notes, status,
-              territory_state, is_volta, ${lugarSql}, created_at, updated_at
+              territory_state, is_volta, ${lugarSql}, ${variantSql}, created_at, updated_at
        FROM coplas
        ORDER BY id DESC`
     ).all(),
@@ -280,6 +295,7 @@ async function exportCoplasJson(env) {
     territory_state: copla.territory_state,
     is_volta: Boolean(copla.is_volta),
     lugar: copla.lugar || null,
+    variant_of: copla.variant_of || null,
     created_at: copla.created_at,
     updated_at: copla.updated_at,
     territories: territoriesByCopla.get(copla.id) || [],
@@ -590,6 +606,19 @@ async function importCoplas(env, payload) {
   const db = env.DB;
   const importedIds = [];
   const withLugar = await lugarAvailable(env);
+  const withVariants = await variantAvailable(env);
+
+  if (withVariants) {
+    // Unha copla-variante non se edita directamente: o seu texto e territorios veñen da variante
+    // da copla principal (sincronízase ao gardar esta).
+    const editedIds = payload.coplas.map(item => item.id).filter(Number.isInteger);
+    for (const id of editedIds) {
+      const row = await db.prepare("SELECT variant_of FROM coplas WHERE id = ?").bind(id).first();
+      if (row && row.variant_of) {
+        throw new Error(`A copla ${id} é unha variante da copla ${row.variant_of} noutro territorio: edítase desde a copla principal (na súa lista de variantes).`);
+      }
+    }
+  }
 
   for (const copla of payload.coplas) {
     const text = copla.text.trim();
@@ -661,9 +690,82 @@ async function importCoplas(env, payload) {
       await db.prepare("INSERT OR IGNORE INTO copla_tags (copla_id, tag_id) VALUES (?, ?)")
         .bind(coplaId, tagId).run();
     }
+
+    if (withVariants) await syncVariantCoplas(env, coplaId);
   }
 
   return importedIds;
+}
+
+// Cada variante dunha copla que está adscrita a territorios que a principal non ten é, ademais,
+// unha copla propia nesos territorios (`variant_of` = a principal). Se a variante cae no mesmo
+// territorio ca principal non se duplica nada: segue sendo só unha variante. As fillas
+// actualízanse no sitio (conservan id, favoritos e media) e bórranse se a variante desaparece
+// ou pasa a estar nos territorios da principal.
+async function syncVariantCoplas(env, parentId) {
+  const db = env.DB;
+  const parent = await db.prepare("SELECT id, status, is_volta, variant_of FROM coplas WHERE id = ?").bind(parentId).first();
+  if (!parent || parent.variant_of) return;
+  const [{ results: parentTerritories }, { results: parentTags }, { results: versions }, { results: versionTerritories }, { results: existing }] = await Promise.all([
+    db.prepare("SELECT territory_id FROM copla_territories WHERE copla_id = ?").bind(parentId).all(),
+    db.prepare("SELECT tag_id FROM copla_tags WHERE copla_id = ?").bind(parentId).all(),
+    db.prepare("SELECT id, text, normalized_text, incipit, notes FROM copla_versions WHERE copla_id = ? ORDER BY position, id").bind(parentId).all(),
+    db.prepare(
+      `SELECT cvt.version_id AS version_id, cvt.territory_id AS territory_id
+       FROM copla_version_territories cvt JOIN copla_versions v ON v.id = cvt.version_id WHERE v.copla_id = ?`
+    ).bind(parentId).all(),
+    db.prepare("SELECT id, normalized_text FROM coplas WHERE variant_of = ? ORDER BY id").bind(parentId).all(),
+  ]);
+  const own = new Set(parentTerritories.map(row => row.territory_id));
+  const wanted = [];
+  const seenTexts = new Set();
+  for (const version of versions) {
+    if (seenTexts.has(version.normalized_text)) continue;
+    const extra = versionTerritories
+      .filter(row => row.version_id === version.id && !own.has(row.territory_id))
+      .map(row => row.territory_id);
+    if (!extra.length) continue;
+    seenTexts.add(version.normalized_text);
+    wanted.push({ version, territoryIds: [...new Set(extra)] });
+  }
+
+  // Emparellar con fillas existentes: primeiro polo mesmo texto, despois por orde.
+  const free = [...existing];
+  const pairs = wanted.map(item => {
+    const index = free.findIndex(row => row.normalized_text === item.version.normalized_text);
+    return { ...item, row: index >= 0 ? free.splice(index, 1)[0] : null };
+  });
+  for (const pair of pairs) if (!pair.row && free.length) pair.row = free.shift();
+
+  for (const row of free) {
+    await db.prepare("DELETE FROM media_links WHERE entity_type = 'copla' AND entity_id = ?").bind(String(row.id)).run();
+    await db.prepare("DELETE FROM coplas WHERE id = ?").bind(row.id).run();
+  }
+
+  for (const { version, territoryIds, row } of pairs) {
+    let childId = row ? row.id : null;
+    if (childId) {
+      await db.prepare(
+        `UPDATE coplas SET text = ?, normalized_text = ?, incipit = ?, notes = ?, status = ?,
+                territory_state = 'assigned', is_volta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).bind(version.text, version.normalized_text, version.incipit, version.notes, parent.status, parent.is_volta, childId).run();
+      await db.prepare("DELETE FROM copla_territories WHERE copla_id = ?").bind(childId).run();
+      await db.prepare("DELETE FROM copla_tags WHERE copla_id = ?").bind(childId).run();
+    } else {
+      const result = await db.prepare(
+        `INSERT INTO coplas (text, normalized_text, incipit, notes, status, territory_state, is_volta, variant_of, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'assigned', ?, ?, CURRENT_TIMESTAMP)`
+      ).bind(version.text, version.normalized_text, version.incipit, version.notes, parent.status, parent.is_volta, parentId).run();
+      childId = result.meta.last_row_id;
+    }
+    for (const territoryId of territoryIds) {
+      await db.prepare("INSERT OR IGNORE INTO copla_territories (copla_id, territory_id, relation_type, is_direct) VALUES (?, ?, 'direct', 1)")
+        .bind(childId, territoryId).run();
+    }
+    for (const tag of parentTags) {
+      await db.prepare("INSERT OR IGNORE INTO copla_tags (copla_id, tag_id) VALUES (?, ?)").bind(childId, tag.tag_id).run();
+    }
+  }
 }
 
 async function deleteCoplas(env, coplaIds) {
@@ -682,7 +784,19 @@ async function deleteCoplas(env, coplaIds) {
     throw new Error(`Non existe ningunha copla con estes IDs: [${missing.join(", ")}].`);
   }
 
-  for (const coplaId of ids) {
+  if (await variantAvailable(env)) {
+    // As coplas-variante bórranse xunto coa principal; soas non (volverían a crearse): ábrese a
+    // principal e quítase a variante da súa lista.
+    const { results: children } = await env.DB.prepare("SELECT id, variant_of FROM coplas WHERE variant_of IS NOT NULL").all();
+    const requested = new Set(ids);
+    const orphan = children.find(row => requested.has(row.id) && !requested.has(row.variant_of));
+    if (orphan) {
+      throw new Error(`A copla ${orphan.id} é unha variante da copla ${orphan.variant_of}: bórrase quitando a variante desde a copla principal (ou borrando esta).`);
+    }
+    for (const row of children) if (requested.has(row.variant_of)) ids.push(row.id);
+  }
+
+  for (const coplaId of [...new Set(ids)]) {
     await env.DB.prepare(
       "DELETE FROM media_links WHERE entity_type = 'copla' AND entity_id = ?"
     ).bind(String(coplaId)).run();
@@ -2791,14 +2905,16 @@ async function registerLooseCoplas(env, input) {
     byText.get(key).push(item);
   }
   const withLugar = await lugarAvailable(env);
+  const withVariants = await variantAvailable(env);
   const created = [];
   for (const [, items] of byText) {
     const text = items[0].inline_text;
-    const found = await env.DB.prepare("SELECT id, territory_state FROM coplas WHERE normalized_text = ? ORDER BY id LIMIT 1").bind(normalizeText(text)).first();
+    const found = await env.DB.prepare(`SELECT id, territory_state, ${withVariants ? "variant_of" : "NULL AS variant_of"} FROM coplas WHERE normalized_text = ? ORDER BY id LIMIT 1`).bind(normalizeText(text)).first();
     let coplaId;
     if (found) {
       coplaId = found.id;
-      if (input.territoryId && found.territory_state !== "general") {
+      // Unha copla-variante xa ten os seus territorios (veñen da principal): non se lle engade ningún.
+      if (input.territoryId && found.territory_state !== "general" && !found.variant_of) {
         const linked = await env.DB.prepare("SELECT 1 AS ok FROM copla_territories WHERE copla_id = ? AND territory_id = ?").bind(coplaId, input.territoryId).first();
         if (!linked) {
           await env.DB.batch([
@@ -3194,6 +3310,25 @@ async function handleMyFollows(request, env, url) {
   return jsonNoStore({ ok: true, following: results }, { env });
 }
 
+// Quen me segue (só para min). Móstranse as persoas con perfil público; das demais, só cantas son.
+async function handleMyFollowers(request, env, url) {
+  const viewer = await requirePersonalSpace(request, env, url);
+  const [{ results }, total] = await personalTables(env, () => Promise.all([
+    env.DB.prepare(
+      `SELECT pr.handle, pr.display_name, t.nome AS territory_name,
+              EXISTS (SELECT 1 FROM follows b WHERE b.follower_id = ? AND b.followee_id = f.follower_id) AS i_follow
+       FROM follows f
+       JOIN profiles pr ON pr.user_id = f.follower_id AND pr.is_public = 1 AND pr.handle IS NOT NULL AND pr.display_name <> ''
+       LEFT JOIN territories t ON t.id = pr.territory_id
+       WHERE f.followee_id = ? ORDER BY pr.display_name COLLATE NOCASE LIMIT 500`
+    ).bind(viewer.id, viewer.id).all(),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM follows WHERE followee_id = ?").bind(viewer.id).first(),
+  ]));
+  const followers = results.map(row => ({ ...row, i_follow: Boolean(row.i_follow) }));
+  const count = Number(total?.n || 0);
+  return jsonNoStore({ ok: true, followers, total: count, private_count: Math.max(0, count - followers.length) }, { env });
+}
+
 async function handleToggleFollow(request, env, url) {
   const viewer = await requirePersonalSpace(request, env, url);
   const payload = await request.json().catch(() => ({}));
@@ -3289,6 +3424,9 @@ export default {
       }
       if (request.method === "GET" && url.pathname === "/api/me/follows") {
         return await handleMyFollows(request, env, url);
+      }
+      if (request.method === "GET" && url.pathname === "/api/me/followers") {
+        return await handleMyFollowers(request, env, url);
       }
       if (request.method === "POST" && url.pathname === "/api/me/follows") {
         return await handleToggleFollow(request, env, url);

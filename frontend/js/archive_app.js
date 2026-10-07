@@ -762,6 +762,7 @@ const MEDIA_KIND_ICONS = {
 };
 
 const UI_ICONS = {
+  save: '<path d="M5 4h11l3 3v13H5Z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
   share: '<path d="M12 15V4m0 0L8 8m4-4 4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
@@ -1982,7 +1983,8 @@ function bindResultButtons(root = document) {
 }
 
 function coplaSelectCheckbox(copla, options) {
-  if (!options.selectMode) return "";
+  // Unha copla-variante edítase/bórrase desde a súa principal: non se pode seleccionar en bloque.
+  if (!options.selectMode || copla.variant_of) return "";
   return `<label class="select-check" title="Seleccionar"><input type="checkbox" data-select-copla="${copla.id}" ${options.selected ? "checked" : ""} aria-label="Seleccionar ${escapeHtml(coplaTitle(copla))}"><span class="select-box" aria-hidden="true"></span></label>`;
 }
 
@@ -2066,7 +2068,9 @@ function mountInfiniteList(list, items, { renderItems, bind, key = "", empty = "
 
 function coplaCard(copla, options = {}) {
   const versionCount = (copla.versions || []).length;
-  const versionChip = versionCount ? `<span class="tag">${versionCount} variantes</span>` : "";
+  const versionChip = copla.variant_of
+    ? `<span class="tag is-variant" title="Variante doutra copla">Variante</span>`
+    : (versionCount ? `<span class="tag">${versionCount} ${versionCount === 1 ? "variante" : "variantes"}</span>` : "");
   const voltaChip = copla.is_volta ? `<span class="tag is-volta">Volta</span>` : "";
   const placeChip = `<span class="gallery-place${options.dimPlace ? " is-subtle" : ""}">${coplaPlaceChipsHtml(copla)}</span>`;
   const selectCheckbox = coplaSelectCheckbox(copla, options);
@@ -2238,7 +2242,8 @@ function setCoplaSelectMode(on) {
 // Con `range` (Maiús + clic) marca ou desmarca todo o intervalo desde a
 // última copla tocada ata esta, segundo a orde da consulta actual.
 function toggleCoplaSelection(coplaId, { range = false } = {}) {
-  const visible = filteredCoplas().map(copla => copla.id);
+  if (state.coplas.find(item => Number(item.id) === Number(coplaId))?.variant_of) return; // edítase desde a principal
+  const visible = filteredCoplas().filter(copla => !copla.variant_of).map(copla => copla.id);
   const last = state.coplaLastSelectedId;
   const selecting = !state.coplaSelectedIds.includes(coplaId);
   if (range && last != null && visible.includes(last) && visible.includes(coplaId)) {
@@ -2260,7 +2265,7 @@ function coplaBatchBarMarkup(items) {
   if (!state.coplaSelectMode) return "";
   const count = state.coplaSelectedIds.length;
   const plural = count === 1 ? "" : "s";
-  const everyVisible = items.length > 0 && items.every(copla => state.coplaSelectedIds.includes(copla.id));
+  const everyVisible = items.length > 0 && items.filter(copla => !copla.variant_of).every(copla => state.coplaSelectedIds.includes(copla.id));
   return `
     <div class="batch-dock${count ? " has-selection" : ""}" role="toolbar" aria-label="Edición en lote">
       <div class="batch-dock-count"><b>${count}</b><div><span>copla${plural} seleccionada${plural}</span><small>${count ? "" : "Toca as coplas para marcalas. "}<span class="hint-shift">Maiús + clic marca un intervalo.</span></small></div></div>
@@ -2280,7 +2285,7 @@ function coplaBatchBarMarkup(items) {
 function bindCoplaBatchBar(root = $("#view-coplas")) {
   $("#batchExit", root)?.addEventListener("click", () => setCoplaSelectMode(false));
   $("#batchSelectAllVisible", root)?.addEventListener("click", () => {
-    const ids = filteredCoplas().map(copla => copla.id);
+    const ids = filteredCoplas().filter(copla => !copla.variant_of).map(copla => copla.id);
     state.coplaSelectedIds = Array.from(new Set([...state.coplaSelectedIds, ...ids]));
     updateCoplasResults(root);
   });
@@ -2432,6 +2437,16 @@ function drawerFold(title, count, body) {
   return `<details class="drawer-fold"><summary><span>${title}</span>${count ? `<small>${count}</small>` : ""}</summary><div class="drawer-fold-body">${body}</div></details>`;
 }
 
+// Copla principal e as súas coplas-variante (variantes noutros territorios): navegan xuntas.
+function coplaFamilyIds(copla) {
+  const rootId = copla.variant_of || copla.id;
+  return [rootId, ...state.coplas.filter(item => Number(item.variant_of) === Number(rootId)).map(item => item.id)].map(Number);
+}
+
+function coplaVariantChild(parent, version) {
+  return state.coplas.find(item => Number(item.variant_of) === Number(parent.id) && item.normalized_text === version.normalized_text) || null;
+}
+
 function openCoplaDrawer(coplaId, options = {}) {
   const copla = state.coplas.find(item => Number(item.id) === Number(coplaId));
   const drawer = $("#coplaDrawer");
@@ -2447,13 +2462,21 @@ function openCoplaDrawer(coplaId, options = {}) {
       </div>`;
   const variants = copla.versions || [];
   const media = coplaMedia(copla);
-  const variantsHtml = variants.map(version => `
+  const variantsHtml = variants.map(version => {
+    const child = coplaVariantChild(copla, version);
+    return `
     <div class="variant">
       <strong>${escapeHtml(version.label || version.incipit || "Variante")}</strong>
       <div>${nl2br(version.text || "")}</div>
       <p class="muted">${version.territory_mode === "custom" && (version.territories || []).length ? escapeHtml(version.territories.map(territoryDisplayName).join(" \\ ")) : "Mesma adscrición territorial ca copla principal"}</p>
+      ${child ? `<p><button type="button" class="link-button" data-goto-copla="${child.id}">Ver como copla de ${escapeHtml((child.territories || []).map(item => shortTerritoryName(item.nome)).join(", "))}</button></p>` : ""}
       ${version.notes ? `<p class="muted">${escapeHtml(version.notes)}</p>` : ""}
-    </div>`).join("");
+    </div>`;
+  }).join("");
+  const parentCopla = copla.variant_of ? state.coplas.find(item => Number(item.id) === Number(copla.variant_of)) : null;
+  const variantOfHtml = parentCopla
+    ? `<p class="variant-of">Variante de <button type="button" class="link-button" data-goto-copla="${parentCopla.id}">«${escapeHtml(coplaTitle(parentCopla))}»</button>, noutro territorio.</p>`
+    : "";
   const folds = [
     variants.length ? drawerFold("Variantes", variants.length, variantsHtml) : "",
     media.length ? drawerFold("Media relacionada", media.length, `<div class="media-grid compact">${media.map(mediaCard).join("")}</div>`) : "",
@@ -2476,12 +2499,15 @@ function openCoplaDrawer(coplaId, options = {}) {
         <div class="copla-hero-text">${nl2br(String(copla.text || "").trim())}</div>
       </div>
       <div class="copla-places">${coplaPlacesMarkup(copla)}</div>
+      ${variantOfHtml}
       <div class="meta">${(copla.tags || []).map(tag => `<span class="tag" data-tag-name="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`).join("")}</div>
       <div class="story-share-row"><button class="btn story-share" type="button" data-share-story="${copla.id}">${uiIcon("share", 16)} Compartir como story</button></div>
       ${folds ? `<div class="drawer-folds">${folds}</div>` : ""}
       <div class="drawer-actions edit-only">
-        <button class="btn" type="button" data-edit-copla="${copla.id}">Editar copla</button>
-        <button class="btn danger" type="button" data-delete-copla="${copla.id}">Borrar copla</button>
+        ${copla.variant_of
+          ? `<button class="btn" type="button" data-edit-copla="${copla.variant_of}">Editar na copla principal</button>`
+          : `<button class="btn" type="button" data-edit-copla="${copla.id}">Editar copla</button>
+        <button class="btn danger" type="button" data-delete-copla="${copla.id}">Borrar copla</button>`}
       </div>
       ${pager ? `<p class="drawer-hint" aria-hidden="true">← → para cambiar de copla</p>` : ""}
     </aside>
@@ -2489,7 +2515,8 @@ function openCoplaDrawer(coplaId, options = {}) {
   all("[data-close-drawer]", drawer).forEach(item => item.addEventListener("click", closeCoplaDrawer));
   all("[data-copla-step]", drawer).forEach(button => button.addEventListener("click", () => stepCoplaDrawer(Number(button.dataset.coplaStep))));
   $("[data-share-story]", drawer)?.addEventListener("click", () => openStoryModal(copla));
-  $("[data-edit-copla]", drawer)?.addEventListener("click", () => startEditCopla(copla.id));
+  $("[data-edit-copla]", drawer)?.addEventListener("click", event => startEditCopla(Number(event.currentTarget.dataset.editCopla)));
+  all("[data-goto-copla]", drawer).forEach(button => button.addEventListener("click", () => openCoplaDrawer(Number(button.dataset.gotoCopla), { ids: coplaFamilyIds(copla) })));
   $("[data-delete-copla]", drawer)?.addEventListener("click", () => openDeleteConfirm([copla.id]));
   bindResultButtons(drawer);
   bindCoplaActions(drawer);
@@ -2743,7 +2770,7 @@ async function applyBatchTerritoryAssignment() {
   const territories = state.batchTerritoryIds.map(id => ({ id }));
   const payloads = state.coplaSelectedIds
     .map(id => state.coplas.find(item => Number(item.id) === Number(id)))
-    .filter(Boolean)
+    .filter(copla => copla && !copla.variant_of)
     .map(copla => coplaToEditPayload(copla, { territory_state: "assigned", territories }));
   if (!payloads.length) return;
   setLoading(feedback, "Aplicando");
@@ -4200,7 +4227,7 @@ function renderPiecesView() {
         ${workshop ? `
           <div class="header-actions">
             <button class="btn" type="button" id="clearPiece">Baleirar</button>
-            <button class="btn" type="button" id="savePieceDirect">${draft.editingPieceId && isAccount() ? "Gardar cambios" : "Gardar peza"}</button>
+            <button class="btn save-piece" type="button" id="savePieceDirect">${uiIcon("save", 16)}<span>${draft.editingPieceId && isAccount() ? "Gardar cambios" : "Gardar peza"}</span></button>
             <button class="btn primary" type="button" id="openA4" ${state.pdfBusy ? "disabled" : ""}>${state.pdfBusy ? loaderHtml("Xerando PDF") : "Exportar PDF"}</button>
           </div>
         ` : ""}
@@ -5308,7 +5335,7 @@ function renderSubmitView() {
             ` : ""}
         </div>
         <div class="variants-block">
-          <div class="section-title"><div><h2>Variantes</h2><p class="muted">Numéranse automaticamente pola orde en que se engaden e parten do texto principal.</p></div><button class="btn" type="button" id="addVersion">+ Engadir variante</button></div>
+          <div class="section-title"><div><h2>Variantes</h2><p class="muted">Numéranse automaticamente pola orde en que se engaden e parten do texto principal. Se unha variante vai noutro territorio, tamén aparece como copla propia nese territorio (e se vai no mesmo, non se duplica).</p></div><button class="btn" type="button" id="addVersion">+ Engadir variante</button></div>
           <div id="versionRows" class="version-rows"></div>
         </div>
           <div class="form-actions submit-primary-actions">
@@ -6452,7 +6479,9 @@ function queuePasteBlock() {
 }
 
 function startEditCopla(coplaId) {
-  const copla = state.coplas.find(item => Number(item.id) === Number(coplaId));
+  let copla = state.coplas.find(item => Number(item.id) === Number(coplaId));
+  // Unha copla-variante edítase desde a súa principal (a variante é un dos seus textos)
+  if (copla?.variant_of) copla = state.coplas.find(item => Number(item.id) === Number(copla.variant_of)) || copla;
   if (!copla) return;
   state.submitReturnView = {
     view: state.view,

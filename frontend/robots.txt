@@ -1,0 +1,7 @@
+# Fol e ar: o arquivo é público e pode indexarse.
+# /data/ NON se bloquea: a web carga as coplas desde aí e os buscadores precisan lelas para a renderizar.
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://folear.gal/sitemap.xml

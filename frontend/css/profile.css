@@ -1329,3 +1329,32 @@ textarea,
     font-size: 16px !important;
   }
 }
+
+/* username (@) */
+.profile-handle {
+  margin: 2px 0 4px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.profile-handle.is-missing {
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.person-handle {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.chip-handle {
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}

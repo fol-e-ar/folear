@@ -82,6 +82,7 @@ def export_coplas(conn: sqlite3.Connection) -> list[dict]:
           c.territory_state,
           c.is_volta,
           c.lugar,
+          c.variant_of,
           c.created_at,
           c.updated_at
         FROM coplas c
@@ -148,6 +149,7 @@ def export_coplas(conn: sqlite3.Connection) -> list[dict]:
                 "territory_state": copla["territory_state"],
                 "is_volta": bool(copla["is_volta"]),
                 "lugar": copla["lugar"],
+                "variant_of": copla["variant_of"],
                 "created_at": copla["created_at"],
                 "updated_at": copla["updated_at"],
                 "territories": [dict(item) for item in territories],

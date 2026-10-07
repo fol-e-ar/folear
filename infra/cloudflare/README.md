@@ -406,6 +406,31 @@ erro claro explicando que falta configurar, en vez de fallar en seco.
   «Xota #1 da Ermida» (sen «número»; «de» + artigo O/A/Os/As contrae en do/da/dos/das: «do Castro»,
   «dos Blancos», «das Pontes»; sen artigo, «de Moscoso»). **Coplas** (listaxes, ficha, story),
   buscadores, suxestións e a páxina do propio territorio manteñen o nome completo para distinguir.
+- **Unha variante noutro territorio é outra copla** (migración `0010_copla_variants.sql`; `syncVariantCoplas`
+  en `worker.js`, `sync_variant_coplas` en `backend/services/importers.py`). Cada variante
+  (`copla_versions`) adscrita a territorios que a copla principal non ten crea, ao gardar a principal,
+  unha copla propia nesos territorios (`coplas.variant_of` = a principal), co texto da variante e as
+  etiquetas da principal: así sae nas buscas, listaxes e páxina do territorio. Se a variante cae no
+  mesmo territorio (ou non ten territorio propio) non se duplica: segue sendo só unha variante.
+  As fillas actualízanse no sitio (conservan id, favoritos e media) e bórranse se a variante desaparece
+  ou pasa aos territorios da principal. Unha copla-variante **non se edita nin se borra soa** (400): a
+  ficha ofrece «Editar na copla principal», e borrar a principal borra as súas fillas. A migración
+  tamén **enche as fillas das variantes que xa existen**. Interface: etiqueta «Variante», «Variante
+  de «...»» na ficha, «Ver como copla de X» na principal (as frechas navegan entre a familia) e sen
+  caixa de selección en bloque. Sen a migración, a web segue coma antes.
+- **«Gardar peza» do Obradoiro** (`.btn.save-piece`): contorno de 1,5px, icona e letra en negriña media, entre o
+  «Baleirar» (sen forma) e o «Exportar PDF» (sólido): visible pero sen competir co primario.
+- **username e seguidoras**: o `@username` (identificador único e público, o da ligazón `#/persoa/<username>`)
+  amósase no perfil propio, na páxina e na tarxeta de cada persoa, e a busca de Persoas entende `@nome`.
+  En «O meu espazo» hai un panel **«Persoas que me seguen»** (`GET /api/me/followers`): nome e @username das
+  persoas con perfil público e só o número das que non o teñen. É privado: o perfil público non amosa cantas
+  seguidoras ten.
+- **SEO sen custo** (`frontend/index.html`, `robots.txt`, `sitemap.xml`, `assets/marca/og-image.png`): título e
+  descrición con «Fol e ar» e «folear.gal», `canonical`, Open Graph/Twitter (previsualización ao compartir), JSON-LD
+  `WebSite` con nomes alternativos («folear»), `<noscript>` con texto, `robots.txt` que só pecha `/api/` (os
+  buscadores necesitan `/data/` para renderizar a app) e `sitemap.xml`. Pasos manuais gratuítos: ver
+  o documento do proxecto «seo-posicionamento» (Search Console por DNS en Cloudflare, Bing Webmaster Tools,
+  ligazóns desde perfís e webs galegas).
 - Mapa: `trackResize` desactivado (con outra vista activa o mapa mide 0 e Leaflet lanzaba
   «Invalid LatLng (NaN)»); o axuste ao territorio faise ao volver ao mapa (`state.pendingFit`).
 

@@ -13,6 +13,7 @@ MIGRATION_006 = "006_piece_inline_text"
 MIGRATION_007 = "007_copla_volta_and_traits"
 MIGRATION_008 = "008_melodies"
 MIGRATION_009 = "009_lugar"
+MIGRATION_010 = "010_copla_variants"
 
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -381,6 +382,47 @@ def apply_009_lugar(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN lugar TEXT")
 
 
+def apply_010_copla_variants(conn: sqlite3.Connection) -> None:
+    """Unha variante noutro territorio é outra copla (`coplas.variant_of`). Espello de
+    infra/cloudflare/migrations/0010_copla_variants.sql, incluído o recheo das variantes xa existentes."""
+    if "variant_of" not in table_columns(conn, "coplas"):
+        conn.execute("ALTER TABLE coplas ADD COLUMN variant_of INTEGER REFERENCES coplas(id) ON DELETE CASCADE")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_coplas_variant_of ON coplas(variant_of)")
+    conn.execute(
+        """
+        INSERT INTO coplas (text, normalized_text, incipit, notes, status, territory_state, is_volta, variant_of, updated_at)
+        SELECT v.text, v.normalized_text, v.incipit, v.notes, c.status, 'assigned', c.is_volta, c.id, CURRENT_TIMESTAMP
+        FROM copla_versions v
+        JOIN coplas c ON c.id = v.copla_id
+        WHERE c.variant_of IS NULL
+          AND EXISTS (
+            SELECT 1 FROM copla_version_territories cvt
+            WHERE cvt.version_id = v.id
+              AND cvt.territory_id NOT IN (SELECT territory_id FROM copla_territories WHERE copla_id = c.id)
+          )
+          AND v.id = (SELECT MIN(v2.id) FROM copla_versions v2 WHERE v2.copla_id = v.copla_id AND v2.normalized_text = v.normalized_text)
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO copla_territories (copla_id, territory_id, relation_type, is_direct)
+        SELECT ch.id, cvt.territory_id, 'direct', 1
+        FROM coplas ch
+        JOIN copla_versions v ON v.copla_id = ch.variant_of AND v.normalized_text = ch.normalized_text
+        JOIN copla_version_territories cvt ON cvt.version_id = v.id
+        WHERE ch.variant_of IS NOT NULL
+          AND cvt.territory_id NOT IN (SELECT territory_id FROM copla_territories WHERE copla_id = ch.variant_of)
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO copla_tags (copla_id, tag_id)
+        SELECT ch.id, ct.tag_id FROM coplas ch JOIN copla_tags ct ON ct.copla_id = ch.variant_of
+        WHERE ch.variant_of IS NOT NULL
+        """
+    )
+
+
 def migrate(db_path: Path = DB_PATH) -> list[str]:
     ensure_parent_dir(db_path)
 
@@ -433,6 +475,11 @@ def migrate(db_path: Path = DB_PATH) -> list[str]:
             apply_009_lugar(conn)
             mark_migration(conn, MIGRATION_009)
             applied_now.append(MIGRATION_009)
+
+        if MIGRATION_010 not in applied:
+            apply_010_copla_variants(conn)
+            mark_migration(conn, MIGRATION_010)
+            applied_now.append(MIGRATION_010)
 
         conn.commit()
     finally:

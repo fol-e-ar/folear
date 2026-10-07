@@ -144,6 +144,15 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
     if errors:
         raise ValueError("\n".join(errors))
 
+    for copla in payload["coplas"]:
+        if isinstance(copla.get("id"), int):
+            row = conn.execute("SELECT variant_of FROM coplas WHERE id = ?", (copla["id"],)).fetchone()
+            if row and row["variant_of"]:
+                raise ValueError(
+                    f"A copla {copla['id']} é unha variante da copla {row['variant_of']} noutro territorio: "
+                    "edítase desde a copla principal (na súa lista de variantes)."
+                )
+
     imported_ids: list[int] = []
     for copla in payload["coplas"]:
         text = copla["text"].strip()
@@ -262,7 +271,94 @@ def import_coplas(conn: sqlite3.Connection, payload) -> list[int]:
                 (copla_id, tag_id),
             )
 
+        sync_variant_coplas(conn, copla_id)
+
     return imported_ids
+
+
+def sync_variant_coplas(conn: sqlite3.Connection, parent_id: int) -> None:
+    """Cada variante dunha copla adscrita a territorios que a principal non ten é, ademais, unha
+    copla propia nesos territorios (`variant_of` = a principal). Se cae no mesmo territorio non se
+    duplica nada. As fillas actualízanse no sitio e bórranse se a variante desaparece.
+    Espello de `syncVariantCoplas` (infra/cloudflare/src/worker.js)."""
+    parent = conn.execute(
+        "SELECT id, status, is_volta, variant_of FROM coplas WHERE id = ?", (parent_id,)
+    ).fetchone()
+    if parent is None or parent["variant_of"]:
+        return
+    own = {
+        row["territory_id"]
+        for row in conn.execute("SELECT territory_id FROM copla_territories WHERE copla_id = ?", (parent_id,))
+    }
+    tag_ids = [row["tag_id"] for row in conn.execute("SELECT tag_id FROM copla_tags WHERE copla_id = ?", (parent_id,))]
+    versions = conn.execute(
+        "SELECT id, text, normalized_text, incipit, notes FROM copla_versions WHERE copla_id = ? ORDER BY position, id",
+        (parent_id,),
+    ).fetchall()
+
+    wanted = []
+    seen_texts: set[str] = set()
+    for version in versions:
+        if version["normalized_text"] in seen_texts:
+            continue
+        extra = [
+            row["territory_id"]
+            for row in conn.execute(
+                "SELECT territory_id FROM copla_version_territories WHERE version_id = ?", (version["id"],)
+            )
+            if row["territory_id"] not in own
+        ]
+        if not extra:
+            continue
+        seen_texts.add(version["normalized_text"])
+        wanted.append((version, list(dict.fromkeys(extra))))
+
+    free = [
+        dict(row)
+        for row in conn.execute("SELECT id, normalized_text FROM coplas WHERE variant_of = ? ORDER BY id", (parent_id,))
+    ]
+    pairs = []
+    for version, territory_ids in wanted:
+        match = next((i for i, row in enumerate(free) if row["normalized_text"] == version["normalized_text"]), None)
+        pairs.append([version, territory_ids, free.pop(match) if match is not None else None])
+    for pair in pairs:
+        if pair[2] is None and free:
+            pair[2] = free.pop(0)
+
+    for row in free:
+        conn.execute("DELETE FROM media_links WHERE entity_type = 'copla' AND entity_id = ?", (str(row["id"]),))
+        conn.execute("DELETE FROM coplas WHERE id = ?", (row["id"],))
+
+    for version, territory_ids, row in pairs:
+        if row is not None:
+            child_id = row["id"]
+            conn.execute(
+                """
+                UPDATE coplas SET text = ?, normalized_text = ?, incipit = ?, notes = ?, status = ?,
+                  territory_state = 'assigned', is_volta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+                """,
+                (version["text"], version["normalized_text"], version["incipit"], version["notes"],
+                 parent["status"], parent["is_volta"], child_id),
+            )
+            conn.execute("DELETE FROM copla_territories WHERE copla_id = ?", (child_id,))
+            conn.execute("DELETE FROM copla_tags WHERE copla_id = ?", (child_id,))
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO coplas (text, normalized_text, incipit, notes, status, territory_state, is_volta, variant_of, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'assigned', ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (version["text"], version["normalized_text"], version["incipit"], version["notes"],
+                 parent["status"], parent["is_volta"], parent_id),
+            )
+            child_id = cur.lastrowid
+        for territory_id in territory_ids:
+            conn.execute(
+                "INSERT OR IGNORE INTO copla_territories (copla_id, territory_id, relation_type, is_direct) VALUES (?, ?, 'direct', 1)",
+                (child_id, territory_id),
+            )
+        for tag_id in tag_ids:
+            conn.execute("INSERT OR IGNORE INTO copla_tags (copla_id, tag_id) VALUES (?, ?)", (child_id, tag_id))
 
 
 def validate_territory_traits_payload(payload, known_territories: set[str]) -> list[str]:
@@ -562,7 +658,18 @@ def delete_coplas(conn: sqlite3.Connection, copla_ids) -> list[int]:
     if missing:
         raise ValueError(f"Non existe ningunha copla con estes IDs: {missing}.")
 
-    for copla_id in ids:
+    # As coplas-variante bórranse xunto coa principal; soas non (volverían a crearse).
+    requested = set(ids)
+    children = conn.execute("SELECT id, variant_of FROM coplas WHERE variant_of IS NOT NULL").fetchall()
+    for child in children:
+        if child["id"] in requested and child["variant_of"] not in requested:
+            raise ValueError(
+                f"A copla {child['id']} é unha variante da copla {child['variant_of']}: bórrase quitando a "
+                "variante desde a copla principal (ou borrando esta)."
+            )
+    ids.extend(child["id"] for child in children if child["variant_of"] in requested)
+
+    for copla_id in dict.fromkeys(ids):
         conn.execute(
             "DELETE FROM media_links WHERE entity_type = 'copla' AND entity_id = ?",
             (str(copla_id),),

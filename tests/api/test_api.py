@@ -238,6 +238,39 @@ ok("export de coplas sen correos", b"@" not in raw or b"example.com" not in raw)
 c, j = anon.call("GET", "/api/people")
 ok("directorio de persoas só perfís públicos", c == 200 and "email" not in str(j), (c, str(j)[:80]))
 
+# --- SEO básico (gratis): robots, sitemap, metadatos, datos estruturados e imaxe social
+import re
+c, raw, hd = anon.call("GET", "/robots.txt", raw=True)
+ok("robots.txt: permite o sitio, pecha só /api/ e apunta ao sitemap", c == 200 and b"Sitemap: https://folear.gal/sitemap.xml" in raw and b"Disallow: /api/" in raw and b"Disallow: /data" not in raw, (c, raw[:80]))
+c, raw, hd = anon.call("GET", "/sitemap.xml", raw=True)
+ok("sitemap.xml: ten a portada", c == 200 and b"<loc>https://folear.gal/</loc>" in raw, (c, raw[:80]))
+c, raw, hd = anon.call("GET", "/", raw=True)
+html = raw.decode("utf-8", "replace")
+ok("portada: title, description, canonical e Open Graph", "<title>Fol e ar - Arquivo de coplas galegas</title>" in html and 'rel="canonical" href="https://folear.gal/"' in html and 'property="og:image"' in html and 'name="twitter:card"' in html and 'name="description"' in html)
+ld = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+ok("portada: JSON-LD válido (WebSite, nome alternativo «folear»)", ld and json.loads(ld.group(1))["@type"] == "WebSite" and "folear" in json.loads(ld.group(1))["alternateName"], ld and ld.group(1)[:80])
+c, raw, hd = anon.call("GET", "/assets/marca/og-image.png", raw=True)
+ok("imaxe social 1200x630 servida", c == 200 and raw[:8] == b"\x89PNG\r\n\x1a\n" and int.from_bytes(raw[16:20], "big") == 1200 and int.from_bytes(raw[20:24], "big") == 630, (c, len(raw)))
+
+# --- quen me segue (só se ve no meu espazo)
+c, j = ana.call("POST", "/api/me/profile", {"display_name": "Ana da Ulloa", "handle": "ana-ulloa", "is_public": True})
+ok("ana: perfil público co seu username", c == 200, (c, j))
+c, j = bru.call("POST", "/api/me/profile", {"display_name": "Bruno do Sar", "handle": "bruno-sar", "is_public": True})
+c, j = bru.call("POST", "/api/me/follows", {"handle": "ana-ulloa", "on": True})
+ok("bruno segue a ana", c == 200, (c, j))
+c, j = ana.call("GET", "/api/me/followers")
+ok("ana ve quen a segue (nome e @username)", c == 200 and j["total"] == 1 and j["followers"][0]["handle"] == "bruno-sar" and j["followers"][0]["display_name"] == "Bruno do Sar" and j["followers"][0]["i_follow"] is False, (c, j))
+c, j = ana.call("POST", "/api/me/follows", {"handle": "bruno-sar", "on": True})
+c, j = ana.call("GET", "/api/me/followers")
+ok("…e se ela tamén o segue, indícase", c == 200 and j["followers"][0]["i_follow"] is True, j)
+c, j = anon.call("GET", "/api/me/followers")
+ok("anónimo non ve seguidoras (401)", c == 401, (c, j))
+c, j = anon.call("GET", "/api/people/ana-ulloa")
+ok("o perfil público non amosa cantas seguidoras ten", c == 200 and "follower" not in json.dumps(j) and "seguidor" not in json.dumps(j), j)
+c, j = anon.call("GET", "/api/people")
+ok("directorio: leva o username", c == 200 and any(p["handle"] == "ana-ulloa" for p in j["people"]), j)
+sql("delete from follows")
+
 # --- recursos das pezas: ligados ao territorio e ás coplas da peza; edición e borrado desde Media
 c, j = gui.call("POST", "/api/pieces", {"pieces": [{"title": "Con recursos ligados", "author": "Guía", "visibility": "public", "context_territory_id": PAR,
     "coplas": [{"copla_id": None, "text": "Copla ligada ao recurso\nsegundo verso", "position": 1, "section_label": "Canto", "role": "copla"}],
@@ -362,6 +395,43 @@ for i in mel_ids:
     gui.call("POST", "/api/melodies", {"melodies": [{"id": i, "_delete": True}]})
 c, j = ana.call("POST", "/api/melodies", {"melodies": [{"territory_id": PAR, "rhythm": "Canto"}]})
 ok("foleante non crea melodías (403)", c == 403, (c, j))
+
+# --- unha variante noutro territorio é outra copla
+OIT = "par:3203601"  # A Abeleda (San Vicente): faise de «Oitavén» no exemplo real
+def coplas_json():
+    c, items = anon.call("GET", "/data/exports/coplas/coplas.json")
+    return items if isinstance(items, list) else items.get("coplas", [])
+base = {"text": "Aldeíña de Ferreiros,\naldea que me namora,\naínda mas ha de pagar\nquen dela me bote fóra.", "status": "published", "territory_state": "assigned",
+        "territories": [{"id": PAR}], "tags": ["aldea"], "is_volta": False,
+        "versions": [{"label": "Variante 1", "text": "Aldea de San Vicente,\naldea que me namora,\naínda mas ha de pagar\nquen dela me bote fóra.", "territories": [{"id": OIT}]},
+                     {"label": "Variante 2", "text": "Aldeíña de Ferreiros (outra),\naldea que me namora", "territories": [{"id": PAR}]},
+                     {"label": "Variante 3", "text": "Aldeíña de Ferreiros (herdada),\naldea que me namora", "territories": []}]}
+c, j = gui.call("POST", "/api/coplas", {"coplas": [base]})
+ok("variantes: garda a copla con variantes", c == 200 and j.get("ids"), (c, j)); pid = j["ids"][0]
+allc = coplas_json()
+kids = [x for x in allc if x.get("variant_of") == pid]
+ok("variante noutro territorio: xérase unha copla propia (e só esa)", len(kids) == 1 and [t["id"] for t in kids[0]["territories"]] == [OIT], kids)
+ok("…co texto da variante, as etiquetas da principal e sen variantes propias", kids and kids[0]["text"].startswith("Aldea de San Vicente") and kids[0]["tags"] == ["aldea"] and kids[0]["versions"] == [], kids and kids[0])
+ok("variante no mesmo territorio ou sen territorio: non se duplica", sum(1 for x in allc if "outra)" in x["text"] or "herdada" in x["text"]) == 0, [x["text"][:20] for x in allc if "Aldeíña de Ferreiros" in x["text"]])
+ok("a copla principal non cambia os seus territorios", [t["id"] for t in next(x for x in allc if x["id"] == pid)["territories"]] == [PAR])
+kid_id = kids[0]["id"]
+c, j = gui.call("POST", "/api/coplas", {"coplas": [{**base, "id": pid, "notes": "revisada"}]})
+kids2 = [x for x in coplas_json() if x.get("variant_of") == pid]
+ok("ao regardar a principal, a filla conserva o seu id", c == 200 and [k["id"] for k in kids2] == [kid_id], (c, kids2))
+c, j = gui.call("POST", "/api/coplas", {"coplas": [{"id": kid_id, "text": "Outro texto", "territory_state": "unassigned", "territories": [], "tags": [], "versions": []}]})
+ok("unha copla-variante non se edita directamente (400)", c == 400 and "principal" in json.dumps(j, ensure_ascii=False), (c, j))
+c, j = gui.call("DELETE", "/api/coplas", {"ids": [kid_id]})
+ok("…nin se borra soa (400)", c == 400, (c, j))
+two = json.loads(json.dumps(base)); two["id"] = pid; two["versions"][0]["territories"] = [{"id": OIT}, {"id": "con:32003"}]
+c, j = gui.call("POST", "/api/coplas", {"coplas": [two]})
+kids3 = [x for x in coplas_json() if x.get("variant_of") == pid]
+ok("a variante en dous territorios: unha soa filla con ambos", len(kids3) == 1 and kids3[0]["id"] == kid_id and sorted(t["id"] for t in kids3[0]["territories"]) == sorted([OIT, "con:32003"]), kids3)
+three = json.loads(json.dumps(base)); three["id"] = pid; three["territories"] = [{"id": PAR}, {"id": OIT}]
+c, j = gui.call("POST", "/api/coplas", {"coplas": [three]})
+ok("se a principal pasa a ter o territorio da variante, xa non se duplica (filla borrada)", not [x for x in coplas_json() if x.get("variant_of") == pid], c)
+c, j = gui.call("POST", "/api/coplas", {"coplas": [{**base, "id": pid}]})
+c, j = gui.call("DELETE", "/api/coplas", {"ids": [pid]})
+ok("borrar a principal borra as súas variantes-copla", c == 200 and not [x for x in coplas_json() if x["id"] == pid or x.get("variant_of") == pid], (c, j))
 
 restore_coplas(MAX_COPLA_ID)
 finish()

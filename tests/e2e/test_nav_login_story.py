@@ -189,6 +189,29 @@ with sync_playwright() as p:
     for i in mel_ids:
         adm.call("POST", "/api/melodies", {"melodies": [{"id": i, "_delete": True}]})
 
+    # --- unha variante noutro territorio é outra copla
+    OIT = "par:3203601"
+    vbase = {"text": "Aldeíña de Ferreiros,\naldea que me namora,\naínda mas ha de pagar\nquen dela me bote fóra.", "status": "published", "territory_state": "assigned", "territories": [{"id": PAR}], "tags": [], "is_volta": False,
+             "versions": [{"label": "Variante 1", "text": "Aldea de San Vicente,\naldea que me namora,\naínda mas ha de pagar\nquen dela me bote fóra.", "territories": [{"id": OIT}]}]}
+    c, j = adm.call("POST", "/api/coplas", {"coplas": [vbase]})
+    vparent = j["ids"][0] if c == 200 else None
+    vkid = (sql("select id from coplas where variant_of=?", vparent) or [[None]])[0][0] if vparent else None
+    ctx, pg = newpage("/?view=coplas")
+    pg.fill("#coplaSearch", "Abeleda"); pg.wait_for_timeout(700)
+    ok("variante: buscando o seu territorio aparece como copla propia", pg.locator(f'#coplaList [data-open-copla="{vkid}"]').count() == 1, pg.locator("#coplaResultCount").inner_text())
+    ok("…e leva a etiqueta «Variante»", "Variante" in pg.locator(f'#coplaList [data-open-copla="{vkid}"]').inner_text())
+    pg.locator(f'#coplaList [data-open-copla="{vkid}"]').click(position={"x": 12, "y": 12}); pg.wait_for_selector("#coplaDrawer:not([hidden]) .copla-sheet")
+    ok("ficha: «Variante de «Aldeíña de Ferreiros,»» con ligazón", pg.locator("#coplaDrawer .variant-of [data-goto-copla]").count() == 1 and "Aldeíña" in pg.locator("#coplaDrawer .variant-of").inner_text())
+    ok("ficha: sen botón de borrar (edítase na principal)", pg.locator("#coplaDrawer [data-delete-copla]").count() == 0 and pg.locator(f'#coplaDrawer [data-edit-copla="{vparent}"]').count() == 1)
+    pg.locator("#coplaDrawer .variant-of [data-goto-copla]").click(); pg.wait_for_timeout(500)
+    ok("a ligazón leva á principal", pg.locator(f'#coplaDrawer [data-sheet-copla="{vparent}"]').count() == 1)
+    ok("a principal ofrece «Ver como copla de A Abeleda»", "A Abeleda" in (pg.locator("#coplaDrawer [data-goto-copla]").first.text_content() or ""), pg.locator("#coplaDrawer").inner_text()[:200])
+    ctx.close()
+    ctx, pg = newpage(f"/?territory_id={OIT}&view=territory")
+    ok("páxina do territorio da variante: lista a copla", pg.locator(f'#territoryCoplaList [data-open-copla="{vkid}"]').count() == 1)
+    ctx.close()
+    adm.call("DELETE", "/api/coplas", {"ids": [vparent]})
+
     # --- ritmos pechados (guía/admin)
     fake_login_as("g-adm2", "folear3@gmail.com", "Admin")
     ctx = b.new_context(viewport={"width": 1440, "height": 900}); pg = ctx.new_page(); pg.route("**/*", handler)
