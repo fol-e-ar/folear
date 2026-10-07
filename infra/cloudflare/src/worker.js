@@ -58,8 +58,8 @@ function jsonResponse(data, { status = 200, env } = {}) {
   });
 }
 
-function errorResponse(message, { status = 400, env } = {}) {
-  return jsonResponse({ ok: false, error: message }, { status, env });
+function errorResponse(message, { status = 400, env, extra = null } = {}) {
+  return jsonResponse({ ok: false, error: message, ...(extra || {}) }, { status, env });
 }
 
 // ---------------------------------------------------------------------
@@ -683,7 +683,7 @@ async function deleteCoplas(env, coplaIds) {
   return ids;
 }
 
-async function importMedia(env, payload) {
+async function importMedia(env, payload, { viewerId = null } = {}) {
   const errors = await validateMediaPayload(env, payload);
   if (errors.length) throw new Error(errors.join("\n"));
 
@@ -692,6 +692,12 @@ async function importMedia(env, payload) {
 
   for (const media of payload.media) {
     let mediaId = media.id;
+    // Non se crea (nin se cambia a) unha ligazón que xa está noutro recurso.
+    const current = Number.isInteger(mediaId) ? await db.prepare("SELECT url FROM media WHERE id = ?").bind(mediaId).first() : null;
+    if (!current || normalizeMediaUrl(current.url) !== normalizeMediaUrl(media.url)) {
+      const duplicate = await findDuplicateMedia(env, media.url, { viewerId, excludeIds: Number.isInteger(mediaId) ? [mediaId] : [] });
+      if (duplicate) throw duplicateMediaError(duplicate);
+    }
     if (Number.isInteger(mediaId)) {
       await db.prepare(
         `UPDATE media
@@ -788,6 +794,29 @@ async function assertMediaWritable(env, access, ids) {
   }
 }
 
+// Engade vínculos (peza, territorio, copla, melodía) a un recurso que xa existe, sen tocar o resto:
+// é o que se fai en vez de crear unha copia. Só guías/admin.
+async function linkExistingMedia(env, access, payload) {
+  const mediaId = Number(payload.media_id);
+  if (!Number.isInteger(mediaId) || !Array.isArray(payload.links) || !payload.links.length) throw new HttpError(400, "Datos non válidos.");
+  await assertMediaWritable(env, access, [mediaId]);
+  if (!(await env.DB.prepare("SELECT 1 FROM media WHERE id = ?").bind(mediaId).first())) throw new HttpError(404, "Non existe ese recurso.");
+  const tables = { territory: "territories", copla: "coplas", piece: "pieces", melody: "melodies" };
+  let added = 0;
+  for (const link of payload.links.slice(0, 50)) {
+    const table = tables[link.entity_type];
+    if (!table) throw new HttpError(400, "Tipo de vínculo non válido.");
+    const found = await env.DB.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).bind(link.entity_type === "territory" ? String(link.entity_id) : Number(link.entity_id)).first();
+    if (!found) throw new HttpError(400, `Non existe o elemento a vincular (${link.entity_type}).`);
+    const exists = await env.DB.prepare("SELECT 1 FROM media_links WHERE media_id = ? AND entity_type = ? AND entity_id = ?").bind(mediaId, link.entity_type, String(link.entity_id)).first();
+    if (exists) continue;
+    await env.DB.prepare("INSERT INTO media_links (media_id, entity_type, entity_id, relation_type) VALUES (?, ?, ?, ?)")
+      .bind(mediaId, link.entity_type, String(link.entity_id), RESOURCE_ROLES.includes(link.relation_type) ? link.relation_type : "direct").run();
+    added += 1;
+  }
+  return added;
+}
+
 // A dona edita os datos dun recurso ligado a unha peza súa (título, URL, tipo, uso, fonte...).
 // As ligazóns (peza, territorio, coplas) seguen as da peza.
 async function updateOwnedPieceResources(env, access, payload) {
@@ -800,6 +829,11 @@ async function updateOwnedPieceResources(env, access, payload) {
   })));
   for (let i = 0; i < ids.length; i += 1) {
     const link = links[i];
+    const current = await env.DB.prepare("SELECT url FROM media WHERE id = ?").bind(ids[i]).first();
+    if (!current || normalizeMediaUrl(current.url) !== normalizeMediaUrl(link.url)) {
+      const duplicate = await findDuplicateMedia(env, link.url, { viewerId: access.viewer.id, excludeIds: [ids[i]] });
+      if (duplicate) throw duplicateMediaError(duplicate);
+    }
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE media SET provider = ?, media_kind = ?, title = ?, url = ?, description = ?, author_or_source = ?,
@@ -1693,9 +1727,10 @@ function pdfResponse(pdfBuffer, filename) {
 // ---------------------------------------------------------------------
 
 class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, extra = null) {
     super(message);
     this.status = status;
+    this.extra = extra;
   }
 }
 
@@ -2417,6 +2452,49 @@ function cleanHttpUrl(value, max = 500) {
   }
 }
 
+// Ligazón «canónica» para detectar recursos repetidos: sen www, sen parámetros de seguimento nin
+// fragmento, sen barra final; YouTube e Spotify reducidos ao seu identificador.
+function normalizeMediaUrl(value) {
+  let parsed;
+  try { parsed = new URL(String(value || "").trim()); } catch { return ""; }
+  if (!["http:", "https:"].includes(parsed.protocol)) return "";
+  const host = parsed.hostname.replace(/^www\./, "").replace(/^m\./, "").toLowerCase();
+  if (host === "youtu.be") return `youtube:${parsed.pathname.split("/").filter(Boolean)[0] || ""}`;
+  if (host === "youtube.com" || host.endsWith(".youtube.com")) {
+    const id = parsed.searchParams.get("v") || (parsed.pathname.match(/^\/(?:shorts|embed|live)\/([^/?]+)/) || [])[1];
+    if (id) return `youtube:${id}`;
+  }
+  if (host === "open.spotify.com") return `spotify:${parsed.pathname.replace(/^\/intl-[a-z-]+/i, "").replace(/\/$/, "").toLowerCase()}`;
+  const drop = /^(utm_|fbclid$|gclid$|si$|feature$|ref$|igshid$)/i;
+  const params = [...parsed.searchParams.entries()].filter(([key]) => !drop.test(key)).sort(([a], [b]) => a.localeCompare(b));
+  const query = params.length ? `?${params.map(([key, val]) => `${key}=${val}`).join("&")}` : "";
+  return `${host}${parsed.pathname.replace(/\/+$/, "")}${query}`.toLowerCase();
+}
+
+// Busca un recurso xa existente coa mesma ligazón entre os que esta persoa pode ver (públicos e
+// propios). Evita cheos de duplicados: quen o intente recibe o aviso e usa o que xa hai.
+async function findDuplicateMedia(env, url, { viewerId = null, excludeIds = [] } = {}) {
+  const wanted = normalizeMediaUrl(url);
+  if (!wanted) return null;
+  let rows;
+  try {
+    ({ results: rows } = await env.DB.prepare(
+      "SELECT id, title, url, visibility, owner_user_id, piece_id FROM media WHERE visibility = 'public' OR owner_user_id = ?"
+    ).bind(viewerId ?? -1).all());
+  } catch (err) {
+    if (!/no such (column|table)/i.test(String(err && err.message))) throw err;
+    ({ results: rows } = await env.DB.prepare("SELECT id, title, url, 'public' AS visibility, NULL AS owner_user_id, NULL AS piece_id FROM media").all());
+  }
+  const skip = new Set(excludeIds.map(Number));
+  return rows.find(row => !skip.has(row.id) && normalizeMediaUrl(row.url) === wanted) || null;
+}
+
+function duplicateMediaError(row) {
+  return new HttpError(409, `Esa ligazón xa está en Media: «${row.title}». Usa ese recurso en vez de crear outro igual.`, {
+    duplicate: { id: row.id, title: row.title, url: row.url },
+  });
+}
+
 function cleanPieceLinks(raw) {
   if (raw == null) return [];
   if (!Array.isArray(raw)) throw new HttpError(400, "As ligazóns da peza non son válidas.");
@@ -2430,7 +2508,9 @@ function cleanPieceLinks(raw) {
     }
     const title = cleanText(item.title, 120) || parsed.hostname.replace(/^www\./, "");
     const kind = MEDIA_KINDS.includes(item.media_kind) ? item.media_kind : guessMediaKind(parsed);
+    const mediaId = Number(item.media_id);
     return {
+      media_id: Number.isInteger(mediaId) && mediaId > 0 ? mediaId : null,
       title,
       url: parsed.toString(),
       position: index,
@@ -2553,21 +2633,38 @@ function pieceCoplaStatements(env, pieceId, items) {
 async function syncPieceResources(env, pieceId, ownerId, visibility, links) {
   const { results: existing } = await env.DB.prepare("SELECT id, url FROM media WHERE piece_id = ? ORDER BY id").bind(pieceId).all();
   const byUrl = new Map();
-  existing.forEach(row => { if (!byUrl.has(row.url)) byUrl.set(row.url, row); });
+  existing.forEach(row => { const key = normalizeMediaUrl(row.url) || row.url; if (!byUrl.has(key)) byUrl.set(key, row); });
+  const ownIds = new Set(existing.map(row => row.id));
   const keep = new Set();
+  const keepShared = new Set();
   for (const link of links) {
-    const found = byUrl.get(link.url);
+    // Un recurso que xa está en Media (de ningunha peza ou doutra): ligámolo sen crear copia.
+    if (link.media_id != null && !ownIds.has(link.media_id)) {
+      const shared = await env.DB.prepare("SELECT id, visibility, owner_user_id FROM media WHERE id = ?").bind(link.media_id).first();
+      if (!shared) throw new HttpError(400, "Ese recurso xa non existe en Media.");
+      if (shared.visibility !== "public" && shared.owner_user_id !== ownerId) throw new HttpError(403, "Non podes usar ese recurso.");
+      keepShared.add(shared.id);
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM media_links WHERE media_id = ? AND entity_type = 'piece' AND entity_id = ?").bind(shared.id, String(pieceId)),
+        env.DB.prepare("INSERT INTO media_links (media_id, entity_type, entity_id, relation_type) VALUES (?, 'piece', ?, ?)").bind(shared.id, String(pieceId), link.role),
+      ]);
+      continue;
+    }
+    const found = (link.media_id != null && ownIds.has(link.media_id) ? existing.find(row => row.id === link.media_id) : null)
+      || byUrl.get(normalizeMediaUrl(link.url) || link.url);
     if (found && !keep.has(found.id)) {
       keep.add(found.id);
       await env.DB.batch([
         env.DB.prepare(
-          `UPDATE media SET provider = ?, media_kind = ?, title = ?, description = ?, author_or_source = ?, thumbnail_url = ?,
+          `UPDATE media SET provider = ?, media_kind = ?, title = ?, url = ?, description = ?, author_or_source = ?, thumbnail_url = ?,
                   owner_user_id = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-        ).bind(link.media_kind, link.media_kind, link.title, link.description, link.author_or_source, link.thumbnail_url, ownerId, visibility, found.id),
+        ).bind(link.media_kind, link.media_kind, link.title, link.url, link.description, link.author_or_source, link.thumbnail_url, ownerId, visibility, found.id),
         env.DB.prepare("DELETE FROM media_links WHERE media_id = ? AND entity_type = 'piece' AND entity_id = ?").bind(found.id, String(pieceId)),
         env.DB.prepare("INSERT INTO media_links (media_id, entity_type, entity_id, relation_type) VALUES (?, 'piece', ?, ?)").bind(found.id, String(pieceId), link.role),
       ]);
     } else {
+      const duplicate = await findDuplicateMedia(env, link.url, { viewerId: ownerId });
+      if (duplicate) throw duplicateMediaError(duplicate);
       const inserted = await env.DB.prepare(
         `INSERT INTO media (provider, media_kind, title, url, description, author_or_source, thumbnail_url, status, owner_user_id, visibility, piece_id, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, CURRENT_TIMESTAMP)`
@@ -2579,6 +2676,16 @@ async function syncPieceResources(env, pieceId, ownerId, visibility, links) {
   }
   const stale = existing.filter(row => !keep.has(row.id)).map(row => row.id);
   for (const id of stale) await deletePieceResourceRows(env, "id = ?", id);
+  // Recursos de Media ligados a esta peza sen ser seus que xa non están na lista: só se desligan.
+  const { results: sharedNow } = await env.DB.prepare(
+    `SELECT ml.media_id FROM media_links ml JOIN media m ON m.id = ml.media_id
+     WHERE ml.entity_type = 'piece' AND ml.entity_id = ? AND (m.piece_id IS NULL OR m.piece_id <> ?)`
+  ).bind(String(pieceId), pieceId).all();
+  for (const row of sharedNow) {
+    if (!keepShared.has(row.media_id)) {
+      await env.DB.prepare("DELETE FROM media_links WHERE media_id = ? AND entity_type = 'piece' AND entity_id = ?").bind(row.media_id, String(pieceId)).run();
+    }
+  }
   await refreshPieceResourceLinks(env, pieceId);
 }
 
@@ -2942,6 +3049,21 @@ async function exportPiecesJson(env, { ownerId = null, hiddenOnly = false } = {}
       if (!/no such (column|table)/i.test(String(err2 && err2.message))) throw err2;
     }
   }
+  // Recursos de Media doutra orixe (xa existentes) ligados á peza: tamén van na súa lista.
+  try {
+    const { results: sharedRows } = await env.DB.prepare(
+      `SELECT ml.entity_id AS piece_id, m.id AS media_id, m.title, m.url, m.media_kind, m.description, m.author_or_source, m.thumbnail_url,
+              ml.relation_type AS role
+       FROM media_links ml JOIN media m ON m.id = ml.media_id JOIN pieces p ON CAST(p.id AS TEXT) = ml.entity_id
+       WHERE ml.entity_type = 'piece' AND (m.piece_id IS NULL OR m.piece_id <> p.id)
+         AND (m.visibility = 'public' OR (p.visibility = 'private' AND m.owner_user_id = p.owner_user_id))
+         AND ${condition}
+       ORDER BY ml.entity_id, m.id`
+    ).bind(...binds).all();
+    for (const row of sharedRows) linkRows.push({ ...row, piece_id: Number(row.piece_id), shared: true });
+  } catch (err) {
+    if (!/no such (column|table)/i.test(String(err && err.message))) throw err;
+  }
   const linksByPiece = new Map();
   for (const row of linkRows) {
     const list = linksByPiece.get(row.piece_id) || [];
@@ -2954,6 +3076,7 @@ async function exportPiecesJson(env, { ownerId = null, hiddenOnly = false } = {}
       author_or_source: row.author_or_source || null,
       thumbnail_url: row.thumbnail_url || null,
       role: row.role || "documental",
+      ...(row.shared ? { shared: true } : {}),
     });
     linksByPiece.set(row.piece_id, list);
   }
@@ -3214,6 +3337,14 @@ export default {
         await bumpDataVersion(env);
         return jsonResponse({ ok: true, ids }, { env });
       }
+      if (request.method === "POST" && url.pathname === "/api/media/link") {
+        const access = await requireMediaWriter(request, env, url);
+        if (!access.editor) throw new HttpError(403, "O teu rol non permite facer isto: fai falla ser guía.");
+        const payload = await request.json().catch(() => ({}));
+        const added = await linkExistingMedia(env, access, payload);
+        await bumpDataVersion(env);
+        return jsonResponse({ ok: true, added }, { env });
+      }
       if (request.method === "POST" && url.pathname === "/api/media") {
         const access = await requireMediaWriter(request, env, url);
         const payload = await request.json();
@@ -3221,7 +3352,7 @@ export default {
         if (access.editor) {
           const editedIds = (payload.media || []).map(item => item && item.id).filter(id => id !== undefined && id !== null);
           if (editedIds.length) await assertMediaWritable(env, access, editedIds);
-          ids = await importMedia(env, payload);
+          ids = await importMedia(env, payload, { viewerId: access.viewer.id });
         } else {
           ids = await updateOwnedPieceResources(env, access, payload);
         }
@@ -3275,7 +3406,7 @@ export default {
         console.error("Erro interno:", message);
         return errorResponse("Erro interno do servidor.", { status: 500, env });
       }
-      return errorResponse(message, { status: err instanceof HttpError ? err.status : 400, env });
+      return errorResponse(message, { status: err instanceof HttpError ? err.status : 400, env, extra: err instanceof HttpError ? err.extra : null });
     }
   },
 };

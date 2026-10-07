@@ -144,7 +144,7 @@ with sync_playwright() as p:
     pg.click('.sidebar [data-view="media"]'); pg.wait_for_timeout(800)
     pg.fill("#mediaSearch","Recurso privado"); pg.wait_for_timeout(500)
     card=pg.locator("#mediaList .media-card",has_text="Recurso privado de proba")
-    ok("private resource visible to its owner in Media with «Privada» tag", card.count()==1 and card.locator(".tag.is-private").count()==1, card.count())
+    ok("private resource visible to its owner in Media with «Privada» tag", card.count()==1 and card.locator(".is-private").count()==1, card.count())
     pg.fill("#mediaSearch","Gravación de proba"); pg.wait_for_timeout(500)
     ok("public resource of a piece is in Media too", pg.locator("#mediaList .media-card",has_text="Gravación de proba").count()>=1)
     pg.fill("#mediaSearch","Recurso privado"); pg.wait_for_timeout(400)
@@ -158,6 +158,17 @@ with sync_playwright() as p:
     ok("Media: o borrado avisa de que desvincula", "pezas" in pg.locator(".delete-confirm-modal").inner_text())
     pg.click("#confirmDeleteAction"); pg.wait_for_timeout(1200)
     ok("Media: borrado e desvinculado da peza", sql("select count(*) from media where title='Recurso privado editado'")[0][0]==0 and sql("select count(*) from media_links where media_id not in (select id from media)")[0][0]==0)
+    # recurso web sen miniatura: preview estilizada e tarxeta limpa
+    ana.call("POST","/api/pieces",{"pieces":[{"title":"Peza con web","author":"Ana","visibility":"private","context_territory_id":"par:1502004","coplas":[{"copla_id":None,"text":"Verso web\nsegundo","position":1,"section_label":"Canto","role":"copla"}],"links":[{"title":"Sofán (Bouba - Vinculeiras)","url":"https://www.exemplo.gal/sofan","media_kind":"web","role":"documental","description":"Unha descrición longa que xa non debe saír na tarxeta"}]}]})
+    pg.reload(); pg.wait_for_selector("#global-loading[hidden]",state="attached",timeout=30000); pg.wait_for_timeout(1500)
+    pg.click('.sidebar [data-view="media"]'); pg.wait_for_timeout(800)
+    pg.fill("#mediaSearch","Sofán"); pg.wait_for_timeout(500)
+    wc=pg.locator("#mediaList .media-card",has_text="Sofán").first
+    ok("web: preview estilizada (non en branco)", wc.locator(".media-preview.is-web .web-mock .web-bar span").inner_text()=="exemplo.gal" and wc.locator(".web-favicon").inner_text()=="E", wc.locator(".web-bar").inner_text() if wc.count() else "")
+    ok("tarxeta limpa: sen descrición, sen etiqueta de peza", "descrición longa" not in wc.inner_text() and "Peza:" not in wc.inner_text() and wc.locator(".tag").count()==0)
+    ok("tarxeta: nome, uso e territorio", "Sofán (Bouba" in wc.locator("h2").inner_text() and "Documental" in wc.locator(".media-sub").inner_text() and "Lira" in wc.locator(".media-sub").inner_text(), wc.locator(".media-sub").inner_text())
+    ok("tarxeta: Privada visible", wc.locator(".is-private").count()==1)
+    pg.screenshot(path=str(OUT/"media-web-card.png"))
     # biblioteca de pezas: o territorio da peza é clicable
     ana.call("POST","/api/pieces",{"pieces":[{"title":"Peza con territorio","author":"Ana","visibility":"private","context_territory_id":"par:1502004","lugar":"Laxoso","coplas":[{"copla_id":None,"text":"Verso de proba\nsegundo","position":1,"section_label":"Canto","role":"copla"}]}]})
     pg.reload(); pg.wait_for_selector("#global-loading[hidden]",state="attached",timeout=30000); pg.wait_for_timeout(1500)
@@ -175,6 +186,41 @@ with sync_playwright() as p:
     ok("ficha: territorio clicable", pg.locator("#pieceDrawer [data-territory-id]").count()==1)
     pg.click("#pieceDrawer [data-territory-id]"); pg.wait_for_timeout(800)
     ok("…e pecha a ficha", pg.locator("#pieceDrawer:not([hidden])").count()==0 and pg.locator("#view-territory.active").count()==1)
+    # biblioteca: sen o subtítulo «Mapa de referencias…»
+    pg.click('.sidebar [data-view="pieces"]'); pg.wait_for_timeout(500); pg.click('[data-piece-tab="library"]'); pg.wait_for_timeout(500)
+    pg.locator('[data-piece-scope="mine"]').click(); pg.wait_for_timeout(500)
+    ok("biblioteca: sen «Mapa de referencias de coplas»", "Mapa de referencias" not in pg.locator("#pieceRepositoryList").inner_text() and pg.locator("#pieceRepositoryList .piece-card").count()>=1)
+    # recurso repetido: avisa e ofrece usar o que xa está en Media
+    ana.call("POST","/api/pieces",{"pieces":[{"title":"Peza co outro recurso","author":"Ana","visibility":"private","coplas":[{"copla_id":None,"text":"Verso do outro\nsegundo","position":1,"section_label":"Canto","role":"copla"}],"links":[{"title":"Outra gravación","url":"https://exemplo.gal/outro.mp3","media_kind":"audio","role":"melody"}]}]})
+    pg.reload(); pg.wait_for_selector("#global-loading[hidden]",state="attached",timeout=30000); pg.wait_for_timeout(1500)
+    pg.click('.sidebar [data-view="pieces"]'); pg.wait_for_timeout(500); pg.click('[data-piece-tab="library"]'); pg.wait_for_timeout(500)
+    pg.locator('[data-piece-scope="mine"]').click(); pg.wait_for_timeout(500)
+    pg.locator("#pieceRepositoryList .piece-card",has_text="Peza con territorio").first.click(position={"x":12,"y":12}); pg.wait_for_selector("#pieceDrawer:not([hidden]) .drawer-panel",timeout=8000)
+    n_media=sql("select count(*) from media")[0][0]
+    pg.click("#pieceDrawer details.piece-media-form > summary"); pg.wait_for_timeout(200)
+    pg.fill("#pmUrl","https://www.exemplo.gal/outro.mp3?utm_source=z"); pg.fill("#pmTitle","Copia da outra"); pg.click("#pieceMediaAdd"); pg.wait_for_timeout(500)
+    ok("duplicado: avisa de que xa está en Media", "xa está en Media" in pg.locator("#pmFeedback").inner_text() and pg.locator("#pmFeedback [data-use-existing]").count()==1, pg.locator("#pmFeedback").inner_text())
+    ok("…e non crea nada", sql("select count(*) from media")[0][0]==n_media)
+    pg.click("#pmFeedback [data-use-existing]"); pg.wait_for_timeout(1500)
+    ok("«Ligar o existente»: ligado á peza sen copiar", sql("select count(*) from media")[0][0]==n_media and pg.locator("#pieceDrawer .media-card",has_text="Outra gravación").count()==1, pg.locator("#pieceDrawer .media-card").count())
+    ok("…e pódese desligar sen borralo", pg.locator("#pieceDrawer .media-card",has_text="Outra gravación").locator("[data-remove-piece-resource]").inner_text()=="Desligar da peza")
+    pg.on("dialog", lambda d: d.accept())
+    pg.locator("#pieceDrawer .media-card",has_text="Outra gravación").locator("[data-remove-piece-resource]").click(); pg.wait_for_timeout(1500)
+    ok("desligar non borra o recurso de Media", sql("select count(*) from media where title='Outra gravación'")[0][0]==1 and pg.locator("#pieceDrawer .media-card",has_text="Outra gravación").count()==0)
+    # no obradoiro tamén avisa
+    pg.click("#pieceDrawer [data-edit-piece]"); pg.wait_for_timeout(800)
+    pg.click("#workshopLinks > summary"); pg.wait_for_timeout(200)
+    pg.fill("#plUrl","https://youtu.be/outro-inexistente"); pg.fill("#plUrl","https://exemplo.gal/outro.mp3#x"); pg.fill("#plTitle","Outra vez"); pg.click("#addPieceLink"); pg.wait_for_timeout(500)
+    ok("obradoiro: avisa do duplicado", pg.locator("#plFeedback [data-use-existing]").count()==1)
+    before=pg.locator(".workshop-link-item").count()
+    pg.click("#plFeedback [data-use-existing]"); pg.wait_for_timeout(500)
+    ok("obradoiro: usa o existente (ligazón compartida)", pg.locator(".workshop-link-item").count()==before+1 and "Outra gravación" in pg.locator(".workshop-links").inner_text())
+    pg.click("#stopEditingPiece") if pg.locator("#stopEditingPiece").count() else None
+    # nivel Galiza en Territorios: coplas, pezas, melodías e media sen baixar de nivel
+    pg.click('.sidebar [data-view="territory"]'); pg.wait_for_timeout(800)
+    for tab,sel in (("pieces","#territoryPieceList"),("media","#territoryMediaList")):
+        pg.click(f'[data-territory-tab="{tab}"]'); pg.wait_for_timeout(800)
+        ok(f"Galiza: pestana {tab} amosa a lista", pg.locator(sel).count()==1 and "Escolle un territorio" not in pg.locator("#view-territory").inner_text() and pg.locator(f"{sel} > *").count()>=1, pg.locator(sel).inner_text()[:80] if pg.locator(sel).count() else "")
     ctx.close()
     ctx,pg=newpage({"width":1440,"height":900})
     pg.click('.sidebar [data-view="media"]'); pg.wait_for_timeout(800)

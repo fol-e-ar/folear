@@ -285,5 +285,61 @@ c, pj = anon.call("GET", "/data/exports/pezas/pezas.json")
 ok("…e a peza pública deixa de listalo", not next(p for p in pj if p["id"] == lk_piece).get("links"))
 gui.call("DELETE", "/api/pieces", {"id": lk_piece}); ana.call("DELETE", "/api/pieces", {"id": ana_piece})
 
+# --- recursos duplicados: unha mesma ligazón non se crea dúas veces
+sql("delete from media where url like 'https://dup.example%'")
+c, j = gui.call("POST", "/api/media", {"media": [{"title": "Orixinal", "url": "https://www.dup.example/ver?id=7&utm_source=x", "provider": "web", "media_kind": "web",
+    "links": [{"entity_type": "territory", "entity_id": PAR, "relation_type": "documental"}]}]})
+ok("Media: crear un recurso novo", c == 200, (c, j)); dup_media = j["ids"][0]
+c, j = gui.call("POST", "/api/media", {"media": [{"title": "Copia", "url": "https://dup.example/ver/?id=7", "provider": "web", "media_kind": "web",
+    "links": [{"entity_type": "territory", "entity_id": PAR, "relation_type": "documental"}]}]})
+ok("Media: a mesma ligazón (www/utm/barra) avisa e non se crea (409)", c == 409 and j.get("duplicate", {}).get("id") == dup_media and "xa está en Media" in j.get("error", ""), (c, j))
+ok("…e non se duplicou", sql("select count(*) from media where url like 'https://%dup.example%'")[0][0] == 1)
+c, j = gui.call("POST", "/api/media", {"media": [{"title": "YT", "url": "https://www.youtube.com/watch?v=dupYT0001", "provider": "youtube", "media_kind": "youtube",
+    "links": [{"entity_type": "territory", "entity_id": PAR, "relation_type": "documental"}]}]})
+yt_media = j["ids"][0]
+c, j = gui.call("POST", "/api/media", {"media": [{"title": "YT curto", "url": "https://youtu.be/dupYT0001?si=abc", "provider": "youtube", "media_kind": "youtube",
+    "links": [{"entity_type": "territory", "entity_id": PAR, "relation_type": "documental"}]}]})
+ok("YouTube: youtu.be e watch?v= contan como a mesma", c == 409 and j["duplicate"]["id"] == yt_media, (c, j))
+c, j = gui.call("POST", "/api/media", {"media": [{"id": yt_media, "title": "YT editado", "url": "https://www.youtube.com/watch?v=dupYT0001", "provider": "youtube", "media_kind": "youtube",
+    "links": [{"entity_type": "territory", "entity_id": PAR, "relation_type": "documental"}]}]})
+ok("editar un recurso sen cambiar a súa ligazón non avisa", c == 200, (c, j))
+# unha peza pode ligar un recurso que xa está en Media (sen duplicalo)
+c, j = gui.call("POST", "/api/pieces", piece("public", "Peza con ligazón repetida", links=[resource("https://dup.example/ver?id=7", "Copia")]))
+ok("peza: ligazón nova que xa está en Media (409)", c == 409 and j.get("duplicate", {}).get("id") == dup_media, (c, j))
+c, j = gui.call("POST", "/api/pieces", piece("public", "Peza que usa un recurso existente", links=[dict(resource("https://dup.example/ver?id=7", "Existente"), media_id=dup_media)]))
+ok("peza: ligar o recurso existente polo seu id", c == 200, (c, j)); shared_piece = j["ids"][0]
+ok("…sen crear copia", sql("select count(*) from media where url like 'https://%dup.example%'")[0][0] == 1)
+ok("…e ligado á peza", sql("select count(*) from media_links where media_id=? and entity_type='piece' and entity_id=?", dup_media, str(shared_piece))[0][0] == 1)
+c, pj = anon.call("GET", "/data/exports/pezas/pezas.json")
+sp = next((p for p in pj if p["id"] == shared_piece), {})
+ok("a peza amosa o recurso compartido (shared)", any(l.get("shared") and l.get("media_id") == dup_media for l in sp.get("links", [])), sp.get("links"))
+c, j = gui.call("POST", "/api/pieces/resources", {"id": shared_piece, "links": []})
+ok("quitalo da peza só o desliga: segue en Media", c == 200 and sql("select count(*) from media where id=?", dup_media)[0][0] == 1
+   and sql("select count(*) from media_links where media_id=? and entity_type='piece'", dup_media)[0][0] == 0, (c, j))
+c, j = ana.call("POST", "/api/pieces", piece("private", "Peza privada de Ana", links=[dict(resource("https://dup.example/ver?id=7", "Existente"), media_id=dup_media)]))
+ok("unha foleante tamén pode ligar un recurso público existente", c == 200, (c, j)); ana_shared = j["ids"][0]
+c, j = ana.call("POST", "/api/media", {"media": [{"id": sql("select id from media where piece_id=? ", ana_shared)[0][0] if sql("select id from media where piece_id=?", ana_shared) else -1, "title": "x", "url": "https://dup.example/ver?id=7"}]})
+ok("a dona non pode cambiar o seu recurso á ligazón doutro (403/409)", c in (403, 409), (c, j))
+# recurso privado doutra persoa: non se pode ligar por id
+c, j = ana.call("POST", "/api/pieces", piece("private", "Con recurso privado", links=[resource("https://dup.example/privado-ana", "Privado de Ana")]))
+ana_priv_media = sql("select id from media where url='https://dup.example/privado-ana'")[0][0]
+c, j = bru.call("POST", "/api/pieces", piece("private", "Intento", links=[dict(resource("https://dup.example/privado-ana", "Roubo"), media_id=ana_priv_media)]))
+ok("non se liga por id un recurso privado alleo (403)", c == 403, (c, j))
+c, j = bru.call("POST", "/api/pieces", piece("private", "Intento 2", links=[resource("https://dup.example/privado-ana", "Mesma URL")]))
+ok("a ligazón privada doutra persoa non conta como duplicada", c == 200, (c, j)); bru_piece2 = j["ids"][0] if c == 200 else None
+# endpoint /api/media/link
+c, j = gui.call("POST", "/api/media/link", {"media_id": dup_media, "links": [{"entity_type": "piece", "entity_id": shared_piece, "relation_type": "melody"}, {"entity_type": "territory", "entity_id": PAR}]})
+ok("/api/media/link engade só o que falta", c == 200 and j.get("added") == 1, (c, j))
+c, j = ana.call("POST", "/api/media/link", {"media_id": dup_media, "links": [{"entity_type": "piece", "entity_id": ana_shared}]})
+ok("/api/media/link: foleante (403)", c == 403, (c, j))
+c, j = gui.call("POST", "/api/media/link", {"media_id": 99999999, "links": [{"entity_type": "piece", "entity_id": shared_piece}]})
+ok("/api/media/link: recurso inexistente (404)", c == 404, (c, j))
+c, j = gui.call("POST", "/api/media/link", {"media_id": dup_media, "links": [{"entity_type": "copla", "entity_id": 99999999}]})
+ok("/api/media/link: elemento inexistente (400)", c == 400, (c, j))
+for pid in (shared_piece,): gui.call("DELETE", "/api/pieces", {"id": pid})
+ana.call("DELETE", "/api/pieces", {"id": ana_shared}); ana.call("DELETE", "/api/pieces", {"id": sql("select id from pieces where title='Con recurso privado' and owner_user_id is not null order by id desc")[0][0]})
+if bru_piece2: bru.call("DELETE", "/api/pieces", {"id": bru_piece2})
+sql("delete from media_links where media_id in (select id from media where url like 'https://%dup.example%')"); sql("delete from media where url like 'https://%dup.example%'")
+
 restore_coplas(MAX_COPLA_ID)
 finish()

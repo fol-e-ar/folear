@@ -748,44 +748,59 @@ function mediaEditButtons(item) {
   return `<button class="btn" type="button" data-edit-media="${item.id}"${own}>Editar</button><button class="btn danger" type="button" data-delete-media="${item.id}"${own}>Borrar</button>`;
 }
 
+// Preview dun recurso web sen miniatura: unha ventá de navegador estilizada co dominio (sen
+// chamadas a terceiros). O ton varía co dominio para distinguilos dun vistazo.
+function webPreviewMarkup(url) {
+  let host = "";
+  try { host = new URL(url).hostname.replace(/^www\./, ""); } catch { host = ""; }
+  let hash = 0;
+  for (const ch of host) hash = (hash * 31 + ch.charCodeAt(0)) % 997;
+  const initial = (host.replace(/[^a-z0-9]/gi, "").charAt(0) || "w").toUpperCase();
+  return `<div class="media-preview is-web web-tone-${hash % 8}" aria-hidden="true">
+    <div class="web-mock">
+      <div class="web-bar"><i></i><i></i><i></i><span>${escapeHtml(host || "web")}</span></div>
+      <div class="web-body"><b class="web-favicon">${escapeHtml(initial)}</b><span class="web-lines"><i></i><i></i><i></i></span></div>
+    </div>
+  </div>`;
+}
+
+// Tarxeta de Media: só o esencial (preview, nome, uso e territorio). O resto (descrición, peza,
+// coplas, melodías) vai no tooltip e na ficha de cada elemento.
 function mediaCard(item, options = {}) {
   const url = mediaUrl(item);
   const kind = mediaKind(item);
   const title = item.title || item.label || item.name || "Recurso sen título";
   const description = item.description || item.notes || item.artist || item.context || "";
   const role = mediaRole(item);
-  const territoryLinks = mediaTerritories(item).map(territory => territory.nome);
+  const territories = mediaTerritories(item);
   const linkedCoplas = mediaCoplas(item);
-  const linkedMelodies = mediaMelodies(item);
   const yt = kind === "youtube" ? youtubeId(url) : "";
   const pdfThumb = kind === "pdf" && url && !item.thumbnail_url ? ` data-pdf-thumb="${escapeHtml(url)}"` : "";
   let preview = `<div class="media-preview is-${kind}"${pdfThumb}><span class="media-preview-icon">${mediaKindIconSvg(kind)}</span></div>`;
+  if (kind === "web" && url) preview = webPreviewMarkup(url);
   if (item.thumbnail_url) preview = `<img class="media-preview is-photo" src="${escapeHtml(item.thumbnail_url)}" alt="">`;
   if (kind === "image" && url) preview = `<img class="media-preview is-photo" src="${escapeHtml(url)}" alt="">`;
   if (kind === "youtube" && yt) preview = `<img class="media-preview is-photo" src="https://img.youtube.com/vi/${escapeHtml(yt)}/hqdefault.jpg" alt="">`;
   if (kind === "audio" && url) preview = `<div class="media-preview is-audio"><span class="media-preview-icon">${mediaKindIconSvg("audio")}</span><audio controls src="${escapeHtml(url)}"></audio></div>`;
   if (kind === "video" && url) preview = `<video class="media-preview is-video" controls src="${escapeHtml(url)}"></video>`;
+  const pieceTitle = mediaPieceTitle(item);
+  const hint = [description, pieceTitle ? `Peza: ${pieceTitle}` : "", linkedCoplas.length ? `${linkedCoplas.length} copla${linkedCoplas.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+  const place = territories.length
+    ? `<span class="media-place">${levelPlacesHtml(territories.slice(0, 1))}${territories.length > 1 ? `<small>+${territories.length - 1}</small>` : ""}</span>`
+    : "";
   return `
-    <article class="media-card" tabindex="${url ? "0" : "-1"}" role="${url ? "link" : "article"}" data-open-media="${escapeHtml(url)}"${item.id != null ? ` data-media-id="${escapeHtml(item.id)}"` : ""} aria-label="${escapeHtml(title)}">
+    <article class="media-card" tabindex="${url ? "0" : "-1"}" role="${url ? "link" : "article"}" data-open-media="${escapeHtml(url)}"${item.id != null ? ` data-media-id="${escapeHtml(item.id)}"` : ""} aria-label="${escapeHtml(title)}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
       <div class="media-preview-wrap">
         ${preview}
         <span class="media-kind-badge">${mediaKindIconSvg(kind)}${escapeHtml(mediaLabel(kind))}</span>
+        ${item.visibility === "private" ? `<span class="media-private-badge is-private" title="Só a ves ti: vai ligada a unha peza privada">Privada</span>` : ""}
       </div>
       <div class="media-body">
         <h2>${escapeHtml(title)}</h2>
-        ${description ? `<p>${escapeHtml(description)}</p>` : ""}
-        <div class="meta">
-          <span class="tag">${escapeHtml(mediaRoleLabel(role))}</span>
-          ${item.visibility === "private" ? `<span class="tag is-private" title="Só a ves ti: vai ligada a unha peza privada">Privada</span>` : ""}
-          ${mediaPieceTag(item)}
-          ${territoryLinks.length ? `<span class="tag place">${escapeHtml(territoryLinks.slice(0, 2).join(" \\ "))}</span>` : ""}
-          ${linkedCoplas.length ? `<span class="tag">${linkedCoplas.length} copla${linkedCoplas.length === 1 ? "" : "s"}</span>` : ""}
-          ${linkedMelodies.slice(0, 2).map(melody => `<span class="tag is-melody" title="${escapeHtml(melodyName(melody))}">${escapeHtml(melodyShortName(melody))}</span>`).join("")}
-          ${linkedMelodies.length > 2 ? `<span class="tag is-melody">+${linkedMelodies.length - 2} melodías</span>` : ""}
-        </div>
+        <p class="media-sub"><span class="media-role">${escapeHtml(mediaRoleLabel(role))}</span>${place}</p>
         ${url ? "" : `<p class="muted">Sen ligazón pública.</p>`}
         ${options.editable && canEditMedia(item) ? `<div class="media-card-actions">${mediaEditButtons(item)}</div>` : ""}
-        ${options.removeFromPiece ? `<div class="media-card-actions is-visible"><button class="btn" type="button" data-remove-piece-resource="${escapeHtml(item.id)}">Quitar da peza</button></div>` : ""}
+        ${options.removeFromPiece ? `<div class="media-card-actions is-visible"><button class="btn" type="button" data-remove-piece-resource="${escapeHtml(item.id)}">${options.removeFromPiece === "unlink" ? "Desligar da peza" : "Quitar da peza"}</button></div>` : ""}
       </div>
     </article>
   `;
@@ -2721,7 +2736,7 @@ function openPieceDrawer(pieceId) {
       ${pieceExtraLinks(piece).length ? `<div class="drawer-section"><h3>Ligazóns</h3>${linkRowsMarkup(pieceExtraLinks(piece))}</div>` : ""}
       <div class="drawer-section">
         <h3>Media relacionada</h3>
-        <div class="media-grid compact">${pieceMedia(piece).map(item => mediaCard(item, { removeFromPiece: canManagePiece(piece) && String(item.piece_id) === String(piece.id) })).join("") || `<p class="muted">Sen recursos multimedia vinculados a esta peza.</p>`}</div>
+        <div class="media-grid compact">${pieceMedia(piece).map(item => mediaCard(item, { removeFromPiece: canManagePiece(piece) && (String(item.piece_id) === String(piece.id) ? true : "unlink") })).join("") || `<p class="muted">Sen recursos multimedia vinculados a esta peza.</p>`}</div>
         ${pieceResourceFormMarkup(piece)}
       </div>
       ${pieceManageMarkup(piece)}
@@ -2781,7 +2796,8 @@ function pieceResourceFormMarkup(piece) {
 async function removePieceResource(piece, mediaId, drawer) {
   const rest = (piece.links || []).filter(link => String(link.media_id) !== String(mediaId));
   const feedback = $("#pmFeedback", drawer);
-  if (!window.confirm("Vas quitar este recurso da peza (e de Media). ¿Continuar?")) return;
+  const shared = (piece.links || []).some(link => String(link.media_id) === String(mediaId) && link.shared);
+  if (!window.confirm(shared ? "Vas desligar este recurso da peza. Seguirá en Media, ligado ao resto. ¿Continuar?" : "Vas quitar este recurso da peza (e de Media). ¿Continuar?")) return;
   try {
     await pieceApi("/pieces/resources", "POST", { id: piece.id, links: rest.map(cleanResource) });
     await refreshPezas();
@@ -2907,20 +2923,40 @@ function editPieceInWorkshop(piece) {
   return true;
 }
 
-async function linkMediaToPiece(piece, drawer) {
+async function linkMediaToPiece(piece, drawer, { useExisting = null } = {}) {
   const feedback = $("#pmFeedback", drawer);
   const link = readResourceForm("pm", drawer);
   if (!link) return;
   const mode = pieceResourceMode(piece);
   if (!mode) return;
+  const existing = useExisting || findMediaByUrl(link.url);
+  if (existing && !useExisting) {
+    if (pieceMedia(piece).some(item => String(item.id) === String(existing.id))) {
+      if (feedback) feedback.textContent = "Ese recurso xa está ligado a esta peza.";
+      return;
+    }
+    showDuplicateNotice(feedback, existing, { useLabel: "Ligar o existente a esta peza", onUse: () => linkMediaToPiece(piece, drawer, { useExisting: existing }) });
+    return;
+  }
   setLoading(feedback, "Gardando");
   try {
     if (mode === "piece") {
       const current = (piece.links || []).map(cleanResource);
       if (current.length >= MAX_PIECE_RESOURCES) throw new Error(`Unha peza non pode ter máis de ${MAX_PIECE_RESOURCES} recursos.`);
-      if (current.some(item => item.url === link.url)) throw new Error("Ese recurso xa está ligado á peza.");
-      await pieceApi("/pieces/resources", "POST", { id: piece.id, links: [...current, link] });
+      if (current.some(item => normalizeMediaUrl(item.url) === normalizeMediaUrl(link.url))) throw new Error("Ese recurso xa está ligado á peza.");
+      const added = existing ? existingAsPieceLink(existing, link.role) : link;
+      await pieceApi("/pieces/resources", "POST", { id: piece.id, links: [...current, added] });
       await refreshPezas();
+    } else if (existing) {
+      const response = await fetch("../api/media/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ media_id: existing.id, links: [{ entity_type: "piece", entity_id: piece.id, relation_type: link.role }] }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Non se puido ligar o recurso.");
+      clearApiCache();
+      state.media = await loadMedia();
     } else {
       const response = await fetch("../api/media", {
         method: "POST",
@@ -2940,7 +2976,11 @@ async function linkMediaToPiece(piece, drawer) {
         }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Non se puido vincular o recurso.");
+      if (!response.ok) {
+        const duplicate = result.duplicate && state.media.find(item => String(item.id) === String(result.duplicate.id));
+        if (duplicate) { showDuplicateNotice(feedback, duplicate, { useLabel: "Ligar o existente a esta peza", onUse: () => linkMediaToPiece(piece, drawer, { useExisting: duplicate }) }); return; }
+        throw new Error(result.error || "Non se puido vincular o recurso.");
+      }
       clearApiCache();
       state.media = await loadMedia();
     }
@@ -3243,7 +3283,7 @@ function pieceCard(piece) {
       <div>
         <div class="eyebrow">${piece.visibility === "private" ? "Peza privada" : "Peza gardada"}</div>
         <h2>${escapeHtml(title)}</h2>
-        <p>${escapeHtml(piece.description || piece.notes || "Mapa de referencias de coplas preparado para consulta e exportación.")}</p>
+        ${piece.description || piece.notes ? `<p>${escapeHtml(piece.description || piece.notes)}</p>` : ""}
       </div>
       <div class="meta">
         ${authorTag}
@@ -3799,10 +3839,55 @@ function readResourceForm(prefix, root = document) {
   };
 }
 
+// Ligazón «canónica» (espello do servidor) para detectar recursos repetidos.
+function normalizeMediaUrl(value) {
+  let parsed;
+  try { parsed = new URL(String(value || "").trim()); } catch { return ""; }
+  if (!["http:", "https:"].includes(parsed.protocol)) return "";
+  const host = parsed.hostname.replace(/^www\./, "").replace(/^m\./, "").toLowerCase();
+  if (host === "youtu.be") return `youtube:${parsed.pathname.split("/").filter(Boolean)[0] || ""}`;
+  if (host === "youtube.com" || host.endsWith(".youtube.com")) {
+    const id = parsed.searchParams.get("v") || (parsed.pathname.match(/^\/(?:shorts|embed|live)\/([^/?]+)/) || [])[1];
+    if (id) return `youtube:${id}`;
+  }
+  if (host === "open.spotify.com") return `spotify:${parsed.pathname.replace(/^\/intl-[a-z-]+/i, "").replace(/\/$/, "").toLowerCase()}`;
+  const drop = /^(utm_|fbclid$|gclid$|si$|feature$|ref$|igshid$)/i;
+  const params = [...parsed.searchParams.entries()].filter(([key]) => !drop.test(key)).sort(([a], [b]) => a.localeCompare(b));
+  const query = params.length ? `?${params.map(([key, val]) => `${key}=${val}`).join("&")}` : "";
+  return `${host}${parsed.pathname.replace(/\/+$/, "")}${query}`.toLowerCase();
+}
+
+// Recurso que xa está en Media coa mesma ligazón (entre os que esta persoa pode ver).
+function findMediaByUrl(url, excludeId = null) {
+  const wanted = normalizeMediaUrl(url);
+  if (!wanted) return null;
+  return (state.media || []).find(item => String(item.id) !== String(excludeId) && normalizeMediaUrl(mediaUrl(item)) === wanted) || null;
+}
+
+// Aviso no formulario: «xa está en Media» + botón para usar ese recurso en vez de crear outro.
+function showDuplicateNotice(feedback, existing, { useLabel = "Usar o existente", onUse } = {}) {
+  if (!feedback) return;
+  feedback.innerHTML = `<span class="duplicate-notice">Esa ligazón xa está en Media: «${escapeHtml(existing.title || "sen título")}». Usa ese recurso en vez de crear outro igual.</span>${onUse ? ` <button type="button" class="btn" data-use-existing>${escapeHtml(useLabel)}</button>` : ""}`;
+  const button = feedback.querySelector("[data-use-existing]");
+  if (button) button.addEventListener("click", () => { button.disabled = true; onUse(); });
+}
+
+// O recurso xa existente, na forma de ligazón de peza (leva o `media_id` para non duplicalo).
+function existingAsPieceLink(existing, role) {
+  const links = (existing.links || []).filter(link => link.entity_type === "piece");
+  return {
+    title: existing.title, url: mediaUrl(existing), media_kind: existing.media_kind || existing.provider || mediaKind({ url: mediaUrl(existing) }),
+    role: role || links[0]?.relation_type || "documental",
+    author_or_source: existing.author_or_source || null, description: existing.description || null, thumbnail_url: existing.thumbnail_url || null,
+    media_id: Number(existing.id), shared: true,
+  };
+}
+
 // Forma que viaxa ao servidor (e que se garda no borrador do obradoiro).
 function cleanResource(link) {
   const href = safeUrl(link.url);
   return {
+    ...(link.shared && Number(link.media_id) > 0 ? { media_id: Number(link.media_id), shared: true } : {}),
     title: String(link.title || (href ? new URL(href).hostname.replace(/^www\./, "") : "")).slice(0, 120),
     url: href || String(link.url || ""),
     media_kind: RESOURCE_KINDS.includes(link.media_kind) ? link.media_kind : mediaKind({ url: link.url }),
@@ -3844,10 +3929,28 @@ function bindResourceFolds(root) {
 function addPieceLink() {
   const link = readResourceForm("pl");
   if (!link) return;
+  const els = resourceEls("pl");
   const draft = loadDraft();
   draft.links = draft.links || [];
   if (draft.links.length >= MAX_PIECE_RESOURCES) return;
-  if (!draft.links.some(item => item.url === link.url)) draft.links.push(link);
+  const wanted = normalizeMediaUrl(link.url);
+  if (draft.links.some(item => normalizeMediaUrl(item.url) === wanted)) {
+    if (els.feedback) els.feedback.textContent = "Ese recurso xa está na lista desta peza.";
+    return;
+  }
+  const existing = findMediaByUrl(link.url);
+  if (existing) {
+    showDuplicateNotice(els.feedback, existing, { onUse: () => {
+      const next = loadDraft();
+      next.links = next.links || [];
+      next.links.push(existingAsPieceLink(existing, link.role));
+      state.resourcesOpen = true;
+      saveDraft(next);
+      renderPiecesView();
+    } });
+    return;
+  }
+  draft.links.push(link);
   state.resourcesOpen = true;
   saveDraft(draft);
   renderPiecesView();
@@ -4575,6 +4678,15 @@ function hydrateTerritoryLists(root = $("#view-territory")) {
       empty: `<article class="panel"><p class="muted">Aínda non hai media documental neste territorio.</p></article>`,
     });
   }
+  const pieceList = $("#territoryPieceList", root);
+  if (pieceList) {
+    mountInfiniteList(pieceList, placeContext(territory).pezas, {
+      key: territory ? territory.id : "galiza",
+      renderItems: slice => slice.map(state.pieceViewMode === "rows" ? pieceRow : pieceCard).join(""),
+      bind: bindPieceCardActions,
+      empty: `<article class="panel"><p class="muted">Aínda non hai pezas ${territory ? "neste territorio" : "no arquivo"}.</p></article>`,
+    });
+  }
   const melodyList = $("#territoryMelodyList", root);
   if (melodyList) mountMelodyList(melodyList, placeContext(territory).melodias, territory ? territory.id : "galiza", territory?.id);
 }
@@ -4875,11 +4987,17 @@ function renderTerritoryTab(territory, ctx) {
       `;
     }
     if (state.territoryTab === "melodies") return melodiesTabMarkup(null, ctx);
-    if (["pieces", "media"].includes(state.territoryTab)) {
+    if (state.territoryTab === "pieces") {
       return `
-        <section class="panel territory-limit-panel">
-          <h2>Escolle un territorio menor</h2>
-        </section>
+        <div class="section-title"><h2>Pezas de Galiza</h2><span class="muted">${ctx.pezas.length} no arquivo</span></div>
+        <div id="territoryPieceList" class="${pieceListClass()}"></div>
+      `;
+    }
+    if (state.territoryTab === "media") {
+      const media = territoryMediaItems(null, ctx);
+      return `
+        <div class="section-title"><h2>Media de Galiza</h2><button class="btn" type="button" data-view="media" data-media-role="documental">+ Novo recurso</button><span class="muted">${media.length} recursos</span></div>
+        <div id="territoryMediaList" class="media-grid"></div>
       `;
     }
     return territorySummaryCard(null, ctx);
@@ -4899,12 +5017,7 @@ function renderTerritoryTab(territory, ctx) {
   if (state.territoryTab === "pieces") {
     return `
       <div class="section-title"><h2>Pezas relacionadas</h2><span class="muted">${ctx.pezas.length} resultados</span></div>
-      <div class="copla-gallery">${ctx.pezas.map(piece => `
-        <article class="gallery-card">
-          <div><div class="eyebrow">Peza</div><h2>${escapeHtml(piece.title || piece.titulo || "Peza sen título")}</h2><p>${escapeHtml(piece.description || piece.notes || "Sen descrición.")}</p></div>
-          <div class="meta"><span class="tag place">${escapeHtml(territory.nome)}</span></div>
-        </article>
-      `).join("") || `<p class="muted">Aínda non hai pezas neste territorio.</p>`}</div>
+      <div id="territoryPieceList" class="${pieceListClass()}"></div>
     `;
   }
   if (state.territoryTab === "media") {
@@ -6179,11 +6292,50 @@ async function fetchMediaMetadata(options = {}) {
   }
 }
 
+// A ligazón xa está en Media: en vez de duplicala, ofrécese engadir ao recurso existente os
+// territorios, coplas, melodías e pezas que se escolleron neste formulario.
+function offerExistingMedia(feedback, existing, entry) {
+  const have = new Set((existing.links || []).map(link => `${link.entity_type}:${link.entity_id}`));
+  const missing = (entry.links || []).filter(link => !have.has(`${link.entity_type}:${link.entity_id}`));
+  const onUse = missing.length && !ownerMediaMode() ? async () => {
+    setLoading(feedback, "Engadindo vínculos ao recurso existente");
+    try {
+      const response = await fetch("../api/media/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ media_id: existing.id, links: missing }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Non se puido engadir os vínculos.");
+      clearApiCache();
+      state.media = await loadMedia();
+      state.mediaModalOpen = false;
+      state.mediaEditingId = null;
+      state.mediaEditingSnapshot = null;
+      state.mediaEditingPieceLinks = [];
+      state.mediaTerritoryIds = [];
+      state.mediaCoplaIds = [];
+      state.mediaMelodyIds = [];
+      state.mediaQuery = existing.title || "";
+      renderMediaView();
+    } catch (error) {
+      feedback.textContent = error.message;
+    }
+  } : null;
+  showDuplicateNotice(feedback, existing, { useLabel: `Engadir ${missing.length} vínculo${missing.length === 1 ? "" : "s"} ao existente`, onUse });
+}
+
 async function saveMediaDirect() {
   const payload = buildMediaPayloadFromForm();
   if (!payload) return;
   const wasEditing = Boolean(state.mediaEditingId);
   const feedback = $("#mediaFeedback");
+  const newUrl = payload.media[0].url;
+  const before = wasEditing ? state.media.find(item => String(item.id) === String(state.mediaEditingId)) : null;
+  if (!before || normalizeMediaUrl(mediaUrl(before)) !== normalizeMediaUrl(newUrl)) {
+    const existing = findMediaByUrl(newUrl, state.mediaEditingId);
+    if (existing) { offerExistingMedia(feedback, existing, payload.media[0]); return; }
+  }
   setLoading(feedback, wasEditing ? "Gardando cambios" : "Gardando recurso");
   try {
     const response = await fetch("../api/media", {
@@ -6192,7 +6344,11 @@ async function saveMediaDirect() {
       body: JSON.stringify(payload),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Non se puido gardar a media.");
+    if (!response.ok) {
+      const duplicate = result.duplicate && state.media.find(item => String(item.id) === String(result.duplicate.id));
+      if (duplicate) { offerExistingMedia(feedback, duplicate, payload.media[0]); return; }
+      throw new Error(result.error || "Non se puido gardar a media.");
+    }
     feedback.textContent = wasEditing ? "Cambios gardados." : `Media gardada. IDs afectados: ${result.ids.join(", ")}`;
     clearApiCache();
     state.media = await loadMedia();

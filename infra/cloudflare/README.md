@@ -276,6 +276,28 @@ ligazóns que xa había en `piece_links` (a táboa queda como está; non se borr
   Media nova nin tocar a doutra persoa (403). Borrar un recurso desvincúlao de todo (peza,
   territorios, coplas, melodías e favoritos). O tipo `web` é un recurso máis.
 
+#### Recursos repetidos (sen migración nova)
+
+Para non ter a mesma ligazón mil veces en Media, o servidor compara a ligazón **normalizada**
+(`normalizeMediaUrl`: sen `www.`/`m.`, sen `utm_*`/`fbclid`/`si`..., sen fragmento nin barra
+final; `youtu.be/ID` = `youtube.com/watch?v=ID` = `/shorts/ID`; Spotify polo seu camiño) con
+todo o Media público e co privado da propia persoa (os privados doutra persoa non contan).
+
+- Crear (`POST /api/media`), editar a URL dun recurso, gardar unha peza con ligazón nova
+  (`POST /api/pieces`, `/api/pieces/resources`) ou cambiar a URL propia dun recurso de peza:
+  se xa existe devolve **409** con `{error, duplicate:{id,title,url}}` e non garda nada.
+- Para reutilizar o que xa está: unha ligazón de peza pode levar `media_id` (recurso xa
+  existente, público ou propio). Queda **compartido**: só se engade a ligazón `piece` en
+  `media_links`; non se copia. En `pezas.json` e `/api/me/pieces` sae con `shared:true`.
+  Quitalo da peza só o **desliga** (segue en Media, ligado ao resto).
+- `POST /api/media/link {media_id, links:[{entity_type: territory|copla|piece|melody,
+  entity_id, relation_type}]}` (só guías/admin): engade vínculos a un recurso existente sen
+  tocar o resto (devolve `{ok, added}`; 404 se non existe, 400 se o elemento non existe).
+- Na web: ao pegar unha URL xa existente, o formulario do obradoiro, o da ficha e o de Media
+  avisan («Esa ligazón xa está en Media: «…»») e ofrecen «Usar o existente» / «Ligar o
+  existente a esta peza» / «Engadir N vínculos ao existente». O modo local (Python) non ten
+  esta comprobación no servidor.
+
 ### Lugares e alta automática das coplas das pezas (migración 0009)
 
 Migración aditiva `migrations/0009_lugar.sql`: columna `lugar` (texto, nula) en `coplas` e `pieces`.
