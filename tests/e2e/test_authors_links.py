@@ -57,6 +57,10 @@ with sync_playwright() as p:
     t=pg.locator(".author-ficha").inner_text().replace("\n"," | "); print(t)
     ok("3 pieces, 3 resources", "3 pezas" in t and "3 recursos" in t)
     ok("resource shown once, as a Media card (no duplicate link row)", pg.locator(".author-ficha .link-row").count()==0 and pg.locator(".author-ficha .media-card",has_text="Gravación no Auditorio").count()==1, pg.locator(".author-ficha .media-card").count())
+    with pg.context.expect_page(timeout=8000) as popup_info:
+        pg.locator(".author-ficha .media-card",has_text="Gravación no Auditorio").first.click(position={"x":20,"y":20})
+    ok("media card in the author ficha opens its link", "youtu" in popup_info.value.url or popup_info.value.url.startswith("chrome-error"), popup_info.value.url)
+    popup_info.value.close()
     ok("only author's pieces listed", pg.locator("#pieceRepositoryList .piece-card").count()==3, pg.locator("#pieceRepositoryList .piece-card").count())
     ok("hash", "#/autoria/pandereteiras-soalleira" in pg.evaluate("location.href"), pg.evaluate("location.href"))
     pg.screenshot(path=str(OUT/"ficha.png"))
@@ -94,6 +98,10 @@ with sync_playwright() as p:
     card=pg.locator("#pieceRepositoryList .piece-card",has_text="Canto e Muiñeira").first
     card.click(position={"x":12,"y":12}); pg.wait_for_selector("#pieceDrawer:not([hidden]) .piece-manage",timeout=8000); 
     ok("drawer shows the resource once (Media relacionada)", pg.locator("#pieceDrawer .media-card",has_text="Gravación no Auditorio").count()==1 and pg.locator("#pieceDrawer .link-row").count()==0)
+    with pg.context.expect_page(timeout=8000) as popup_info:
+        pg.locator("#pieceDrawer .media-card",has_text="Gravación no Auditorio").first.click(position={"x":20,"y":20})
+    ok("media card inside the piece drawer opens its link", "youtu" in popup_info.value.url or popup_info.value.url.startswith("chrome-error"), popup_info.value.url)
+    popup_info.value.close()
     ok("drawer has the same «Obter datos» form", pg.locator("#pieceDrawer #pmFetch").count()==1 and pg.locator("#pieceDrawer #pmKind").count()==1 and pg.locator("#pieceDrawer #pmRole").count()==1 and pg.locator("#pieceDrawer #pmTitle").count()==1)
     ok("owner can remove a piece resource from the card", pg.locator("#pieceDrawer [data-remove-piece-resource]").count()==1)
     pg.click("#pieceDrawer [data-edit-piece]"); pg.wait_for_timeout(800)

@@ -2968,6 +2968,7 @@ function openPieceDrawer(pieceId) {
   bindPieceManage(drawer, piece);
   all("[data-close-piece-drawer]", drawer).forEach(item => item.addEventListener("click", closePieceDrawer));
   bindPieceCardActions(drawer);
+  bindMediaCards(drawer);
   $("[data-download-piece-pdf]", drawer)?.addEventListener("click", event => downloadPieceRecordPdf(piece, event.currentTarget));
   bindResourceForm("pm", drawer, { onEnter: () => linkMediaToPiece(piece, drawer) });
   $("#pieceMediaAdd", drawer)?.addEventListener("click", () => linkMediaToPiece(piece, drawer));
@@ -4319,6 +4320,7 @@ function renderPiecesView() {
     updatePieceRepository(view);
   });
   bindPieceCardActions(view);
+  bindMediaCards(view);
   $("#clearPieceAuthorFilter")?.addEventListener("click", closeAuthor);
   all("[data-piece-scope]", view).forEach(button => button.addEventListener("click", () => {
     state.pieceScope = button.dataset.pieceScope;
@@ -7040,6 +7042,8 @@ function bindGlobalEvents() {
   });
   window.addEventListener("hashchange", () => {
     if (!history.state?.fv) history.replaceState({ fv: state.view }, "", window.location.href);
+    // Ir ao perfil dunha persoa desde unha ficha (peza, copla, melodía): pecha a ficha para ver a páxina.
+    if (window.location.hash.startsWith("#/persoa/")) { closeCoplaDrawer(); closePieceDrawer(); closeMelodyDrawer(); closePdfViewer(); }
     if (window.location.hash === "#/privacidade" && !state.aboutPrivacy) openAboutPrivacyFromRoute();
     else if (window.location.hash.startsWith("#/autoria/") && state.dataReady && applyAuthorHash()) {
       closePieceDrawer();
@@ -7060,6 +7064,12 @@ function bindGlobalEvents() {
     const view = event.state?.fv
       || (hash.startsWith("#/autoria/") ? "pieces" : hash === "#/privacidade" ? "about" : hash.startsWith("#/persoa/") ? "people" : state.view);
     setView(view, { push: false });
+  });
+  // Ligazón a un perfil desde dentro dunha ficha: pecha a ficha aínda que o #hash non cambie.
+  document.addEventListener("click", event => {
+    const link = event.target.closest?.('a[href^="#/persoa/"]');
+    if (!link || !link.closest("#pieceDrawer, #coplaDrawer, #melodyDrawer")) return;
+    closeCoplaDrawer(); closePieceDrawer(); closeMelodyDrawer();
   });
   document.addEventListener("click", event => {
     const nav = event.target.closest("[data-view]");

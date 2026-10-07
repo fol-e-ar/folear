@@ -177,6 +177,10 @@ with sync_playwright() as p:
     pb.click('.sidebar [data-view="pieces"]'); pb.click('[data-piece-tab="library"]'); pb.wait_for_timeout(500)
     pb.locator("#pieceRepositoryList .piece-card h2").first.click(); pb.wait_for_selector("#pieceDrawer .drawer-panel"); pb.wait_for_timeout(300)
     ok("no manage block for others", pb.locator("#pieceDrawer .piece-manage").count()==0)
+    # a ligazón á persoa dentro da ficha da peza abre o perfil e pecha a ficha
+    ok("drawer has owner link", pb.locator("#pieceDrawer .piece-owner").count()==1)
+    pb.locator("#pieceDrawer .piece-owner").click(); pb.wait_for_timeout(1200)
+    ok("owner link in piece drawer opens the person page and closes the drawer", pb.locator("#pieceDrawer").is_hidden() and pb.locator("#view-people.active .profile-handle").count()==1, pb.locator("#view-people").inner_text()[:80].replace("\n"," | "))
     # 3 ADMIN modera
     fake("g-admin","folear3@gmail.com","Admin")
     ctx3,pa=newpage(b); pa.click('.sidebar [data-account="login"]'); pa.wait_for_url(APP+"/**",timeout=15000); wait_ready(pa)
