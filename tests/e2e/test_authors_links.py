@@ -56,9 +56,9 @@ with sync_playwright() as p:
     ok("ficha shown", pg.locator(".author-ficha").count()==1)
     t=pg.locator(".author-ficha").inner_text().replace("\n"," | "); print(t)
     ok("3 pieces, 3 resources", "3 pezas" in t and "3 recursos" in t)
-    ok("resource shown once, as a Media card (no duplicate link row)", pg.locator(".author-ficha .link-row").count()==0 and pg.locator(".author-ficha .media-card",has_text="Gravación no Auditorio").count()==1, pg.locator(".author-ficha .media-card").count())
+    ok("resource shown once, as a compact line (no duplicate link row)", pg.locator(".author-ficha .link-row").count()==0 and pg.locator(".author-ficha .media-line",has_text="Gravación no Auditorio").count()==1, pg.locator(".author-ficha .media-line").count())
     with pg.context.expect_page(timeout=8000) as popup_info:
-        pg.locator(".author-ficha .media-card",has_text="Gravación no Auditorio").first.click(position={"x":20,"y":20})
+        pg.locator(".author-ficha .media-line",has_text="Gravación no Auditorio").first.click(position={"x":20,"y":20})
     ok("media card in the author ficha opens its link", "youtu" in popup_info.value.url or popup_info.value.url.startswith("chrome-error"), popup_info.value.url)
     popup_info.value.close()
     ok("only author's pieces listed", pg.locator("#pieceRepositoryList .piece-card").count()==3, pg.locator("#pieceRepositoryList .piece-card").count())
@@ -97,9 +97,9 @@ with sync_playwright() as p:
     pg.locator('[data-piece-scope="mine"]').click(); pg.wait_for_timeout(500)
     card=pg.locator("#pieceRepositoryList .piece-card",has_text="Canto e Muiñeira").first
     card.click(position={"x":12,"y":12}); pg.wait_for_selector("#pieceDrawer:not([hidden]) .piece-manage",timeout=8000); 
-    ok("drawer shows the resource once (Media relacionada)", pg.locator("#pieceDrawer .media-card",has_text="Gravación no Auditorio").count()==1 and pg.locator("#pieceDrawer .link-row").count()==0)
+    ok("drawer shows the resource once (Media relacionada)", pg.locator("#pieceDrawer .media-line",has_text="Gravación no Auditorio").count()==1 and pg.locator("#pieceDrawer .link-row").count()==0)
     with pg.context.expect_page(timeout=8000) as popup_info:
-        pg.locator("#pieceDrawer .media-card",has_text="Gravación no Auditorio").first.click(position={"x":20,"y":20})
+        pg.locator("#pieceDrawer .media-line",has_text="Gravación no Auditorio").first.click(position={"x":20,"y":20})
     ok("media card inside the piece drawer opens its link", "youtu" in popup_info.value.url or popup_info.value.url.startswith("chrome-error"), popup_info.value.url)
     popup_info.value.close()
     ok("drawer has the same «Obter datos» form", pg.locator("#pieceDrawer #pmFetch").count()==1 and pg.locator("#pieceDrawer #pmKind").count()==1 and pg.locator("#pieceDrawer #pmRole").count()==1 and pg.locator("#pieceDrawer #pmTitle").count()==1)
@@ -145,7 +145,7 @@ with sync_playwright() as p:
     pg.click("#pieceDrawer details.piece-media-form > summary"); pg.wait_for_timeout(200)
     pg.fill("#pmUrl","https://youtu.be/drw1"); pg.click("#pmFetch"); wait_value(pg,"#pmTitle")
     pg.click("#pieceMediaAdd"); pg.wait_for_timeout(1200)
-    ok("resource added from the drawer", sql("select count(*) from media where piece_id is not null and url like '%drw1%'")[0][0]==1 and pg.locator("#pieceDrawer .media-card").count()==3, pg.locator("#pieceDrawer .media-card").count())
+    ok("resource added from the drawer", sql("select count(*) from media where piece_id is not null and url like '%drw1%'")[0][0]==1 and pg.locator("#pieceDrawer .media-line").count()==3, pg.locator("#pieceDrawer .media-line").count())
     # peza privada con recurso: vese en Media coa marca «Privada» só á dona
     ana.call("POST","/api/pieces",{"pieces":[{"title":"Peza privada con recurso","author":"Ana","visibility":"private","coplas":[{"copla_id":None,"text":"Un verso privado","position":1}],"links":[{"title":"Recurso privado de proba","url":"https://exemplo.gal/privado.mp3","media_kind":"audio","role":"melody"}]}]})
     pg.click("#pieceDrawer [data-close-piece-drawer]"); pg.reload(); pg.wait_for_selector("#global-loading[hidden]",state="attached",timeout=30000); pg.wait_for_timeout(1500)
@@ -210,11 +210,11 @@ with sync_playwright() as p:
     ok("duplicado: avisa de que xa está en Media", "xa está en Media" in pg.locator("#pmFeedback").inner_text() and pg.locator("#pmFeedback [data-use-existing]").count()==1, pg.locator("#pmFeedback").inner_text())
     ok("…e non crea nada", sql("select count(*) from media")[0][0]==n_media)
     pg.click("#pmFeedback [data-use-existing]"); pg.wait_for_timeout(1500)
-    ok("«Ligar o existente»: ligado á peza sen copiar", sql("select count(*) from media")[0][0]==n_media and pg.locator("#pieceDrawer .media-card",has_text="Outra gravación").count()==1, pg.locator("#pieceDrawer .media-card").count())
-    ok("…e pódese desligar sen borralo", pg.locator("#pieceDrawer .media-card",has_text="Outra gravación").locator("[data-remove-piece-resource]").inner_text()=="Desligar da peza")
+    ok("«Ligar o existente»: ligado á peza sen copiar", sql("select count(*) from media")[0][0]==n_media and pg.locator("#pieceDrawer .media-line",has_text="Outra gravación").count()==1, pg.locator("#pieceDrawer .media-line").count())
+    ok("…e pódese desligar sen borralo", pg.locator("#pieceDrawer .media-line",has_text="Outra gravación").locator("[data-remove-piece-resource]").inner_text()=="Desligar")
     pg.on("dialog", lambda d: d.accept())
-    pg.locator("#pieceDrawer .media-card",has_text="Outra gravación").locator("[data-remove-piece-resource]").click(); pg.wait_for_timeout(1500)
-    ok("desligar non borra o recurso de Media", sql("select count(*) from media where title='Outra gravación'")[0][0]==1 and pg.locator("#pieceDrawer .media-card",has_text="Outra gravación").count()==0)
+    pg.locator("#pieceDrawer .media-line",has_text="Outra gravación").locator("[data-remove-piece-resource]").click(); pg.wait_for_timeout(1500)
+    ok("desligar non borra o recurso de Media", sql("select count(*) from media where title='Outra gravación'")[0][0]==1 and pg.locator("#pieceDrawer .media-line",has_text="Outra gravación").count()==0)
     # no obradoiro tamén avisa
     pg.click("#pieceDrawer [data-edit-piece]"); pg.wait_for_timeout(800)
     pg.click("#workshopLinks > summary"); pg.wait_for_timeout(200)

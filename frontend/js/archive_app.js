@@ -852,8 +852,37 @@ function mediaCard(item, options = {}) {
         <p class="media-sub"><span class="media-role">${escapeHtml(mediaRoleLabel(role))}</span>${place}</p>
         ${url ? "" : `<p class="muted">Sen ligazón pública.</p>`}
         ${options.editable && canEditMedia(item) ? `<div class="media-card-actions">${mediaEditButtons(item)}</div>` : ""}
-        ${options.removeFromPiece ? `<div class="media-card-actions is-visible"><button class="btn" type="button" data-remove-piece-resource="${escapeHtml(item.id)}">${options.removeFromPiece === "unlink" ? "Desligar da peza" : "Quitar da peza"}</button></div>` : ""}
+        ${options.removeFromPiece ? `<div class="media-card-actions is-visible"><button class="btn" type="button" data-remove-piece-resource="${escapeHtml(item.id)}">${options.removeFromPiece === "unlink" ? "Desligar da peza" : "Borrar da peza"}</button></div>` : ""}
       </div>
+    </article>
+  `;
+}
+
+// Recurso de apoio (fichas de peza e de melodía): unha liña discreta, como as de íncipit nas
+// coplas, con icona segundo o tipo, título e a fonte. Os thumbnails quedan para Media, onde o
+// recurso é o protagonista. `removeFromPiece` / `unlinkMelody` engaden o botón correspondente.
+function mediaLine(item, options = {}) {
+  const url = mediaUrl(item);
+  const kind = mediaKind(item);
+  const title = item.title || item.label || item.name || "Recurso sen título";
+  const sub = [mediaLabel(kind), item.author_or_source || ""].filter(Boolean).join(" \\ ");
+  const hint = item.description || item.notes || "";
+  const action = options.removeFromPiece
+    ? (options.removeFromPiece === "unlink"
+      ? `<button class="link-btn" type="button" data-remove-piece-resource="${escapeHtml(item.id)}" title="Rompe só a ligazón con esta peza: o recurso segue en Media">Desligar</button>`
+      : `<button class="link-btn" type="button" data-remove-piece-resource="${escapeHtml(item.id)}" title="Borra o recurso desta peza e de Media">Borrar</button>`)
+    : options.unlinkMelody
+      ? `<button class="link-btn" type="button" data-unlink-melody-media="${escapeHtml(item.id)}">Desvincular</button>`
+      : "";
+  return `
+    <article class="media-line" tabindex="${url ? "0" : "-1"}" role="${url ? "link" : "article"}" data-open-media="${escapeHtml(url)}"${item.id != null ? ` data-media-id="${escapeHtml(item.id)}"` : ""} data-media-kind="${escapeHtml(kind)}" aria-label="${escapeHtml(title)}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
+      <span class="media-line-icon is-${escapeHtml(kind)}">${mediaKindIconSvg(kind)}</span>
+      <span class="media-line-text">
+        <strong>${escapeHtml(title)}${item.visibility === "private" ? ` <span class="tag is-private">Privada</span>` : ""}</strong>
+        <small>${escapeHtml(sub)}${url ? "" : `${sub ? " \\ " : ""}Sen ligazón pública`}</small>
+      </span>
+      ${action ? `<span class="media-line-actions">${action}</span>` : ""}
+      ${url ? `<span class="media-line-open" aria-hidden="true">↗</span>` : ""}
     </article>
   `;
 }
@@ -1091,7 +1120,7 @@ function melodiesTabMarkup(territory, ctx) {
     ${loose.length ? `
       <section class="melody-group">
         <h3 class="melody-group-title">Recursos sonoros sen melodía asignada <span class="muted">${loose.length}</span></h3>
-        <div class="media-grid">${loose.map(item => mediaCard(item)).join("")}</div>
+        <div class="media-lines">${loose.map(item => mediaLine(item)).join("")}</div>
       </section>
     ` : ""}
   `;
@@ -1261,13 +1290,8 @@ function openMelodyDrawer(melodyId) {
       </div>
       <div class="drawer-section">
         <h3>Recursos onde aparece</h3>
-        <div class="melody-resources">
-          ${resources.map(item => `
-            <div class="melody-resource">
-              ${mediaCard(item)}
-              <button class="link-button" type="button" data-unlink-melody-media="${item.id}">Desvincular</button>
-            </div>
-          `).join("") || `<p class="muted">Aínda non aparece en ningún recurso.</p>`}
+        <div class="media-lines">
+          ${resources.map(item => mediaLine(item, { unlinkMelody: true })).join("") || `<p class="muted">Aínda non aparece en ningún recurso.</p>`}
         </div>
         <div class="melody-link-existing">
           <input id="melodyLinkQuery" type="search" placeholder="Vincular un recurso xa gardado (título, fonte...)">
@@ -2493,6 +2517,7 @@ function openCoplaDrawer(coplaId, options = {}) {
       <div class="drawer-bar">
         ${pager}
         <div class="drawer-tools">
+          <button class="icon-btn drawer-share" type="button" data-share-story="${copla.id}" aria-label="Compartir como story" title="Compartir">${uiIcon("share", 18)}</button>
           <button class="icon-btn drawer-add" type="button" data-add-copla="${copla.id}" aria-label="Engadir a unha peza" title="Engadir a unha peza">+</button>
           <button class="card-close" type="button" data-close-drawer aria-label="Pechar">×</button>
         </div>
@@ -2503,7 +2528,6 @@ function openCoplaDrawer(coplaId, options = {}) {
       </div>
       <div class="copla-places">${coplaPlacesMarkup(copla)}</div>
       ${variantOfHtml}
-      <div class="story-share-row"><button class="btn story-share" type="button" data-share-story="${copla.id}">${uiIcon("share", 16)} Compartir como story</button></div>
       ${folds ? `<div class="drawer-folds">${folds}</div>` : ""}
       <div class="drawer-actions edit-only">
         ${copla.variant_of
@@ -2910,11 +2934,34 @@ async function confirmDelete() {
   }
 }
 
-function openPieceDrawer(pieceId) {
+// Pezas polas que se pode navegar coas frechas (as da listaxe desde a que se abriu a ficha).
+let pieceNav = null;
+
+function pieceScopeIds(card) {
+  if (!card || card.closest("#pieceDrawer")) return undefined;
+  if (card.closest("#pieceRepositoryList")) return filteredPieceRepository().map(item => Number(item.id));
+  for (let node = card.parentElement; node && node !== document.body; node = node.parentElement) {
+    const found = node.querySelectorAll("[data-open-piece]");
+    if (found.length > 1) return [...new Set([...found].map(item => Number(item.dataset.openPiece)).filter(Number.isFinite))];
+  }
+  return undefined;
+}
+
+function openPieceDrawer(pieceId, options = {}) {
   const piece = state.pezas.find(item => Number(item.id) === Number(pieceId));
   const drawer = $("#pieceDrawer");
   if (!piece || !drawer) return;
   state.pieceDrawerId = piece.id;
+  if (options.ids) pieceNav = { ids: options.ids.map(Number).filter(id => state.pezas.some(item => Number(item.id) === id)) };
+  else if (pieceNav && !pieceNav.ids.includes(Number(piece.id))) pieceNav = null;
+  const navPosition = pieceNav ? pieceNav.ids.indexOf(Number(piece.id)) : -1;
+  const pager = navPosition === -1 || pieceNav.ids.length < 2 ? "" : `
+      <div class="drawer-pager" role="group" aria-label="Navegar entre pezas">
+        <button type="button" class="icon-btn" data-piece-step="-1" aria-label="Peza anterior" title="Anterior (←)" ${navPosition === 0 ? "disabled" : ""}>‹</button>
+        <span aria-live="polite">${navPosition + 1} / ${pieceNav.ids.length}</span>
+        <button type="button" class="icon-btn" data-piece-step="1" aria-label="Peza seguinte" title="Seguinte (→)" ${navPosition === pieceNav.ids.length - 1 ? "disabled" : ""}>›</button>
+      </div>`;
+  const stepClass = options.direction ? ` is-step-${options.direction > 0 ? "next" : "prev"}` : "";
   const author = pieceAuthorName(piece);
   const territory = piece.context_territory
     ? state.territorios.find(item => item.id === piece.context_territory.id) || piece.context_territory
@@ -2926,8 +2973,11 @@ function openPieceDrawer(pieceId) {
   drawer.hidden = false;
   drawer.innerHTML = `
     <div class="drawer-scrim" data-close-piece-drawer></div>
-    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="Ficha da peza">
-      <button class="card-close" type="button" data-close-piece-drawer aria-label="Pechar">×</button>
+    <aside class="drawer-panel piece-sheet${stepClass}" role="dialog" aria-modal="true" aria-label="Ficha da peza">
+      <div class="drawer-bar">
+        ${pager}
+        <div class="drawer-tools"><button class="card-close" type="button" data-close-piece-drawer aria-label="Pechar">×</button></div>
+      </div>
       <div class="eyebrow">${piece.visibility === "private" ? "Peza privada" : "Peza gardada"}</div>
       <h2>${escapeHtml(piece.title || piece.titulo || "Peza sen título")}</h2>
       <div class="meta">
@@ -2956,7 +3006,7 @@ function openPieceDrawer(pieceId) {
       ${pieceExtraLinks(piece).length ? `<div class="drawer-section"><h3>Ligazóns</h3>${linkRowsMarkup(pieceExtraLinks(piece))}</div>` : ""}
       <div class="drawer-section">
         <h3>Media relacionada</h3>
-        <div class="media-grid compact">${pieceMedia(piece).map(item => mediaCard(item, { removeFromPiece: canManagePiece(piece) && (String(item.piece_id) === String(piece.id) ? true : "unlink") })).join("") || `<p class="muted">Sen recursos multimedia vinculados a esta peza.</p>`}</div>
+        <div class="media-lines">${pieceMedia(piece).map(item => mediaLine(item, { removeFromPiece: canManagePiece(piece) && (String(item.piece_id) === String(piece.id) ? true : "unlink") })).join("") || `<p class="muted">Sen recursos multimedia vinculados a esta peza.</p>`}</div>
         ${pieceResourceFormMarkup(piece)}
       </div>
       ${pieceManageMarkup(piece)}
@@ -2981,6 +3031,47 @@ function openPieceDrawer(pieceId) {
     event.stopPropagation();
     removePieceResource(piece, button.dataset.removePieceResource, drawer);
   }));
+  all("[data-piece-step]", drawer).forEach(button => button.addEventListener("click", () => stepPieceDrawer(Number(button.dataset.pieceStep))));
+}
+
+function stepPieceDrawer(delta) {
+  if (!pieceNav) return false;
+  const current = Number(state.pieceDrawerId);
+  const index = pieceNav.ids.indexOf(current) + delta;
+  if (!Number.isFinite(current) || index < 0 || index >= pieceNav.ids.length) return false;
+  openPieceDrawer(pieceNav.ids[index], { direction: delta });
+  // Deixa a lista de fondo na peza actual, para cando se peche a ficha.
+  document.querySelector(`.view.active [data-open-piece="${pieceNav.ids[index]}"]`)?.scrollIntoView?.({ block: "nearest" });
+  return true;
+}
+
+// Frechas do teclado e deslizamento táctil na ficha da peza (como nas coplas).
+function bindPieceDrawerNav() {
+  document.addEventListener("keydown", event => {
+    if (!pieceNav || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const drawer = $("#pieceDrawer");
+    if (!drawer || drawer.hidden) return;
+    if (event.target.closest?.("input, textarea, select, [contenteditable='true']")) return;
+    const dialogs = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].filter(node => node.getClientRects().length);
+    const top = dialogs[dialogs.length - 1];
+    if (top && !drawer.contains(top)) return;
+    if (stepPieceDrawer(event.key === "ArrowRight" ? 1 : -1)) event.preventDefault();
+  });
+  let start = null;
+  document.addEventListener("touchstart", event => {
+    const panel = event.target.closest?.("#pieceDrawer .piece-sheet");
+    if (!panel || !pieceNav || event.touches.length !== 1 || event.target.closest(".media-lines, iframe, input, textarea, select, details[open]")) { start = null; return; }
+    start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }, { passive: true });
+  document.addEventListener("touchend", event => {
+    if (!start || !event.changedTouches.length) return;
+    const dx = event.changedTouches[0].clientX - start.x;
+    const dy = event.changedTouches[0].clientY - start.y;
+    start = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    stepPieceDrawer(dx < 0 ? 1 : -1);
+  }, { passive: true });
 }
 
 // Recursos que a peza ten pero que non saen en Media (base sen migrar ou exporte aínda sen
@@ -3215,6 +3306,7 @@ function closePieceDrawer() {
   const drawer = $("#pieceDrawer");
   if (!drawer) return;
   state.pieceDrawerId = null;
+  pieceNav = null;
   drawer.hidden = true;
   drawer.innerHTML = "";
 }
@@ -3440,7 +3532,7 @@ function authorFichaMarkup() {
       ${resourceTotal ? `
         <h3 class="sub-title">Recursos</h3>
         ${linkRowsMarkup(links)}
-        ${media.length ? `<div class="media-grid compact">${media.map(mediaCard).join("")}</div>` : ""}` : ""}
+        ${media.length ? `<div class="media-lines">${media.map(item => mediaLine(item)).join("")}</div>` : ""}` : ""}
     </section>`;
 }
 
@@ -3493,6 +3585,10 @@ function pieceTerritoryTag(piece) {
     : `<span class="tag place">${escapeHtml(label)}</span>`;
 }
 
+function countLabel(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 function pieceCard(piece) {
   const title = piece.title || piece.titulo || "Peza sen título";
   const author = pieceAuthorName(piece);
@@ -3512,8 +3608,8 @@ function pieceCard(piece) {
         ${authorTag}
         ${pieceTerritoryTag(piece)}
         ${pieceOwnerLink(piece)}
-        <span class="tag">${coplaTotal || 0} coplas</span>
-        ${sections.length ? `<span class="tag">${sections.length} partes</span>` : ""}
+        <span class="tag">${countLabel(coplaTotal || 0, "copla", "coplas")}</span>
+        ${sections.length ? `<span class="tag">${countLabel(sections.length, "parte", "partes")}</span>` : ""}
         ${pieceStatusTags(piece)}
       </div>
     </article>
@@ -3533,8 +3629,9 @@ function pieceRow(piece) {
     <article class="piece-row${piece.mine ? " is-mine" : ""}" tabindex="0" role="button" data-open-piece="${piece.id}" aria-label="${escapeHtml(title)}">
       <span class="row-title"><strong>${escapeHtml(title)}</strong>${description ? `<small>${escapeHtml(description)}</small>` : ""}</span>
       <span class="row-author">${authorCell}</span>
-      <span class="row-count">${coplaTotal || 0} coplas${sections.length ? ` \\ ${sections.length} partes` : ""}</span>
-      <span class="row-tags">${pieceTerritoryTag(piece)}${pieceOwnerLink(piece)}${pieceStatusTags(piece)}</span>
+      <span class="row-count">${countLabel(coplaTotal || 0, "copla", "coplas")}${sections.length ? ` \\ ${countLabel(sections.length, "parte", "partes")}` : ""}</span>
+      <span class="row-place">${pieceTerritoryTag(piece)}</span>
+      <span class="row-tags">${pieceOwnerLink(piece)}${pieceStatusTags(piece)}</span>
     </article>`;
 }
 
@@ -3600,12 +3697,12 @@ function bindPieceCardActions(root = $("#view-pieces")) {
   all("[data-open-piece]", root).forEach(card => {
     card.addEventListener("click", event => {
       if (event.target.closest("button, a, select, input, textarea")) return;
-      openPieceDrawer(Number(card.dataset.openPiece));
+      openPieceDrawer(Number(card.dataset.openPiece), { ids: pieceScopeIds(card) });
     });
     card.addEventListener("keydown", event => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        openPieceDrawer(Number(card.dataset.openPiece));
+        openPieceDrawer(Number(card.dataset.openPiece), { ids: pieceScopeIds(card) });
       }
     });
   });
@@ -7345,6 +7442,7 @@ function bindGlobalEvents() {
 async function init() {
   bindGlobalEvents();
   bindCoplaDrawerNav();
+  bindPieceDrawerNav();
   updateCartBadges();
   setView(normalizeView(new URL(window.location.href).searchParams.get("mode") || new URL(window.location.href).searchParams.get("view") || "map"));
 

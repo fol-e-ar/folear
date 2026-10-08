@@ -5937,8 +5937,8 @@ label {
 
 .piece-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(120px, 1fr) 150px auto auto;
-  grid-template-areas: "title author count tags star";
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 128px minmax(0, 1fr) minmax(0, 1fr) 28px;
+  grid-template-areas: "title author count place tags star";
   column-gap: 16px;
   align-items: center;
   padding: 12px 6px;
@@ -5955,29 +5955,65 @@ label {
 
 .piece-row .row-title {
   grid-area: title;
+  min-width: 0;
+}
+
+.piece-row .row-author,
+.piece-row .row-place,
+.piece-row .row-tags {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .piece-row .row-author {
   grid-area: author;
-  min-width: 0;
+}
+
+.piece-row .row-place {
+  grid-area: place;
+}
+
+.piece-row .row-tags {
+  grid-area: tags;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-start;
+}
+
+.piece-row .row-author .tag,
+.piece-row .row-place .tag,
+.piece-row .row-tags .tag {
+  max-width: 100%;
+  padding-left: 0;
+  padding-right: 0;
   overflow: hidden;
-  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.piece-row .row-tags .tag.is-private,
+.piece-row .row-tags .tag.is-public,
+.piece-row .row-tags .tag.is-hidden-piece {
+  flex: none;
+}
+
+.piece-row .row-author .tag.as-link:hover,
+.piece-row .row-place .tag.as-link:hover,
+.piece-row .row-tags .tag.as-link:hover {
+  text-decoration: underline;
 }
 
 .piece-row .row-count {
   grid-area: count;
   font: 11px var(--font-mono);
   color: var(--muted);
-}
-
-.piece-row .row-tags {
-  grid-area: tags;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-content: flex-end;
+  white-space: nowrap;
 }
 
 .piece-row .fav-slot {
@@ -5988,12 +6024,8 @@ label {
 @media (max-width: 920px) {
   .piece-row {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "title star" "author count" "tags tags";
+    grid-template-areas: "title star" "author count" "place tags";
     row-gap: 3px;
-  }
-
-  .piece-row .row-tags {
-    justify-content: flex-start;
   }
 
   .author-strip-label {
@@ -6322,22 +6354,21 @@ input[type="search"][list].has-clear::-webkit-calendar-picker-indicator {
   pointer-events: none;
 }
 
-/* Compartir unha copla como story (só en móbil/táctil) */
-.story-share-row {
+/* Compartir unha copla como story (só en móbil/táctil): botón na barra da ficha */
+.drawer-tools .drawer-share {
   display: none;
-  margin: 14px 0 4px;
+}
+
+.drawer-tools .drawer-share svg {
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
 }
 
 @media (max-width: 920px), (pointer: coarse) {
-  .story-share-row {
-    display: block;
+  .drawer-tools .drawer-share {
+    display: inline-grid;
   }
-}
-
-.story-share {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
 }
 
 .story-modal {
@@ -6854,3 +6885,146 @@ details.trait-cat > summary {
   }
 }
 
+/* --- Recursos de apoio en fichas de peza e melodía: unha liña por recurso --- */
+
+.media-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+.media-line {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 4px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.media-line:last-child {
+  border-bottom: 0;
+}
+
+.media-line[role="article"] {
+  cursor: default;
+}
+
+.media-line:hover,
+.media-line:focus-visible {
+  background: var(--tint);
+  outline: 0;
+}
+
+.media-line-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--muted);
+  background: var(--tint);
+  border-radius: 50%;
+}
+
+.media-line-icon .media-kind-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.media-line-icon.is-youtube { color: var(--level-par-ink); background: var(--level-par-soft); }
+.media-line-icon.is-spotify { color: var(--level-con-ink); background: var(--level-con-soft); }
+.media-line-icon.is-soundcloud { color: var(--level-com-ink); background: var(--level-com-soft); }
+.media-line-icon.is-audio,
+.media-line-icon.is-video { color: var(--level-prov-ink); background: var(--level-prov-soft); }
+.media-line-icon.is-pdf { color: var(--accent-hover); background: var(--accent-soft); }
+
+.media-line-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.media-line-text strong,
+.media-line-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-line-text strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.media-line-text small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.media-line-actions {
+  flex: none;
+}
+
+.media-line .link-btn {
+  padding: 4px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.media-line .link-btn:hover,
+.media-line .link-btn:focus-visible {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.media-line-open {
+  flex: none;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+
+/* Barra da ficha da copla en pantallas estreitas: caben fav, compartir, +, × e o paxinador sen quebrar o contador */
+.drawer-pager {
+  white-space: nowrap;
+}
+
+@media (pointer: coarse) and (max-width: 420px) {
+  .drawer-bar {
+    gap: 4px;
+  }
+  .drawer-pager {
+    gap: 2px;
+  }
+  .drawer-tools {
+    gap: 4px;
+  }
+  .drawer-pager .icon-btn,
+  .drawer-tools .icon-btn,
+  .drawer-tools .fav-btn,
+  .drawer-bar .card-close {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+  }
+}
+
+/* Ficha da peza: paxinador coma o da copla (a barra leva o × á dereita) */
+.piece-sheet .drawer-bar {
+  margin-bottom: 14px;
+}
+
+.piece-sheet.is-step-next > :not(.drawer-bar) {
+  animation: sheetFromRight 200ms ease-out;
+}
+
+.piece-sheet.is-step-prev > :not(.drawer-bar) {
+  animation: sheetFromLeft 200ms ease-out;
+}
