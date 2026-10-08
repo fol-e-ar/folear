@@ -670,7 +670,6 @@ function coplaHaystack(copla) {
     copla.territory_state,
     copla.lugar,
     coplaPlaceLabel(copla),
-    (copla.tags || []).join(" "),
     (copla.versions || []).map(version => `${version.label || ""} ${version.text || ""} ${version.notes || ""}`).join(" "),
   ].join(" ");
 }
@@ -2504,7 +2503,6 @@ function openCoplaDrawer(coplaId, options = {}) {
       </div>
       <div class="copla-places">${coplaPlacesMarkup(copla)}</div>
       ${variantOfHtml}
-      <div class="meta">${(copla.tags || []).map(tag => `<span class="tag" data-tag-name="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`).join("")}</div>
       <div class="story-share-row"><button class="btn story-share" type="button" data-share-story="${copla.id}">${uiIcon("share", 16)} Compartir como story</button></div>
       ${folds ? `<div class="drawer-folds">${folds}</div>` : ""}
       <div class="drawer-actions edit-only">
@@ -2824,7 +2822,7 @@ function deleteConfirmModalMarkup() {
   const names = deleteConfirmNames();
   const consequences = state.deleteConfirmKind === "media"
     ? `${count === 1 ? "este recurso" : "estes recursos"} da biblioteca de media, xunto cos seus vínculos con coplas, pezas e territorios`
-    : `${count === 1 ? "esta copla" : "estas coplas"} do arquivo, xunto coas súas variantes, etiquetas, adscricións territoriais e vínculos con pezas e recursos multimedia`;
+    : `${count === 1 ? "esta copla" : "estas coplas"} do arquivo, xunto coas súas variantes, adscricións territoriais e vínculos con pezas e recursos multimedia`;
   return `
     <div class="media-modal delete-confirm-modal" role="dialog" aria-modal="true" aria-label="Confirmar borrado">
       <div class="media-modal-backdrop" data-close-delete-confirm></div>
@@ -5005,18 +5003,33 @@ function territoryChildrenMarkup(territory, ctx) {
 }
 
 /* Recolle os chips en 2 filas (móbil) ou 3 (escritorio) e engade «Ver máis» só se non caben. */
+// Os subterritorios plégansse a 3 filas (2 en móbil) e o corte cae sempre ao final dunha fila
+// completa: a altura dos chips cambia (en iPhone son máis altos) e un corte fixo deixaba a
+// última fila cortada polo medio e o contador de «Ver máis» a 0.
 function fitTerritoryChildren(root = $("#view-territory")) {
   const box = $("#territoryChildren", root);
   const row = box && $(".chip-row", box);
   const more = box && $("#toggleTerritoryChildren", box);
   if (!box || !row || !more) return;
   const open = box.dataset.open === "true";
-  box.classList.add("is-collapsed");
-  const limit = row.clientHeight;
-  const overflow = row.scrollHeight > limit + 2;
-  const hidden = overflow ? all(".chip-territory", row).filter(chip => chip.offsetTop >= limit - 4).length : 0;
+  box.classList.remove("is-collapsed");
+  row.style.maxHeight = "none";
+  const chips = all(".chip-territory", row);
+  const tops = [...new Set(chips.map(chip => chip.offsetTop))].sort((a, b) => a - b);
+  const maxRows = window.matchMedia("(max-width: 720px)").matches ? 2 : 3;
+  const overflow = tops.length > maxRows;
+  let hidden = 0;
+  if (overflow) {
+    const lastTop = tops[maxRows - 1];
+    const lastRow = chips.filter(chip => chip.offsetTop === lastTop);
+    const bottom = Math.max(...lastRow.map(chip => chip.offsetTop + chip.offsetHeight));
+    hidden = chips.filter(chip => chip.offsetTop > lastTop).length;
+    row.dataset.collapsedHeight = String(bottom);
+  }
   more.hidden = !overflow;
-  box.classList.toggle("is-collapsed", overflow && !open);
+  const collapsed = overflow && !open;
+  box.classList.toggle("is-collapsed", collapsed);
+  row.style.maxHeight = collapsed ? `${row.dataset.collapsedHeight}px` : "";
   more.textContent = open ? "Ver menos" : `Ver máis \\ ${hidden}`;
   more.setAttribute("aria-expanded", open ? "true" : "false");
 }
@@ -5476,8 +5489,6 @@ function renderSubmitView() {
             <details class="advanced-fields field full">
               <summary>Axustes avanzados</summary>
               <div class="formgrid">
-                <div class="field"><label>Perfil lingüístico</label><select id="newLanguage"><option value="">Sen marcar</option><option value="lingua-galego">Galego</option><option value="lingua-castelan">Castelán</option><option value="lingua-castrapo">Castrapo / mestura</option></select></div>
-                <div class="field"><label>Etiquetas</label><input id="newTags" type="text" value="${escapeHtml((editing?.tags || []).join(", "))}" placeholder="amor, romaría, traballo..."></div>
                 <div class="field full"><label>Notas</label><textarea id="newNotes" rows="3" placeholder="Fonte, contexto, dúbidas editoriais...">${escapeHtml(editing?.notes || "")}</textarea></div>
               </div>
             </details>
@@ -5994,9 +6005,9 @@ function buildCoplaPayloadFromForm() {
     notes: $(".version-notes", row).value,
     territories: versionTerritoryIds(row).map(id => ({ id })),
   })).filter(item => item.text.trim());
-  const languageTag = $("#newLanguage")?.value || "";
-  const tags = $("#newTags").value.split(",").map(item => normalizeText(item)).filter(Boolean);
-  if (languageTag) tags.push(languageTag);
+  // As etiquetas están retiradas da interface (pendentes de repensar): ao editar consérvanse as
+  // que xa tiña a copla para non perdelas ao gardar.
+  const tags = state.submitEditingId ? [...(state.submitEditingSnapshot?.tags || [])] : [];
   const payload = {
     text,
     notes: $("#newNotes").value,
@@ -6048,7 +6059,7 @@ function downloadCoplaTemplate() {
       text: "Primeiro verso\nSegundo verso\nTerceiro verso\nCuarto verso",
       territory_state: "assigned",
       territories: [{ id: "con:00000" }],
-      tags: ["lingua-galego"],
+      tags: [],
       notes: "Fonte ou contexto opcional",
       status: "published",
       versions: [{
@@ -6185,8 +6196,6 @@ async function saveCoplaDirect() {
 function resetCoplaFormForNextEntry() {
   if ($("#newText")) $("#newText").value = "";
   if ($("#newIsVolta")) $("#newIsVolta").checked = false;
-  if ($("#newLanguage")) $("#newLanguage").value = "";
-  if ($("#newTags")) $("#newTags").value = "";
   if ($("#newNotes")) $("#newNotes").value = "";
   if ($("#versionRows")) $("#versionRows").innerHTML = "";
   hideDuplicateSuggestions();
@@ -6979,7 +6988,7 @@ function submitAboutCopla(event) {
 const ABOUT_NAV = [
   { view: "map", name: "Mapa", text: "Toca un territorio para ver as súas coplas, melodías e recursos. As parroquias están dentro dos concellos, e estes dentro das comarcas." },
   { view: "territory", name: "Territorios", text: "Busca un territorio polo nome e móvete pola súa xerarquía: parroquia, concello, comarca e provincia." },
-  { view: "coplas", name: "Coplas", text: "Procura por verso, íncipit, territorio, lugar ou etiqueta. Cada ficha amosa as variantes e os recursos relacionados." },
+  { view: "coplas", name: "Coplas", text: "Procura por verso, íncipit, territorio ou lugar. Cada ficha amosa as variantes e os recursos relacionados." },
   { view: "melodies", name: "Melodías", text: "O inventario de melodías, agrupadas por ritmo e territorio, cos recursos onde se poden escoitar." },
   { view: "pieces", name: "Pezas", text: "A biblioteca de pezas montadas con coplas do arquivo e o obradoiro para compoñer as túas." },
   { view: "media", name: "Media", text: "Gravacións, vídeos, imaxes e documentos ligados ás coplas, ás melodías e ás pezas." },
@@ -6996,7 +7005,7 @@ function aboutAccountsMarkup() {
       <div class="about-section-head"><div class="eyebrow">Contas</div><h2>Para consultar non fai falta conta</h2></div>
       <div class="about-cards">
         <article class="panel"><h3>Sen conta</h3><p>Podes consultar todo o arquivo e compoñer pezas no obradoiro. Non se che pide ningún dato. Para descargar un PDF hai que entrar.</p></article>
-        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo e podes descargar PDFs (ata 15 ao día): favoritos de coplas, territorios, etiquetas, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
+        <article class="panel"><h3>Con conta</h3><p>Entrando con Google tes o teu espazo e podes descargar PDFs (ata 15 ao día): favoritos de coplas, territorios, recursos, melodías e pezas; un perfil, se queres, para que che atopen; e podes seguir a outras persoas.</p></article>
         <article class="panel"><h3>Roles</h3><p>A maioría das contas son foleantes. As persoas guía axudan a editar o arquivo e a coidar a biblioteca de pezas; a administración xestiona os roles.</p></article>
       </div>
       <p class="about-cta">${cta}</p>
@@ -7027,7 +7036,7 @@ function aboutMarkup() {
         <div class="about-section-head"><div class="eyebrow">Como funciona</div><h2>Entrar polo territorio, polo texto ou polo son</h2></div>
         <p class="about-lead">O arquivo reúne coplas e repertorio tradicional galego e ligaos entre si. Podes comezar por onde che pete (un territorio no mapa, un verso, unha melodía) e ir saltando dunha cousa a outra seguindo esas relacións.</p>
         <div class="about-cards about-relations">
-          <article class="panel"><h3>Copla</h3><p>É a peza básica: o texto, o seu íncipit (o primeiro verso), notas e etiquetas. Pode ter varias variantes e estar ligada a un ou varios territorios e, dentro dunha parroquia, a un lugar concreto (Laxoso...).</p></article>
+          <article class="panel"><h3>Copla</h3><p>É a peza básica: o texto, o seu íncipit (o primeiro verso) e notas. Pode ter varias variantes e estar ligada a un ou varios territorios e, dentro dunha parroquia, a un lugar concreto (Laxoso...).</p></article>
           <article class="panel"><h3>Territorio</h3><p>Onde se canta ou se recolleu. Os territorios van en niveis (provincia, comarca, concello e parroquia) e cada un contén os de abaixo: ao abrir un concello ves tamén as coplas, melodías e recursos das súas parroquias.</p></article>
           <article class="panel"><h3>Lugar</h3><p>Opcional e máis fino ca o territorio: o nome dun lugar dentro dunha parroquia (Laxoso, por exemplo), que non ten mapa propio. Escríbese libremente, aparece diante do territorio e tamén se busca.</p></article>
           <article class="panel"><h3>Melodía</h3><p>O inventario de melodías, agrupadas por ritmo e territorio. Unha melodía pode servir a moitas coplas e levar un ou varios recursos onde escoitala.</p></article>
@@ -7040,7 +7049,7 @@ function aboutMarkup() {
       <section class="about-section">
         <div class="about-section-head"><div class="eyebrow">Que podes facer</div><h2>Consultar, escoitar e montar repertorio</h2></div>
         <ul class="about-list">
-          <li><strong>Consultar.</strong> Busca coplas por verso, íncipit, territorio, lugar ou etiqueta; filtra por territorio no mapa ou no listado de territorios; abre unha ficha para ver variantes, melodía e recursos.</li>
+          <li><strong>Consultar.</strong> Busca coplas por verso, íncipit, territorio ou lugar; filtra por territorio no mapa ou no listado de territorios; abre unha ficha para ver variantes, melodía e recursos.</li>
           <li><strong>Escoitar.</strong> Desde unha copla, unha melodía ou unha peza chegas aos recursos ligados: gravacións, vídeos e documentos.</li>
           <li><strong>Montar pezas.</strong> Con «Seleccionar varias» marcas coplas das listas e levas a unha peza; no obradoiro ordénalas por voltas, engade notas e, se queres, pega ou escribe coplas novas.${accounts ? " Sen conta podes compoñer; para gardar a peza hai que entrar." : ""}</li>
           <li><strong>Levar o repertorio en papel.</strong> Unha peza ou un territorio saen en PDF coas coplas completas, pensado para imprimir.${accounts ? " Para xerar o PDF pedimos que a persoa estea logueada." : ""}</li>
@@ -7286,6 +7295,11 @@ function bindGlobalEvents() {
     setMapCardCollapsed(!$(".map-card")?.classList.contains("is-collapsed"));
   });
   $("#mapLayer")?.addEventListener("change", event => loadLayer(event.target.value));
+  // Nos móbiles estreitos o buscador do mapa só dá para un placeholder curto.
+  const narrowSearch = window.matchMedia("(max-width: 520px)");
+  const syncMapPlaceholder = () => { const input = $("#mapSearch"); if (input) input.placeholder = narrowSearch.matches ? "Buscar territorio" : "Buscar territorio ou copla"; };
+  syncMapPlaceholder();
+  narrowSearch.addEventListener?.("change", syncMapPlaceholder);
   $("#mapSearch")?.addEventListener("input", event => renderMapSearch(event.target.value));
   $("#mapSearchBtn")?.addEventListener("click", () => {
     const query = $("#mapSearch").value;

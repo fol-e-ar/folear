@@ -6821,3 +6821,36 @@ details.trait-cat > summary {
     margin-left: -8px;
   }
 }
+
+/* --- Buscador do mapa en móbil: o select amosa a palabra enteira e o placeholder cabe --- */
+
+@media (max-width: 920px) {
+  .floating-search {
+    gap: 2px;
+    padding: 4px 5px 4px 14px;
+  }
+
+  .floating-search input {
+    padding: 11px 6px;
+    font-size: 15px;
+  }
+
+  .floating-search input::placeholder {
+    font-size: 14px;
+  }
+
+  .floating-search select {
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    padding: 9px 2px 9px 6px;
+    font-size: 14px;
+    text-overflow: clip;
+  }
+
+  .floating-search button {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+}
+

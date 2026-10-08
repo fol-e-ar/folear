@@ -128,29 +128,22 @@ with sync_playwright() as p:
     ok("melody stars", pv.locator(".melody-card .fav-btn").count()>0)
     pv.locator(".melody-card .fav-btn").first.click(); pv.wait_for_timeout(600)
     pv.click('.sidebar [data-view="coplas"]'); pv.wait_for_selector(".gallery-card[data-open-copla], .incipit-row[data-open-copla]",timeout=10000); pv.wait_for_timeout(500)
-    # buscar copla con etiquetas
+    # as etiquetas das coplas están retiradas da interface: a ficha non as amosa
     tagged=[c for c in coplas if c.get("tags")]
     if tagged:
-        pv.click("#view-coplas [data-open-copla] >> nth=0")
-        pv.evaluate("id=>window.folearApp.searchCoplas('')",None)
-        pv.evaluate("(id)=>{document.querySelector('#coplaSearch').value='';}",None)
-        # abrir drawer da copla con etiquetas por hook de URL
         pv.goto(APP+f"/?copla_id={tagged[0]['id']}"); wait_ready(pv)
-        ok("tag star in drawer", pv.locator("#coplaDrawer .tag[data-tag-name] .fav-btn").count()>0, tagged[0]["tags"])
-        pv.locator("#coplaDrawer .tag[data-tag-name] .fav-btn").first.click(); pv.wait_for_timeout(600)
-        pv.screenshot(path=str(OUT/"coplaDrawer-tag.png"))
+        ok("ficha da copla: sen etiquetas nin estrela de etiqueta", pv.locator("#coplaDrawer [data-tag-name]").count()==0 and pv.locator("#coplaDrawer .meta .tag:not(.is-volta)").count()==0, tagged[0]["tags"])
         pv.keyboard.press("Escape")
     # perfil
     pv.click('.sidebar .account-line[data-view="profile"]'); pv.wait_for_selector("#profileForm",timeout=10000); pv.wait_for_timeout(900)
     ok("profile my pieces list", pv.locator(".profile-pieces .piece-row").count()==2, pv.locator(".profile-pieces").inner_text()[:200].replace("\n"," | "))
     tabs=pv.locator("#favTabs").inner_text().replace("\n"," | "); print("tabs:",tabs)
-    ok("fav tabs include 6 kinds", "Etiquetas" in tabs and "Recursos" in tabs and "Melodías" in tabs and "Pezas" in tabs)
+    ok("fav tabs: Coplas, Territorios, Recursos, Melodías, Pezas (sen Etiquetas)", "Etiquetas" not in tabs and "Recursos" in tabs and "Melodías" in tabs and "Pezas" in tabs and "Territorios" in tabs)
     pv.screenshot(path=str(OUT/"profile-full.png"), full_page=True)
-    for kind in ("piece","media","melody","tag"):
+    for kind in ("piece","media","melody"):
         pv.click(f'[data-fav-tab="{kind}"]'); pv.wait_for_timeout(500)
         ok(f"fav list {kind}", pv.locator("#favList .fav-item").count()>=1, pv.locator("#favList").inner_text()[:80].replace("\n"," | "))
-    pv.click('[data-fav-tab="tag"]'); pv.wait_for_timeout(300)
-    ok("tag picker present", pv.locator("#tagPickInput").count()==1)
+    ok("sen selector de etiquetas no perfil", pv.locator("#tagPickInput").count()==0 and pv.locator('[data-fav-tab="tag"]').count()==0)
     # perfil publico
     pv.fill("#pfName","Ana da Ulloa"); pv.fill("#pfHandle","ana-ulloa"); pv.check('input[name="is_public"]'); pv.click("#profileForm button[type=submit]"); pv.wait_for_timeout(1500)
     # 2 BRUNO

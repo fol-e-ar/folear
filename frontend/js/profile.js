@@ -15,12 +15,12 @@ import { getDescendantIds } from "./territory_data.js";
 
 const API = "../api";
 const DATA = "./data/exports";
-const KIND_LABELS = { copla: "Coplas", territory: "Territorios", tag: "Etiquetas", media: "Recursos", melody: "Melodías", piece: "Pezas" };
+const KIND_LABELS = { copla: "Coplas", territory: "Territorios", media: "Recursos", melody: "Melodías", piece: "Pezas" };
 const FAV_HEADINGS = {
-  copla: "Coplas favoritas", territory: "Territorios favoritos", tag: "Etiquetas favoritas",
+  copla: "Coplas favoritas", territory: "Territorios favoritos",
   media: "Recursos favoritos", melody: "Melodías favoritas", piece: "Pezas favoritas",
 };
-const KIND_EMPTY = { copla: "coplas", territory: "territorios", tag: "etiquetas", media: "recursos", melody: "melodías", piece: "pezas" };
+const KIND_EMPTY = { copla: "coplas", territory: "territorios", media: "recursos", melody: "melodías", piece: "pezas" };
 const TERRITORY_TYPES = { prov: "provincia", com: "comarca", con: "concello", par: "parroquia" };
 
 const S = {
@@ -91,9 +91,7 @@ async function loadData() {
   const coplaById = new Map(coplas.map(item => [String(item.id), item]));
   const mediaById = new Map((Array.isArray(media) ? media : []).map(item => [String(item.id), item]));
   const melodyById = new Map((Array.isArray(melodias) ? melodias : []).map(item => [String(item.id), item]));
-  const tagCounts = new Map();
-  coplas.forEach(copla => (copla.tags || []).forEach(tag => tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)));
-  S.data = { coplas, territorios, territoryById, coplaById, mediaById, melodyById, tagCounts };
+  S.data = { coplas, territorios, territoryById, coplaById, mediaById, melodyById };
   return S.data;
 }
 
@@ -247,11 +245,6 @@ function decorate() {
     card.dataset.favDone = "1";
     appendMetaStar(card, "melody", card.dataset.openMelody);
   });
-  document.querySelectorAll("#coplaDrawer .meta .tag[data-tag-name]:not([data-fav-done])").forEach(tag => {
-    tag.dataset.favDone = "1";
-    tag.classList.add("has-star");
-    tag.insertAdjacentHTML("beforeend", favButtonMarkup("tag", tag.dataset.tagName, { compact: true }));
-  });
   document.querySelectorAll("#pieceDrawer .drawer-actions:not([data-fav-done])").forEach(actions => {
     actions.dataset.favDone = "1";
     const id = actions.querySelector("[data-download-piece-pdf]")?.dataset.downloadPiecePdf;
@@ -390,7 +383,7 @@ async function renderProfile() {
     view.innerHTML = `
       <div class="page profile-page">
         <div class="page-head"><div><div class="eyebrow">O meu espazo</div><h1>Entra para ter o teu espazo</h1>
-        <p>Con unha conta de Google tes o teu espazo: favoritos de coplas, territorios, etiquetas, recursos e melodías; as túas pezas (privadas ou na biblioteca pública); seguir a outras persoas e, se queres, un perfil público. Consultar o arquivo non require conta.</p></div></div>
+        <p>Con unha conta de Google tes o teu espazo: favoritos de coplas, territorios, recursos e melodías; as túas pezas (privadas ou na biblioteca pública); seguir a outras persoas e, se queres, un perfil público. Consultar o arquivo non require conta.</p></div></div>
         <p><a class="btn primary" href="${esc(window.folearAuth?.loginUrl?.() || "#")}">Entrar con Google</a></p>
         <p class="muted small-print"><a href="./privacidade.html" data-privacy-link>Como tratamos os teus datos</a></p>
       </div>`;
@@ -479,9 +472,8 @@ async function renderProfile() {
         <div class="territory-tabs fav-tabs" id="favTabs">
           ${Object.entries(KIND_LABELS).map(([kind, label]) => `<button type="button" class="${S.favTab === kind ? "active" : ""}" data-fav-tab="${kind}">${label} (${S.favorites[kind].size})</button>`).join("")}
         </div>
-        ${S.favTab === "tag" ? tagPickerHtml() : ""}
         <div id="favList" class="fav-list">${favoritesListHtml(S.favTab, [...S.favorites[S.favTab]], data, { pieces: allPieces })}</div>
-        <p class="muted small-print">Gárdanse co botón ☆ de cada copla, territorio, etiqueta, recurso, melodía e peza.</p>
+        <p class="muted small-print">Gárdanse co botón ☆ de cada copla, territorio, recurso, melodía e peza.</p>
       </section>
 
       ${S.followsEnabled ? followingPanelHtml(allPieces) : ""}
@@ -570,10 +562,6 @@ function bindFollowing(view) {
   }));
 }
 
-function tagPickerHtml() {
-  return `<div class="tag-picker"><input id="tagPickInput" type="search" list="tagPickList" placeholder="Buscar unha etiqueta para gardala..." autocomplete="off"><datalist id="tagPickList">${[...(S.data?.tagCounts?.keys() || [])].sort((a, b) => a.localeCompare(b, "gl")).map(tag => `<option value="${esc(tag)}"></option>`).join("")}</datalist><button class="btn" type="button" id="tagPickAdd">Gardar etiqueta</button></div>`;
-}
-
 function favoritesListHtml(kind, refs, data, { stars = true, pieces = [] } = {}) {
   if (!refs.length) return `<p class="muted">Aínda non tes ${KIND_EMPTY[kind] || "favoritos"} gardados.</p>`;
   if (!data) return `<p class="muted">Non se puido cargar o arquivo para amosar os favoritos.</p>`;
@@ -588,10 +576,6 @@ function favoritesListHtml(kind, refs, data, { stars = true, pieces = [] } = {})
       const territory = data.territoryById.get(String(ref));
       if (!territory) return "";
       return row(`<button type="button" class="fav-open" data-territory-id="${esc(territory.id)}"><strong>${esc(territory.nome)}</strong><span>${esc(territoryMeta(territory))}</span></button>`, favButtonMarkup("territory", territory.id));
-    }
-    if (kind === "tag") {
-      const count = data.tagCounts?.get(ref);
-      return row(`<button type="button" class="fav-open" data-tag-search="${esc(ref)}"><strong>${esc(ref)}</strong><span>${count ? `${count} copla${count === 1 ? "" : "s"}` : "etiqueta"}</span></button>`, favButtonMarkup("tag", ref));
     }
     if (kind === "media") {
       const item = data.mediaById?.get(String(ref));
@@ -615,7 +599,6 @@ function favoritesListHtml(kind, refs, data, { stars = true, pieces = [] } = {})
 
 function bindOpenButtons(view) {
   view.querySelectorAll("[data-open-piece-id]").forEach(button => button.addEventListener("click", () => window.folearApp?.openPiece?.(button.dataset.openPieceId)));
-  view.querySelectorAll("[data-tag-search]").forEach(button => button.addEventListener("click", () => window.folearApp?.searchCoplas?.(button.dataset.tagSearch)));
   view.querySelectorAll("[data-melody-id]").forEach(button => button.addEventListener("click", () => window.folearApp?.openMelody?.(button.dataset.melodyId)));
   view.querySelectorAll("[data-media-url]").forEach(button => button.addEventListener("click", () => {
     if (button.dataset.mediaUrl) window.open(button.dataset.mediaUrl, "_blank", "noopener");
@@ -632,14 +615,6 @@ function bindFavList(view, data, allPieces) {
   view.querySelectorAll("[data-person-link]").forEach(link => link.addEventListener("click", () => {
     S.personHandle = link.dataset.personLink;
   }));
-  const input = view.querySelector("#tagPickInput");
-  view.querySelector("#tagPickAdd")?.addEventListener("click", async () => {
-    const tag = input.value.trim();
-    if (!tag) return;
-    if (!data?.tagCounts?.has(tag)) { toast("Esa etiqueta non existe no arquivo."); return; }
-    if (!isFav("tag", tag)) await toggleFavorite("tag", tag);
-    renderProfile();
-  });
 }
 
 function bindProfileForm(view, profile, data) {
