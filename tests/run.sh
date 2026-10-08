@@ -4,6 +4,7 @@
 #   tests/run.sh            # todas as probas
 #   tests/run.sh api        # só as de API
 #   tests/run.sh e2e        # só as de navegador
+#   tests/run.sh e2e trazos # só as probas cuxo ficheiro contén «trazos» (ou «traits»...)
 #
 # Requisitos: node, python3, `pip install playwright && playwright install chromium`,
 # e `npm install` en infra/cloudflare (ou WRANGLER="ruta/a/wrangler").
@@ -15,6 +16,7 @@ PORT=8799
 export NO_PROXY="localhost,127.0.0.1" no_proxy="localhost,127.0.0.1"
 export FOLEAR_APP="http://localhost:$PORT"
 SUITE="${1:-all}"
+ONLY="${2:-}"
 
 if curl -s -o /dev/null "http://localhost:$PORT/" 2>/dev/null || curl -s -o /dev/null "http://127.0.0.1:9911/x" 2>/dev/null; then
   echo "O porto $PORT (ou o 9911) xa está ocupado: pecha o Worker/Google falso anterior" >&2; exit 1
@@ -51,8 +53,8 @@ run() {
   fi
 }
 
-if [ "$SUITE" = all ] || [ "$SUITE" = api ]; then for f in tests/api/test_*.py; do run "$f"; done; fi
-if [ "$SUITE" = all ] || [ "$SUITE" = e2e ]; then for f in tests/e2e/test_*.py; do run "$f"; done; fi
+if [ "$SUITE" = all ] || [ "$SUITE" = api ]; then for f in tests/api/test_*.py; do [[ -z "$ONLY" || "$f" == *"$ONLY"* ]] && run "$f"; done; fi
+if [ "$SUITE" = all ] || [ "$SUITE" = e2e ]; then for f in tests/e2e/test_*.py; do [[ -z "$ONLY" || "$f" == *"$ONLY"* ]] && run "$f"; done; fi
 
 [ $STATUS -eq 0 ] && echo "TODO OK" || echo "HAI FALLOS"
 exit $STATUS

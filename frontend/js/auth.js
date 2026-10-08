@@ -15,6 +15,7 @@
 // css/auth.css para esconder os controis de edición, e expón
 // window.folearAuth para o resto da aplicación.
 
+import { avatarMarkup as mapAvatar } from "./avatar.js";
 const EDIT_ROLES = ["guia", "admin"];
 const ROLE_LABELS = { foleante: "Foleante", guia: "Guía", admin: "Admin" };
 const ERROR_MESSAGES = {
@@ -82,11 +83,10 @@ async function logout() {
 }
 
 function avatarMarkup(user) {
-  const initial = escapeText((user.name || user.email || "?").trim().charAt(0).toUpperCase());
   if (user.picture) {
     return `<span class="account-avatar"><img src="${escapeText(user.picture)}" alt="" referrerpolicy="no-referrer"></span>`;
   }
-  return `<span class="account-avatar">${initial}</span>`;
+  return mapAvatar(user.name || user.email || "?", user.profile?.handle || user.email || user.name || "");
 }
 
 // --- Interface --------------------------------------------------------
@@ -188,6 +188,41 @@ function promptLogin() {
 
 // --- Panel de persoas (admin) ----------------------------------------
 
+const ROLE_ORDER = { admin: 0, guia: 1, foleante: 2 };
+const ROLE_HINTS = { foleante: "Consulta", guia: "Edita o arquivo", admin: "Xestiona roles" };
+const NEW_DAYS = 14;
+const PEOPLE_FILTERS = [
+  ["all", "Todas"],
+  ["new", "Recén chegados"],
+  ["foleante", "Foleantes"],
+  ["guia", "Guías"],
+  ["admin", "Admins"],
+];
+
+function parseDbDate(value) {
+  if (!value) return null;
+  const date = new Date(String(value).includes("T") ? value : `${String(value).replace(" ", "T")}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function daysSince(date) {
+  return date ? Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000)) : null;
+}
+
+function agoLabel(days) {
+  if (days === null) return "";
+  if (days === 0) return "hoxe";
+  if (days === 1) return "onte";
+  if (days < 45) return `hai ${days} días`;
+  if (days < 365) return `hai ${Math.round(days / 30)} meses`;
+  return `hai ${Math.round(days / 365)} ${Math.round(days / 365) === 1 ? "ano" : "anos"}`;
+}
+
+function isNewcomer(person) {
+  const days = daysSince(parseDbDate(person.created_at));
+  return days !== null && days < NEW_DAYS;
+}
+
 async function openPeople() {
   let host = document.getElementById("peopleModal");
   if (!host) {
@@ -196,16 +231,20 @@ async function openPeople() {
     document.body.append(host);
   }
   host.innerHTML = `
-    <div class="auth-modal" role="dialog" aria-modal="true" aria-label="Persoas">
+    <div class="auth-modal" role="dialog" aria-modal="true" aria-label="Xestión de roles">
       <div class="auth-modal-backdrop" data-people-close></div>
-      <div class="auth-modal-panel">
+      <div class="auth-modal-panel roles-panel">
         <div class="auth-modal-head">
-          <div><div class="eyebrow">Administración</div><h2>Persoas</h2></div>
+          <div><div class="eyebrow">Administración</div><h2>Xestión de roles</h2></div>
           <button class="card-close" type="button" data-people-close aria-label="Pechar">×</button>
         </div>
-        <p class="muted">Quen entra con Google é <strong>foleante</strong> (consulta). Unha persoa <strong>guía</strong> pode dar de alta, editar e borrar. As contas <strong>admin</strong> poden ademais cambiar roles.</p>
+        <p class="muted roles-intro">Quen entra con Google é <strong>foleante</strong> (consulta). Unha persoa <strong>guía</strong> pode dar de alta, editar e borrar. As contas <strong>admin</strong> poden ademais cambiar roles.</p>
+        <div class="roles-tools">
+          <input id="rolesSearch" type="search" placeholder="Buscar por nome ou correo..." autocomplete="off" aria-label="Buscar persoas">
+          <div class="roles-filters" id="rolesFilters" role="group" aria-label="Filtrar por grupo"></div>
+        </div>
         <div id="peopleList" class="people-list"><p class="muted">Cargando...</p></div>
-        <p id="peopleFeedback" class="muted" role="status"></p>
+        <p id="peopleFeedback" class="muted roles-feedback" role="status" aria-live="polite"></p>
       </div>
     </div>
   `;
@@ -215,36 +254,110 @@ async function openPeople() {
 
   const list = host.querySelector("#peopleList");
   const feedback = host.querySelector("#peopleFeedback");
+  const filtersBox = host.querySelector("#rolesFilters");
+  const search = host.querySelector("#rolesSearch");
+  let users = [];
+  let filter = "all";
+
+  const matches = (person, key) => key === "all" || (key === "new" ? isNewcomer(person) : person.role === key);
+  const count = key => users.filter(person => matches(person, key)).length;
+
+  const paintFilters = () => {
+    filtersBox.innerHTML = PEOPLE_FILTERS.map(([key, label]) =>
+      `<button type="button" class="roles-filter${filter === key ? " active" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count(key)}</span></button>`
+    ).join("");
+  };
+
+  const rowMarkup = person => {
+    const name = person.name || person.email;
+    const created = parseDbDate(person.created_at);
+    const seen = parseDbDate(person.last_login_at);
+    const meta = [
+      created ? `Entrou ${agoLabel(daysSince(created))}` : "",
+      seen ? `última visita ${agoLabel(daysSince(seen))}` : "",
+    ].filter(Boolean).join(" \\ ");
+    const self = String(person.email).toLowerCase() === String(session.user?.email || "").toLowerCase();
+    const locked = person.fixed_admin;
+    return `
+      <div class="people-row" data-row="${person.id}">
+        ${avatarMarkup(person)}
+        <div class="people-who">
+          <strong>${escapeText(name)}${isNewcomer(person) ? ` <em class="roles-new">Novo</em>` : ""}</strong>
+          <small>${escapeText(person.email)}</small>
+          ${meta ? `<small class="people-meta">${escapeText(meta)}</small>` : ""}
+        </div>
+        <div class="role-seg" role="group" aria-label="Rol de ${escapeText(name)}" data-person="${person.id}">
+          ${["foleante", "guia", "admin"].map(role => {
+            const disabled = locked || (self && role !== "admin");
+            return `<button type="button" class="role-opt is-${role}${person.role === role ? " active" : ""}" data-role="${role}" aria-pressed="${person.role === role}" title="${ROLE_HINTS[role]}${locked ? " \\ admin fixo polo servidor" : ""}" ${disabled ? "disabled" : ""}>${ROLE_LABELS[role]}</button>`;
+          }).join("")}
+        </div>
+      </div>`;
+  };
+
+  const paintList = () => {
+    const q = (search.value || "").trim().toLowerCase();
+    const shown = users
+      .filter(person => matches(person, filter))
+      .filter(person => !q || `${person.name || ""} ${person.email}`.toLowerCase().includes(q))
+      .sort((a, b) => {
+        if (filter === "new") return String(b.created_at).localeCompare(String(a.created_at));
+        return (ROLE_ORDER[a.role] - ROLE_ORDER[b.role]) || String(a.name || a.email).localeCompare(String(b.name || b.email), "gl");
+      });
+    list.innerHTML = shown.map(rowMarkup).join("")
+      || `<p class="muted roles-empty">${users.length ? "Ninguén coincide con ese filtro." : "Aínda non hai ninguén rexistrado."}</p>`;
+  };
+
+  filtersBox.addEventListener("click", event => {
+    const button = event.target.closest("[data-filter]");
+    if (!button) return;
+    filter = button.dataset.filter;
+    paintFilters();
+    paintList();
+  });
+  search.addEventListener("input", paintList);
+
+  list.addEventListener("click", async event => {
+    const option = event.target.closest(".role-opt");
+    if (!option || option.disabled || option.classList.contains("active")) return;
+    const seg = option.closest("[data-person]");
+    const person = users.find(item => item.id === Number(seg.dataset.person));
+    if (!person) return;
+    const previous = person.role;
+    const next = option.dataset.role;
+    if (next === "admin" && !window.confirm(`¿Dar o rol de admin a ${person.name || person.email}? Poderá cambiar roles e editar todo o arquivo.`)) return;
+    person.role = next;
+    seg.querySelectorAll(".role-opt").forEach(item => { item.classList.toggle("active", item === option); item.setAttribute("aria-pressed", String(item === option)); });
+    seg.classList.add("is-saving");
+    feedback.textContent = "Gardando...";
+    try {
+      const result = await fetch("../api/users/role", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: person.id, role: next }),
+      });
+      const payload = await result.json();
+      if (!result.ok) throw new Error(payload.error || "Non se puido cambiar o rol.");
+      feedback.textContent = `${person.name || person.email}: agora é ${ROLE_LABELS[next].toLowerCase()}.`;
+      paintFilters(); // os contadores cambian; a fila queda onde estaba ata que se cambie de filtro
+    } catch (error) {
+      person.role = previous;
+      feedback.textContent = error.message;
+      paintFilters();
+      paintList();
+    } finally {
+      seg.classList.remove("is-saving");
+    }
+  });
+
   try {
     const response = await fetch("../api/users", { cache: "no-store", credentials: "same-origin" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Non se puido cargar a lista.");
-    list.innerHTML = data.users.map(person => `
-      <div class="people-row">
-        ${avatarMarkup(person)}
-        <div class="people-who"><strong>${escapeText(person.name || person.email)}</strong><small>${escapeText(person.email)}</small></div>
-        <select data-person="${person.id}" aria-label="Rol de ${escapeText(person.name || person.email)}" ${person.fixed_admin ? "disabled" : ""}>
-          ${["foleante", "guia", "admin"].map(role => `<option value="${role}" ${person.role === role ? "selected" : ""}>${ROLE_LABELS[role]}</option>`).join("")}
-        </select>
-      </div>
-    `).join("") || `<p class="muted">Aínda non hai ninguén rexistrado.</p>`;
-    list.querySelectorAll("select[data-person]").forEach(select => select.addEventListener("change", async () => {
-      feedback.textContent = "Gardando...";
-      try {
-        const result = await fetch("../api/users/role", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: Number(select.dataset.person), role: select.value }),
-        });
-        const payload = await result.json();
-        if (!result.ok) throw new Error(payload.error || "Non se puido cambiar o rol.");
-        feedback.textContent = `Rol actualizado: ${ROLE_LABELS[select.value]}.`;
-      } catch (error) {
-        feedback.textContent = error.message;
-        openPeople();
-      }
-    }));
+    users = data.users;
+    paintFilters();
+    paintList();
   } catch (error) {
     list.innerHTML = `<p class="muted">${escapeText(error.message)}</p>`;
   }

@@ -433,5 +433,58 @@ c, j = gui.call("POST", "/api/coplas", {"coplas": [{**base, "id": pid}]})
 c, j = gui.call("DELETE", "/api/coplas", {"ids": [pid]})
 ok("borrar a principal borra as súas variantes-copla", c == 200 and not [x for x in coplas_json() if x["id"] == pid or x.get("variant_of") == pid], (c, j))
 
+# --- lotes grandes: o Worker garda N coplas en poucas consultas (límite de 50 por petición no plan gratuíto)
+big = [{"text": f"Copla de lote {i}\nsegundo verso {i}", "territories": [{"id": PAR}], "tags": ["lote", f"serie{i % 3}", "lote"],
+        "territory_state": "assigned", "is_volta": i % 7 == 0, "lugar": "A Eira" if i % 2 else "", "versions": []} for i in range(40)]
+big[5]["versions"] = [{"label": "V", "text": "Versión do lote cinco\nsegundo", "territories": [{"id": OIT}, {"id": OIT}]}]
+c, j = gui.call("POST", "/api/coplas", {"coplas": big})
+ok("lote de 40 coplas nunha petición (200, 40 ids distintos)", c == 200 and len(set(j.get("ids", []))) == 40, (c, str(j)[:200]))
+bigids = j["ids"]
+rows = {x["id"]: x for x in coplas_json()}
+ok("lote: cada copla garda o seu texto, territorio, etiquetas (sen repetir) e lugar", all(rows[i]["text"].startswith(f"Copla de lote {n}") and [t["id"] for t in rows[i]["territories"]] == [PAR] and sorted(rows[i]["tags"]) == sorted({"lote", f"serie{n % 3}"}) for n, i in enumerate(bigids)), [rows[i] for i in bigids[:2]])
+ok("lote: as voltas e o lugar van coa copla correcta", rows[bigids[7]]["is_volta"] and not rows[bigids[8]]["is_volta"] and rows[bigids[1]].get("lugar") == "A Eira" and not rows[bigids[2]].get("lugar"), (rows[bigids[7]], rows[bigids[1]]))
+ok("lote: a versión da copla 5 queda nela e crea a súa variante noutro territorio", len(rows[bigids[5]]["versions"]) == 1 and any(x.get("variant_of") == bigids[5] and [t["id"] for t in x["territories"]] == [OIT] for x in rows.values()), rows[bigids[5]].get("versions"))
+edit = [{**big[i], "id": bigids[i], "text": f"Copla de lote {i} editada\nsegundo verso"} for i in (0, 1, 2)] + [{"text": "Copla nova no medio da edición\nverso", "territory_state": "unassigned", "territories": [], "tags": []}]
+c, j = gui.call("POST", "/api/coplas", {"coplas": edit})
+rows = {x["id"]: x for x in coplas_json()}
+ok("lote mixto (3 edicións + 1 nova): conserva ids e engade a nova", c == 200 and j["ids"][:3] == bigids[:3] and j["ids"][3] not in bigids and "editada" in rows[bigids[1]]["text"] and len(rows[bigids[1]]["tags"]) == 2, (c, j))
+c, j = gui.call("POST", "/api/coplas", {"coplas": [{"text": "Boa\nverso", "territories": [{"id": PAR}]}, {"text": "Mala\nverso", "territories": [{"id": "par:nonexiste"}]}]})
+ok("un lote con unha copla inválida non garda ningunha (400)", c == 400 and not [x for x in coplas_json() if x["text"].startswith("Boa\nverso")], (c, j))
+extra = [x["id"] for x in coplas_json() if x["text"].startswith("Copla nova no medio")]
+c, j = gui.call("DELETE", "/api/coplas", {"ids": bigids + extra})
+ok("lote: borrar as 40 de golpe (e as variantes)", c == 200 and not [x for x in coplas_json() if x["id"] in bigids or x.get("variant_of") in bigids], (c, str(j)[:100]))
+
+# --- Identidade e trazos: POST /api/territory-traits (antes non existía no Worker) ---
+def territorios_json():
+    c, j = anon.call("GET", "/data/exports/territorios/territorios.json")
+    return j if c == 200 else []
+def traits_of(tid):
+    return next((t for t in territorios_json() if t["id"] == tid), {}).get("traits", [])
+TC = "con:15004"  # Ares
+TP = "par:1502004"
+c, _ = ana.call("POST", "/api/territory-traits", {"traits": [{"territory_id": TC, "trait": "x"}]})
+ok("trazos: unha persoa foleante non pode gardar (403)", c == 403, c)
+c, _ = anon.call("POST", "/api/territory-traits", {"traits": [{"territory_id": TC, "trait": "x"}]})
+ok("trazos: sen sesión (401)", c == 401, c)
+c, j = gui.call("POST", "/api/territory-traits", {"traits": [{"territory_id": TC, "trait": "Tócase a gaita", "category": "Música e instrumentos", "notes": "Sobre todo en festas\npatronais"}]})
+ok("trazos: unha guía garda un trazo e devolve o id (JSON)", c == 200 and j.get("ok") and len(j.get("ids", [])) == 1, (c, j)); tid = j["ids"][0]
+got = [t for t in traits_of(TC) if t["id"] == tid]
+ok("trazos: o exporte de territorios inclúe categoría e nota", got and got[0]["trait"] == "Tócase a gaita" and got[0]["category"] == "Música e instrumentos" and "patronais" in got[0]["notes"], got)
+c, j = gui.call("POST", "/api/territory-traits", {"traits": [{"territory_id": TC, "trait": "tócase A GAITA"}]})
+ok("trazos: repetir o trazo no mesmo territorio (sen distinguir maiúsculas) dá 409", c == 409, (c, j))
+c, j = gui.call("POST", "/api/territory-traits", {"traits": [{"id": tid, "territory_id": TC, "trait": "Tócase a gaita galega", "category": "Música e instrumentos", "notes": None}]})
+got = [t for t in traits_of(TC) if t["id"] == tid]
+ok("trazos: editar cambia o texto e quita a nota", c == 200 and got and got[0]["trait"] == "Tócase a gaita galega" and not got[0]["notes"], (c, got))
+c, j = gui.call("POST", "/api/territory-traits", {"traits": [{"territory_id": TP, "trait": "Gheada", "category": "Fala e lingua"}]}); tid2 = j["ids"][0]
+for bad, label in (({"territory_id": "par:nonexiste", "trait": "a"}, "territorio descoñecido"), ({"territory_id": TC, "trait": "   "}, "trazo baleiro"),
+                   ({"territory_id": TC, "trait": "a" * 121}, "trazo longo de máis"), ({"territory_id": TC, "trait": "ok", "notes": "n" * 601}, "nota longa de máis"),
+                   ({"id": 999999, "territory_id": TC, "trait": "fantasma"}, "editar un id que non existe")):
+    c, j = gui.call("POST", "/api/territory-traits", {"traits": [bad]})
+    ok(f"trazos: {label} → erro JSON con mensaxe", c in (400, 404) and isinstance(j, dict) and j.get("error"), (c, j))
+c, j = gui.call("POST", "/api/territory-traits", {"nada": 1})
+ok("trazos: corpo sen 'traits' → 400 con mensaxe", c == 400 and j.get("error"), (c, j))
+c, j = gui.call("POST", "/api/territory-traits", {"traits": [{"id": tid, "_delete": True}, {"id": tid2, "_delete": True}]})
+ok("trazos: borrar (en lote)", c == 200 and not [t for t in traits_of(TC) + traits_of(TP) if t["id"] in (tid, tid2)], (c, j))
+
 restore_coplas(MAX_COPLA_ID)
 finish()

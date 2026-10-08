@@ -141,6 +141,98 @@ async function handleCoplas(env, url) {
   return jsonResponse({ items: results, limit, offset }, { env });
 }
 
+// «Identidade e trazos»: notas curtas sobre un territorio (instrumento, baile, fala...).
+// Cada trazo vive no seu territorio; os superiores (comarca, provincia, Galiza) herdan
+// a lista no cliente a partir de `territory_traits`, que viaxa dentro de territorios.json.
+const TRAIT_MAX = 120;
+const TRAIT_CATEGORY_MAX = 40;
+const TRAIT_NOTES_MAX = 600;
+const TRAIT_BATCH_MAX = 50;
+
+function cleanTraitNotes(value) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f​-‏‪-‮⁦-⁩]/g, " ")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function handleTerritoryTraits(request, env, url) {
+  await requireRole(request, env, url, EDITOR_ROLES);
+  const payload = await request.json().catch(() => null);
+  if (!payload || !Array.isArray(payload.traits)) {
+    throw new HttpError(400, "O corpo debe ser un obxecto con clave 'traits' en forma de lista.");
+  }
+  if (!payload.traits.length) throw new HttpError(400, "Non hai ningún trazo que gardar.");
+  if (payload.traits.length > TRAIT_BATCH_MAX) throw new HttpError(400, `Máximo ${TRAIT_BATCH_MAX} trazos por petición.`);
+
+  const ops = [];
+  const errors = [];
+  for (const [index, raw] of payload.traits.entries()) {
+    const label = `Trazo #${index + 1}`;
+    if (!raw || typeof raw !== "object") { errors.push(`${label}: debe ser un obxecto.`); continue; }
+    const id = raw.id == null ? null : Number(raw.id);
+    if (raw.id != null && !Number.isInteger(id)) { errors.push(`${label}: 'id' debe ser enteiro.`); continue; }
+    if (raw._delete) {
+      if (id == null) errors.push(`${label}: para borrar cómpre indicar 'id'.`);
+      else ops.push({ kind: "delete", id });
+      continue;
+    }
+    const territoryId = typeof raw.territory_id === "string" ? raw.territory_id.trim() : "";
+    const trait = cleanText(raw.trait, TRAIT_MAX + 1);
+    const category = cleanText(raw.category, TRAIT_CATEGORY_MAX + 1) || null;
+    const notes = cleanTraitNotes(raw.notes) || null;
+    if (!territoryId) errors.push(`${label}: falta 'territory_id'.`);
+    if (!trait) errors.push(`${label}: escribe o trazo.`);
+    else if (trait.length > TRAIT_MAX) errors.push(`${label}: o trazo pasa de ${TRAIT_MAX} caracteres.`);
+    if (category && category.length > TRAIT_CATEGORY_MAX) errors.push(`${label}: a categoría pasa de ${TRAIT_CATEGORY_MAX} caracteres.`);
+    if (notes && notes.length > TRAIT_NOTES_MAX) errors.push(`${label}: a nota pasa de ${TRAIT_NOTES_MAX} caracteres.`);
+    ops.push({ kind: id == null ? "insert" : "update", id, territoryId, trait, category, notes });
+  }
+  if (errors.length) throw new HttpError(400, errors.join("\n"));
+
+  // Os territorios e os ids a editar teñen que existir; un trazo non se repite no mesmo territorio.
+  // (Unha soa viaxe por comprobación e un único batch para escribir: o plan gratuíto limita as consultas.)
+  const writes = ops.filter(op => op.kind !== "delete");
+  const knownTerritories = await existingIds(env, "territories", writes.map(op => op.territoryId));
+  for (const op of writes) if (!knownTerritories.has(op.territoryId)) throw new HttpError(400, `Territorio descoñecido: ${op.territoryId}`);
+  const touched = ops.filter(op => op.kind !== "insert").map(op => op.id);
+  const knownTraitIds = await existingIds(env, "territory_traits", touched);
+  for (const op of ops) if (op.kind === "update" && !knownTraitIds.has(op.id)) throw new HttpError(404, "Ese trazo xa non existe.");
+  const taken = new Map(); // territorio -> Map(trazo en minúsculas -> id)
+  for (const row of await idsMatching(env, "territory_id", [...new Set(writes.map(op => op.territoryId))], "SELECT id, territory_id, lower(trait) AS t FROM territory_traits")) {
+    if (!taken.has(row.territory_id)) taken.set(row.territory_id, new Map());
+    taken.get(row.territory_id).set(row.t, row.id);
+  }
+  for (const op of ops) {
+    if (op.kind === "delete") {
+      for (const names of taken.values()) for (const [name, id] of names) if (id === op.id) names.delete(name);
+      continue;
+    }
+    if (!taken.has(op.territoryId)) taken.set(op.territoryId, new Map());
+    const names = taken.get(op.territoryId);
+    const key = op.trait.toLowerCase();
+    if (names.has(key) && names.get(key) !== op.id) throw new HttpError(409, `«${op.trait}» xa está nese territorio.`);
+    for (const [name, id] of names) if (id === op.id) names.delete(name);
+    names.set(key, op.id ?? -1);
+  }
+
+  const statements = ops.map(op => {
+    if (op.kind === "delete") return env.DB.prepare("DELETE FROM territory_traits WHERE id = ?").bind(op.id);
+    if (op.kind === "update") {
+      return env.DB.prepare("UPDATE territory_traits SET territory_id = ?, trait = ?, category = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(op.territoryId, op.trait, op.category, op.notes, op.id);
+    }
+    return env.DB.prepare("INSERT INTO territory_traits (territory_id, trait, category, notes, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)")
+      .bind(op.territoryId, op.trait, op.category, op.notes);
+  });
+  const results = await env.DB.batch(statements);
+  const ids = ops.map((op, index) => (op.kind === "insert" ? results[index].meta.last_row_id : op.id));
+  await bumpTerritoriesVersion(env);
+  return jsonNoStore({ ok: true, ids }, { env });
+}
+
 async function exportTerritoriosJson(env) {
   const { results: rows } = await env.DB.prepare(
     `SELECT id, tipo, cod, nome, slug, search,
@@ -400,16 +492,38 @@ function isValidUrl(url) {
   }
 }
 
+// D1 factura as FILAS LIDAS (un `SELECT id FROM territories` son ~4.200 por escritura), así que
+// as validacións só preguntan polos ids que o corpo menciona de verdade.
+const TERRITORY_ID_RE = /\b(?:prov|com|con|par):[0-9A-Za-z_-]+/g;
+
+function payloadTerritoryIds(payload) {
+  return [...new Set(JSON.stringify(payload ?? null).match(TERRITORY_ID_RE) || [])];
+}
+
+async function existingIds(env, table, ids, { tolerateMissingTable = false } = {}) {
+  const wanted = [...new Set(ids.filter(id => id !== undefined && id !== null))];
+  const found = new Set();
+  for (let i = 0; i < wanted.length; i += 80) {
+    const chunk = wanted.slice(i, i + 80);
+    try {
+      const { results } = await env.DB.prepare(`SELECT id FROM ${table} WHERE id IN (${chunk.map(() => "?").join(",")})`).bind(...chunk).all();
+      results.forEach(row => found.add(row.id));
+    } catch (err) {
+      if (tolerateMissingTable && /no such table/i.test(String(err && err.message))) return found;
+      throw err;
+    }
+  }
+  return found;
+}
+
 async function validateCoplasPayload(env, payload) {
   const errors = [];
   if (!payload || !Array.isArray(payload.coplas)) {
     return ["O JSON debe ser un obxecto con clave 'coplas' en forma de lista."];
   }
 
-  const { results: territoryRows } = await env.DB.prepare("SELECT id FROM territories").all();
-  const knownTerritories = new Set(territoryRows.map(row => row.id));
-  const { results: coplaRows } = await env.DB.prepare("SELECT id FROM coplas").all();
-  const knownCoplaIds = new Set(coplaRows.map(row => row.id));
+  const knownTerritories = await existingIds(env, "territories", payloadTerritoryIds(payload));
+  const knownCoplaIds = await existingIds(env, "coplas", payload.coplas.map(item => item && item.id).filter(Number.isInteger));
 
   payload.coplas.forEach((copla, index) => {
     const label = `Copla #${index + 1}`;
@@ -509,16 +623,13 @@ async function validateMediaPayload(env, payload) {
     return ["O JSON debe ser un obxecto con clave 'media' en forma de lista."];
   }
 
-  const { results: territoryRows } = await env.DB.prepare("SELECT id FROM territories").all();
-  const knownTerritories = new Set(territoryRows.map(row => row.id));
-  const { results: coplaRows } = await env.DB.prepare("SELECT id FROM coplas").all();
-  const knownCoplas = new Set(coplaRows.map(row => row.id));
-  const { results: pieceRows } = await env.DB.prepare("SELECT id FROM pieces").all();
-  const knownPieces = new Set(pieceRows.map(row => row.id));
-  const melodyRows = await loadMelodiesOrEmpty(env, "SELECT id FROM melodies");
-  const knownMelodies = new Set(melodyRows.map(row => row.id));
-  const { results: mediaRows } = await env.DB.prepare("SELECT id FROM media").all();
-  const knownMediaIds = new Set(mediaRows.map(row => row.id));
+  const mediaLinks = payload.media.flatMap(item => (item && Array.isArray(item.links) ? item.links.filter(link => link && typeof link === "object") : []));
+  const linkedIds = type => mediaLinks.filter(link => link.entity_type === type).map(link => Number(link.entity_id)).filter(Number.isInteger);
+  const knownTerritories = await existingIds(env, "territories", payloadTerritoryIds(payload));
+  const knownCoplas = await existingIds(env, "coplas", linkedIds("copla"));
+  const knownPieces = await existingIds(env, "pieces", linkedIds("piece"));
+  const knownMelodies = await existingIds(env, "melodies", linkedIds("melody"), { tolerateMissingTable: true });
+  const knownMediaIds = await existingIds(env, "media", payload.media.map(item => item && item.id).filter(Number.isInteger));
 
   payload.media.forEach((media, index) => {
     const label = `Media #${index + 1}`;
@@ -599,101 +710,128 @@ async function validateMediaPayload(env, payload) {
 // Escritura (espello de backend/services/importers.py)
 // ---------------------------------------------------------------------
 
+// Escritura de coplas en poucas viaxes a D1: o plan gratuíto só deixa 50 consultas por petición
+// e cada escritura se factura por filas. Todo o necesario para un lote (aínda que sexan 50 coplas)
+// vai nun `db.batch()` (unha soa chamada, transaccional); as coplas novas referénciase con
+// `(SELECT MAX(id) FROM coplas)` xusto despois do seu INSERT, e os ids saen de `last_row_id`.
+const COPLA_BATCH_STATEMENTS = 300;
+const NEW_COPLA_ID = "(SELECT MAX(id) FROM coplas)";
+
+async function idsMatching(env, column, ids, select) {
+  const rows = [];
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80);
+    const { results } = await env.DB.prepare(`${select} WHERE ${column} IN (${chunk.map(() => "?").join(",")})`).bind(...chunk).all();
+    rows.push(...results);
+  }
+  return rows;
+}
+
 async function importCoplas(env, payload) {
   const errors = await validateCoplasPayload(env, payload);
   if (errors.length) throw new Error(errors.join("\n"));
 
   const db = env.DB;
-  const importedIds = [];
   const withLugar = await lugarAvailable(env);
   const withVariants = await variantAvailable(env);
 
-  if (withVariants) {
-    // Unha copla-variante non se edita directamente: o seu texto e territorios veñen da variante
-    // da copla principal (sincronízase ao gardar esta).
-    const editedIds = payload.coplas.map(item => item.id).filter(Number.isInteger);
-    for (const id of editedIds) {
-      const row = await db.prepare("SELECT variant_of FROM coplas WHERE id = ?").bind(id).first();
-      if (row && row.variant_of) {
-        throw new Error(`A copla ${id} é unha variante da copla ${row.variant_of} noutro territorio: edítase desde a copla principal (na súa lista de variantes).`);
+  // Coplas que xa existen: unha variante non se edita directamente, e as que teñen fillas
+  // (variantes noutro territorio) hai que resincronizalas despois de gardar.
+  const editedIds = payload.coplas.map(item => item.id).filter(Number.isInteger);
+  const parentsWithChildren = new Set();
+  if (withVariants && editedIds.length) {
+    for (const row of await idsMatching(env, "id", editedIds, "SELECT id, variant_of FROM coplas")) {
+      if (row.variant_of) {
+        throw new Error(`A copla ${row.id} é unha variante da copla ${row.variant_of} noutro territorio: edítase desde a copla principal (na súa lista de variantes).`);
       }
     }
+    for (const row of await idsMatching(env, "variant_of", editedIds, "SELECT DISTINCT variant_of FROM coplas")) parentsWithChildren.add(row.variant_of);
   }
 
-  for (const copla of payload.coplas) {
+  // Unidades de escritura, unha por copla, para repartilas en lotes sen cortar ningunha polo medio.
+  const tagNames = new Map();
+  const units = payload.coplas.map(copla => {
     const text = copla.text.trim();
-    const normalized = normalizeText(text);
-    const incipit = makeIncipit(text);
-    const notes = copla.notes || null;
-    const status = copla.status ?? "published";
-    const territoryState = copla.territory_state ?? "assigned";
-    const isVolta = copla.is_volta ? 1 : 0;
-    let coplaId = copla.id;
-
-    if (Number.isInteger(coplaId)) {
-      await db.prepare(
-        `UPDATE coplas
-         SET text = ?, normalized_text = ?, incipit = ?, notes = ?, status = ?,
-             territory_state = ?, is_volta = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`
-      ).bind(text, normalized, incipit, notes, status, territoryState, isVolta, coplaId).run();
-      if (withLugar) await db.prepare("UPDATE coplas SET lugar = ? WHERE id = ?").bind(cleanLugar(copla.lugar), coplaId).run();
-      await db.prepare("DELETE FROM copla_territories WHERE copla_id = ?").bind(coplaId).run();
-      await db.prepare("DELETE FROM copla_tags WHERE copla_id = ?").bind(coplaId).run();
+    const isNew = !Number.isInteger(copla.id);
+    const ref = isNew ? NEW_COPLA_ID : "?";
+    const own = isNew ? [] : [copla.id];
+    const stmts = [];
+    const fields = [text, normalizeText(text), makeIncipit(text), copla.notes || null, copla.status ?? "published", copla.territory_state ?? "assigned", copla.is_volta ? 1 : 0];
+    if (isNew) {
+      stmts.push(db.prepare(
+        `INSERT INTO coplas (text, normalized_text, incipit, notes, status, territory_state, is_volta${withLugar ? ", lugar" : ""}, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?${withLugar ? ", ?" : ""}, CURRENT_TIMESTAMP)`
+      ).bind(...fields, ...(withLugar ? [cleanLugar(copla.lugar)] : [])));
     } else {
-      const result = await db.prepare(
-        `INSERT INTO coplas (text, normalized_text, incipit, notes, status, territory_state, is_volta, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
-      ).bind(text, normalized, incipit, notes, status, territoryState, isVolta).run();
-      coplaId = result.meta.last_row_id;
-      if (withLugar && copla.lugar) await db.prepare("UPDATE coplas SET lugar = ? WHERE id = ?").bind(cleanLugar(copla.lugar), coplaId).run();
+      stmts.push(db.prepare(
+        `UPDATE coplas SET text = ?, normalized_text = ?, incipit = ?, notes = ?, status = ?,
+                territory_state = ?, is_volta = ?${withLugar ? ", lugar = ?" : ""}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).bind(...fields, ...(withLugar ? [cleanLugar(copla.lugar)] : []), copla.id));
+      stmts.push(db.prepare("DELETE FROM copla_territories WHERE copla_id = ?").bind(copla.id));
+      stmts.push(db.prepare("DELETE FROM copla_tags WHERE copla_id = ?").bind(copla.id));
     }
-    importedIds.push(coplaId);
-
-    await db.prepare("DELETE FROM copla_versions WHERE copla_id = ?").bind(coplaId).run();
-    const versions = copla.versions ?? [];
-    for (let i = 0; i < versions.length; i += 1) {
-      const version = versions[i];
-      const position = i + 1;
+    // (as copias en copla_versions bórranse en cascada coas súas copla_version_territories)
+    if (!isNew) stmts.push(db.prepare("DELETE FROM copla_versions WHERE copla_id = ?").bind(copla.id));
+    let withVersionTerritories = false;
+    (copla.versions ?? []).forEach((version, index) => {
       const versionText = version.text.trim();
-      const versionResult = await db.prepare(
+      stmts.push(db.prepare(
         `INSERT INTO copla_versions (copla_id, label, text, normalized_text, incipit, notes, position, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
-      ).bind(
-        coplaId,
-        version.label || null,
-        versionText,
-        normalizeText(versionText),
-        makeIncipit(versionText),
-        version.notes || null,
-        position,
-      ).run();
-      const versionId = versionResult.meta.last_row_id;
+         VALUES (${ref}, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+      ).bind(...own, version.label || null, versionText, normalizeText(versionText), makeIncipit(versionText), version.notes || null, index + 1));
       for (const territory of version.territories ?? []) {
-        await db.prepare(
-          "INSERT INTO copla_version_territories (version_id, territory_id) VALUES (?, ?)"
-        ).bind(versionId, territory.id).run();
+        withVersionTerritories = true;
+        stmts.push(db.prepare("INSERT OR IGNORE INTO copla_version_territories (version_id, territory_id) VALUES ((SELECT MAX(id) FROM copla_versions), ?)").bind(territory.id));
       }
-    }
-
+    });
     for (const territory of copla.territories ?? []) {
-      await db.prepare(
-        `INSERT INTO copla_territories (copla_id, territory_id, relation_type, is_direct)
-         VALUES (?, ?, 'direct', 1)`
-      ).bind(coplaId, territory.id).run();
+      stmts.push(db.prepare(
+        `INSERT OR IGNORE INTO copla_territories (copla_id, territory_id, relation_type, is_direct) VALUES (${ref}, ?, 'direct', 1)`
+      ).bind(...own, territory.id));
     }
-
     for (const rawTag of copla.tags ?? []) {
       const tagName = normalizeText(rawTag);
       if (!tagName) continue;
-      const tagId = await getOrCreateTag(db, tagName);
-      await db.prepare("INSERT OR IGNORE INTO copla_tags (copla_id, tag_id) VALUES (?, ?)")
-        .bind(coplaId, tagId).run();
+      tagNames.set(tagName, slugify(tagName));
+      stmts.push(db.prepare(
+        `INSERT OR IGNORE INTO copla_tags (copla_id, tag_id) SELECT ${ref}, id FROM tags WHERE name = ?`
+      ).bind(...own, tagName));
     }
+    return { isNew, id: copla.id, stmts, needsSync: withVariants && (parentsWithChildren.has(copla.id) || withVersionTerritories) };
+  });
 
-    if (withVariants) await syncVariantCoplas(env, coplaId);
+  // As etiquetas novas créanse primeiro (o nome é único: INSERT OR IGNORE).
+  const tagStmts = [...tagNames].map(([name, slug]) => db.prepare("INSERT OR IGNORE INTO tags (name, slug) VALUES (?, ?)").bind(name, slug));
+
+  const importedIds = [];
+  let chunk = [];
+  let chunkUnits = [];
+  let first = true;
+  const flush = async () => {
+    if (!chunkUnits.length) return;
+    const head = first ? tagStmts : [];
+    first = false;
+    const results = await db.batch([...head, ...chunk]);
+    let offset = head.length;
+    for (const unit of chunkUnits) {
+      if (unit.isNew) unit.id = results[offset].meta.last_row_id;
+      offset += unit.stmts.length;
+    }
+    chunk = [];
+    chunkUnits = [];
+  };
+  for (const unit of units) {
+    // Os lotes córtanse sempre entre coplas, nunca polo medio dunha.
+    if (chunk.length && chunk.length + unit.stmts.length > COPLA_BATCH_STATEMENTS) await flush();
+    chunk.push(...unit.stmts);
+    chunkUnits.push(unit);
   }
+  await flush();
 
+  for (const unit of units) {
+    importedIds.push(unit.id);
+    if (unit.needsSync) await syncVariantCoplas(env, unit.id);
+  }
   return importedIds;
 }
 
@@ -777,8 +915,7 @@ async function deleteCoplas(env, coplaIds) {
     return id;
   });
 
-  const { results: coplaRows } = await env.DB.prepare("SELECT id FROM coplas").all();
-  const knownIds = new Set(coplaRows.map(row => row.id));
+  const knownIds = await existingIds(env, "coplas", ids);
   const missing = ids.filter(id => !knownIds.has(id));
   if (missing.length) {
     throw new Error(`Non existe ningunha copla con estes IDs: [${missing.join(", ")}].`);
@@ -994,9 +1131,8 @@ async function validateMelodiesPayload(env, payload) {
   if (!payload || !Array.isArray(payload.melodies)) {
     return ["O JSON debe ser un obxecto con clave 'melodies' en forma de lista."];
   }
-  const { results: territoryRows } = await env.DB.prepare("SELECT id FROM territories").all();
-  const knownTerritories = new Set(territoryRows.map(row => row.id));
-  const knownMelodies = new Set((await env.DB.prepare("SELECT id FROM melodies").all()).results.map(row => row.id));
+  const knownTerritories = await existingIds(env, "territories", payloadTerritoryIds(payload));
+  const knownMelodies = await existingIds(env, "melodies", payload.melodies.map(item => item && item.id).filter(Number.isInteger));
   const allowedRhythms = await allowedRhythmKeys(env.DB);
   const errors = [];
   payload.melodies.forEach((melody, index) => {
@@ -2207,10 +2343,13 @@ async function handleUserRole(request, env, url) {
 // Se a migración 0004 non está aplicada, calcúlase sempre coma antes.
 // ---------------------------------------------------------------------
 
-async function readDataVersion(env) {
+// `territories_version` só sobe ao tocar trazos: territorios.json é o export máis pesado de
+// reconstruír (~8.000 filas lidas) e case nunca cambia, así que non vai atado a `data_version`.
+async function readDataVersion(env, key = "data_version") {
   try {
-    const row = await env.DB.prepare("SELECT value FROM site_meta WHERE key = 'data_version'").first();
-    return row && row.value != null ? String(row.value) : null;
+    const row = await env.DB.prepare("SELECT value FROM site_meta WHERE key = ?").bind(key).first();
+    if (row && row.value != null) return String(row.value);
+    return key === "data_version" ? null : "0";
   } catch (err) {
     return null;
   }
@@ -2226,8 +2365,19 @@ async function bumpDataVersion(env) {
   }
 }
 
-async function cachedExport(request, env, ctx, url, name, build) {
-  const version = await readDataVersion(env);
+async function bumpTerritoriesVersion(env) {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO site_meta (key, value) VALUES ('territories_version', '1')
+       ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`
+    ).run();
+  } catch (err) {
+    // Sen migración 0004 non hai caché que invalidar.
+  }
+}
+
+async function cachedExport(request, env, ctx, url, name, build, versionKey = "data_version") {
+  const version = await readDataVersion(env, versionKey);
   if (version === null) return jsonResponse(await build(), { env });
 
   const etag = `"v${version}-${name}"`;
@@ -3376,7 +3526,7 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/data/exports/territorios/territorios.json") {
-        return await cachedExport(request, env, ctx, url, "territorios", () => exportTerritoriosJson(env));
+        return await cachedExport(request, env, ctx, url, "territorios", () => exportTerritoriosJson(env), "territories_version");
       }
       if (request.method === "GET" && url.pathname === "/data/exports/coplas/coplas.json") {
         return await cachedExport(request, env, ctx, url, "coplas", () => exportCoplasJson(env));
@@ -3489,6 +3639,9 @@ export default {
         return jsonResponse({ ok: true, ids }, { env });
       }
 
+      if (request.method === "POST" && url.pathname === "/api/territory-traits") {
+        return await handleTerritoryTraits(request, env, url);
+      }
       if (request.method === "POST" && url.pathname === "/api/coplas") {
         await requireRole(request, env, url, EDITOR_ROLES);
         const payload = await request.json();

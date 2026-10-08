@@ -1,3 +1,5 @@
+import { avatarMarkup as mapAvatar } from "./avatar.js";
+import { getDescendantIds } from "./territory_data.js";
 // Espazo persoal: perfil, directorio de persoas e favoritos.
 //
 // Módulo autónomo (ver index.html), no mesmo estilo ca js/auth.js:
@@ -26,6 +28,8 @@ const S = {
   favEnabled: false,
   favTab: "copla",
   personHandle: "",
+  peopleQuery: "",
+  peopleZone: "",
   data: null,
   following: new Set(),
   followingList: [],
@@ -304,13 +308,71 @@ function startObserver() {
   decorate();
 }
 
+// --- Selector de territorio (perfil e filtro de Persoas) ----------------------
+//
+// Busca en todos os territorios e amosa os resultados nunha lista con scroll propio: os primeiros 30 e,
+// ao chegar ao fondo, 30 máis. Cada resultado leva o seu superior para distinguir as parroquias que
+// se chaman igual. `onPick(item)` ao escoller; `onType()` cada vez que se escribe.
+function bindTerritoryPicker(input, results, { data, onPick, onType = () => {} }) {
+  const PAGE = 30;
+  const ORDER = ["con", "par", "com", "prov"];
+  let hits = [];
+  let shown = 0;
+  const parentName = item => {
+    const parent = item.parent_id ? data?.territoryById.get(item.parent_id) : null;
+    return parent ? parent.nome : "";
+  };
+  const hitMarkup = item => {
+    const up = parentName(item);
+    return `<button type="button" data-pick="${esc(item.id)}" role="option"><strong>${esc(item.nome)}</strong><span>${esc(territoryMeta(item))}${up ? ` \\ ${esc(up)}` : ""}</span></button>`;
+  };
+  const renderMore = () => {
+    const slice = hits.slice(shown, shown + PAGE);
+    results.insertAdjacentHTML("beforeend", slice.map(hitMarkup).join(""));
+    shown += slice.length;
+  };
+  results.setAttribute("role", "listbox");
+  results.addEventListener("click", event => {
+    const button = event.target.closest("[data-pick]");
+    const item = button && data?.territoryById.get(button.dataset.pick);
+    if (item) onPick(item);
+  });
+  results.addEventListener("scroll", () => {
+    if (shown < hits.length && results.scrollTop + results.clientHeight >= results.scrollHeight - 80) renderMore();
+  }, { passive: true });
+  input.addEventListener("input", () => {
+    onType();
+    const query = normalize(input.value).trim();
+    if (query.length < 2 || !data) { results.hidden = true; return; }
+    hits = data.territorios
+      .filter(item => normalize(item.search || item.nome).includes(query) || normalize(item.nome).includes(query))
+      .sort((a, b) => ORDER.indexOf(a.tipo) - ORDER.indexOf(b.tipo) || a.nome.localeCompare(b.nome, "gl"));
+    results.innerHTML = "";
+    results.scrollTop = 0;
+    shown = 0;
+    if (!hits.length) results.innerHTML = `<p class="muted">Sen resultados.</p>`;
+    else renderMore();
+    results.hidden = false;
+  });
+  input.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !results.hidden) {
+      event.preventDefault();
+      results.querySelector("[data-pick]")?.click();
+    }
+  });
+  // En móbil, ao enfocar o campo sobe a pantalla para que a lista non quede tapada polo teclado
+  // nin pola barra inferior.
+  input.addEventListener("focus", () => {
+    if (window.matchMedia?.("(max-width: 920px)").matches) setTimeout(() => input.scrollIntoView({ block: "start", behavior: "smooth" }), 250);
+  });
+}
+
 // --- O meu espazo --------------------------------------------------------
 
-function avatarHtml(name, picture) {
-  const initial = esc((name || "?").trim().charAt(0).toUpperCase());
+function avatarHtml(name, picture, seed = "") {
   return picture
     ? `<span class="account-avatar is-large"><img src="${esc(picture)}" alt="" referrerpolicy="no-referrer"></span>`
-    : `<span class="account-avatar is-large">${initial}</span>`;
+    : mapAvatar(name, seed || name, { large: true });
 }
 
 function publicUrl(handle) {
@@ -355,7 +417,7 @@ async function renderProfile() {
     <div class="page profile-page">
       <div class="page-head">
         <div class="profile-id">
-          ${avatarHtml(shownName, me.account.picture)}
+          ${avatarHtml(shownName, me.account.picture, profile.handle || user.email || shownName)}
           <div>
             <div class="eyebrow">O meu espazo</div>
             <h1>${esc(shownName || "O meu espazo")}</h1>
@@ -603,21 +665,10 @@ function bindProfileForm(view, profile, data) {
     clear.hidden = !id;
     results.hidden = true;
   };
-  place.addEventListener("input", () => {
-    place.dataset.territory = "";
-    clear.hidden = true;
-    const query = normalize(place.value).trim();
-    if (query.length < 2 || !data) { results.hidden = true; return; }
-    const hits = data.territorios
-      .filter(item => normalize(item.search || item.nome).includes(query) || normalize(item.nome).includes(query))
-      .sort((a, b) => ["con", "par", "com", "prov"].indexOf(a.tipo) - ["con", "par", "com", "prov"].indexOf(b.tipo) || a.nome.localeCompare(b.nome, "gl"))
-      .slice(0, 8);
-    results.innerHTML = hits.map(item => `<button type="button" data-pick="${esc(item.id)}"><strong>${esc(item.nome)}</strong><span>${esc(territoryMeta(item))}</span></button>`).join("") || `<p class="muted">Sen resultados.</p>`;
-    results.hidden = false;
-    results.querySelectorAll("[data-pick]").forEach(button => button.addEventListener("click", () => {
-      const item = data.territoryById.get(button.dataset.pick);
-      if (item) setPlace(item.id, item.nome);
-    }));
+  bindTerritoryPicker(place, results, {
+    data,
+    onPick: item => setPlace(item.id, item.nome),
+    onType: () => { place.dataset.territory = ""; clear.hidden = true; },
   });
   clear.addEventListener("click", () => setPlace("", ""));
 
@@ -658,51 +709,123 @@ function bindProfileForm(view, profile, data) {
 
 // --- Persoas -------------------------------------------------------------
 
+// Cada chamada invalida as anteriores: se entran dúas á vez (o botón Atrás/Adiante e o cambio de #hash
+// avisan por separado), só se pinta a última, aínda que a primeira remate despois.
+let peopleToken = 0;
+
 async function renderPeople() {
   const view = document.getElementById("view-people");
   if (!view) return;
-  if (S.personHandle) return renderPerson(view, S.personHandle);
+  const token = ++peopleToken;
+  if (S.personHandle) return renderPerson(view, S.personHandle, token);
   view.innerHTML = `<div class="page people-page"><p class="muted">Cargando...</p></div>`;
   let people = [];
+  let data = null;
   try {
-    people = (await api("/people", { cache: "default" })).people || [];
+    [people, data] = await Promise.all([
+      api("/people", { cache: "default" }).then(result => result.people || []),
+      loadData().catch(() => null),
+    ]);
   } catch {
-    view.innerHTML = `<div class="page people-page"><div class="page-head"><div><div class="eyebrow">Comunidade</div><h1>Persoas</h1></div></div><p class="muted">O directorio non está dispoñible agora mesmo.</p></div>`;
+    if (token !== peopleToken) return;
+    view.innerHTML = `<div class="page people-page"><div class="page-head"><div><h1>Persoas</h1></div></div><p class="muted">O directorio non está dispoñible agora mesmo.</p></div>`;
     return;
   }
-  const paint = query => {
-    const q = normalize(query).trim();
+  if (token !== peopleToken) return;
+
+  // Provincias nas que hai persoas (co seu número), para filtrar dun toque.
+  const provinceOf = territory => {
+    if (!territory || !data) return null;
+    if (territory.tipo === "prov") return territory;
+    return data.territorios.find(item => item.tipo === "prov" && item.cod === territory.prov) || null;
+  };
+  const provinces = new Map();
+  people.forEach(person => {
+    const province = provinceOf(data?.territoryById.get(person.territory_id));
+    if (province) provinces.set(province.id, { province, count: (provinces.get(province.id)?.count || 0) + 1 });
+  });
+  const withZone = people.filter(person => person.territory_id).length;
+
+  const zoneSet = () => {
+    const zone = S.peopleZone && data?.territoryById.get(S.peopleZone);
+    return zone ? new Set(getDescendantIds(zone, data.territorios)) : null;
+  };
+
+  const paintChips = () => {
+    const box = view.querySelector("#zoneChips");
+    if (!box) return;
+    box.innerHTML = [`<button type="button" class="zone-chip${S.peopleZone ? "" : " active"}" data-zone="">Todas as zonas</button>`]
+      .concat([...provinces.values()].sort((a, b) => a.province.nome.localeCompare(b.province.nome, "gl")).map(({ province, count }) =>
+        `<button type="button" class="zone-chip${S.peopleZone === province.id ? " active" : ""}" data-zone="${esc(province.id)}">${esc(province.nome)}<span>${count}</span></button>`)).join("");
+  };
+
+  const paint = () => {
+    const q = normalize(S.peopleQuery || "").trim();
     const handleQuery = q.replace(/^@/, "");
-    const shown = people.filter(person => !q || normalize(`${person.display_name} ${person.handle} ${person.territory_name} ${person.bio}`).includes(handleQuery));
+    const zone = zoneSet();
+    const shown = people.filter(person =>
+      (!q || normalize(`${person.display_name} ${person.handle} ${person.territory_name} ${person.bio}`).includes(handleQuery))
+      && (!zone || zone.has(person.territory_id)));
+    view.querySelector("#peopleCount").textContent = people.length ? `${shown.length} ${shown.length === 1 ? "persoa" : "persoas"}` : "";
     view.querySelector("#peopleCards").innerHTML = shown.map(person => `
       <a class="person-card" href="#/persoa/${esc(person.handle)}" data-person-link="${esc(person.handle)}">
-        ${avatarHtml(person.display_name, null)}
+        ${avatarHtml(person.display_name, null, person.handle)}
         <span class="person-card-body">
           <strong>${esc(person.display_name)}</strong>
           <span class="person-handle">@${esc(person.handle)}</span>
           ${person.territory_name ? `<span class="person-place">${esc(person.territory_name)}</span>` : ""}
           ${person.bio ? `<span class="person-bio">${esc(person.bio)}</span>` : ""}
         </span>
-      </a>`).join("") || `<p class="muted">${people.length ? "Sen resultados." : "Aínda ninguén fixo público o seu perfil. Podes ser a primeira persoa desde «O meu espazo»."}</p>`;
+      </a>`).join("") || `<p class="muted">${!people.length
+        ? "Aínda ninguén fixo público o seu perfil. Podes ser a primeira persoa desde «O meu espazo»."
+        : zone ? "Ninguén desta zona ten perfil público aínda. Podes indicar a túa en «O meu espazo»." : "Sen resultados."}</p>`;
     view.querySelectorAll("[data-person-link]").forEach(link => link.addEventListener("click", () => { S.personHandle = link.dataset.personLink; }));
   };
+
   view.innerHTML = `
     <div class="page people-page">
-      <div class="page-head"><div><div class="eyebrow">Comunidade</div><h1>Persoas</h1>
-      <p>Quen decidiu amosar o seu perfil. Cada persoa elixe que comparte.</p></div></div>
-      <div class="toolbar"><div class="searchbox"><span>⌕</span><input id="peopleSearch" type="search" placeholder="Buscar por nome, @username, territorio..."></div></div>
+      <div class="page-head"><div><h1>Persoas</h1></div></div>
+      <div class="toolbar"><div class="searchbox"><span>⌕</span><input id="peopleSearch" type="search" placeholder="Nome, @username ou territorio..." value="${esc(S.peopleQuery || "")}"></div></div>
+      ${data && withZone ? `
+        <div class="people-zone">
+          <div class="toolbar"><div class="searchbox place-pick"><span>⌂</span><input id="peopleZone" type="search" placeholder="Zona: concello, comarca, parroquia..." value="${esc(S.peopleZone ? data.territoryById.get(S.peopleZone)?.nome || "" : "")}" autocomplete="off"></div></div>
+          <div id="peopleZoneResults" class="place-results" hidden></div>
+          <div id="zoneChips" class="zone-chips" role="group" aria-label="Filtrar por provincia"></div>
+        </div>` : ""}
+      <p id="peopleCount" class="muted people-count"></p>
       <div id="peopleCards" class="people-cards"></div>
     </div>`;
-  view.querySelector("#peopleSearch").addEventListener("input", event => paint(event.target.value));
-  paint("");
+  view.querySelector("#peopleSearch").addEventListener("input", event => { S.peopleQuery = event.target.value; paint(); });
+  const zoneInput = view.querySelector("#peopleZone");
+  if (zoneInput) {
+    const setZone = id => {
+      S.peopleZone = id;
+      zoneInput.value = id ? data.territoryById.get(id)?.nome || "" : "";
+      view.querySelector("#peopleZoneResults").hidden = true;
+      paintChips();
+      paint();
+    };
+    bindTerritoryPicker(zoneInput, view.querySelector("#peopleZoneResults"), {
+      data,
+      onPick: item => setZone(item.id),
+      onType: () => { if (S.peopleZone) { S.peopleZone = ""; paintChips(); paint(); } },
+    });
+    view.querySelector("#zoneChips").addEventListener("click", event => {
+      const chip = event.target.closest("[data-zone]");
+      if (chip) setZone(chip.dataset.zone);
+    });
+    paintChips();
+  }
+  paint();
 }
 
-async function renderPerson(view, handle) {
+async function renderPerson(view, handle, token = ++peopleToken) {
   view.innerHTML = `<div class="page people-page"><p class="muted">Cargando...</p></div>`;
   let result;
   try {
     result = await api(`/people/${encodeURIComponent(handle)}`, { cache: "default" });
   } catch (error) {
+    if (token !== peopleToken) return;
     view.innerHTML = `<div class="page people-page"><p><a class="btn" href="#" data-people-back>← Persoas</a></p><h1>Perfil non atopado</h1><p class="muted">${esc(error.message)}</p></div>`;
     bindBack(view);
     return;
@@ -711,9 +834,11 @@ async function renderPerson(view, handle) {
   let data = null;
   if (favorites) { try { data = await loadData(); } catch { /* sen lista */ } }
   const allPieces = await loadPieces();
+  if (token !== peopleToken) return;
   const personPieces = allPieces.filter(piece => piece.owner?.handle === person.handle && piece.status !== "hidden");
   const isSelf = loggedIn() && auth().user.profile?.handle === person.handle;
   if (loggedIn() && !isSelf && !S.followsEnabled && !S.followingList.length) await loadFollows();
+  if (token !== peopleToken) return;
   const following = S.following.has(person.handle);
 
   const piecesSection = personPieces.length
@@ -732,7 +857,7 @@ async function renderPerson(view, handle) {
       <p><a class="btn" href="#" data-people-back>← Persoas</a></p>
       <div class="page-head">
         <div class="profile-id">
-          ${avatarHtml(person.display_name, null)}
+          ${avatarHtml(person.display_name, null, person.handle)}
           <div>
             <div class="eyebrow">Perfil</div>
             <h1>${esc(person.display_name)}</h1>

@@ -1,5 +1,7 @@
-import { clearApiCache, getCoplas, getGeoLayer, getMedia, getMelodias, getPezas, getTerritorios, getTextAsset } from "./api.js";
-import { deTerritorio, escapeHtml, loaderHtml, melodyLabel, nl2br, normalizeText, setLoading, shortTerritoryName, slugify } from "./utils.js";
+import { clearApiCache, readApiJson, getPeople, getCoplas, getGeoLayer, getMedia, getMelodias, getPezas, getTerritorios, getTextAsset } from "./api.js";
+import { deTerritorio, escapeHtml, loaderHtml, melodyLabel, nl2br, normalizeText, setLoading, shortTerritoryName, slugify, territoryTypeLabel } from "./utils.js";
+import { avatarMarkup } from "./avatar.js";
+import { TRAIT_LIMITS, classifyInheritedTraits, classifyOwnTraits, countTraitItems, knownTraitCategories } from "./territory_traits.js";
 import { renderCoplaStory, STORY_THEMES, canShareFile, shareStory } from "./story.js";
 import { initPdfThumbs, browserNeedsPdfCanvas, renderPdfPages } from "./pdf_thumbs.js";
 import {
@@ -4912,6 +4914,8 @@ function updateTerritoryTabPanel(root = $("#view-territory")) {
 // Pinta (con carga progresiva) as listaxes longas da pestana aberta.
 function hydrateTerritoryLists(root = $("#view-territory")) {
   const territory = state.selectedTerritory;
+  const peopleBox = $("#territoryPeopleList", root);
+  if (peopleBox) hydrateTerritoryPeople(peopleBox, territory);
   if ($("#territoryCoplaList", root)) updateTerritoryCoplaResults(root);
   const mediaList = $("#territoryMediaList", root);
   if (mediaList) {
@@ -5034,6 +5038,7 @@ function renderTerritoryView() {
     ["pieces", "Pezas"],
     ["melodies", "Melodías"],
     ["media", "Media"],
+    ["people", "Persoas"],
     ["summary", "Resumo"],
   ];
   if (!tabs.some(([key]) => key === state.territoryTab)) state.territoryTab = "coplas";
@@ -5090,126 +5095,242 @@ function renderTerritoryView() {
   hydrateSilhouettes(view);
 }
 
-function territoryOwnTraits(territory) {
-  return territory ? (territory.traits || []) : [];
+function traitPlural(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
-function territoryInheritedTraits(territory) {
-  const scopeIds = territory
-    ? getDescendantIds(territory, state.territorios).filter(id => id !== territory.id)
-    : state.territorios.map(item => item.id);
-  const rows = [];
-  scopeIds.forEach(id => {
-    const item = state.territorios.find(candidate => candidate.id === id);
-    if (!item || !(item.traits || []).length) return;
-    item.traits.forEach(trait => rows.push({ territory: item, trait }));
-  });
-  return rows;
+function ownTraitRowMarkup(item) {
+  const source = item.sources[0];
+  return `
+    <li class="trait-row" data-trait-row="${source.traitId}">
+      <div class="trait-main">
+        <strong>${escapeHtml(item.trait)}</strong>
+        ${source.notes ? `<p class="trait-note">${nl2br(escapeHtml(source.notes))}</p>` : ""}
+      </div>
+      <div class="trait-actions">
+        <button type="button" class="link-btn" data-edit-trait="${source.traitId}">Editar</button>
+        <button type="button" class="link-btn danger" data-remove-trait="${source.traitId}" aria-label="Eliminar o trazo ${escapeHtml(item.trait)}">Eliminar</button>
+      </div>
+    </li>`;
 }
 
-function traitChipMarkup(trait, extra = "") {
-  return `<span class="tag trait-chip">${escapeHtml(trait.trait)}${trait.category ? ` <small>${escapeHtml(trait.category)}</small>` : ""}${extra}</span>`;
+function inheritedSourceChip(source) {
+  return `<button type="button" class="trait-source level-${escapeHtml(source.tipo)}" data-territory-id="${escapeHtml(source.id)}" title="Ver ${escapeHtml(source.nome)}">${escapeHtml(shortTerritoryName(source.nome))}</button>`;
+}
+
+function inheritedTraitRowMarkup(item) {
+  const visible = item.sources.slice(0, 6);
+  const rest = item.sources.slice(6);
+  const notes = item.sources.filter(source => source.notes);
+  const haystack = normalizeText([item.trait, ...item.sources.map(source => source.nome), ...notes.map(source => source.notes)].join(" "));
+  return `
+    <li class="trait-row" data-trait-text="${escapeHtml(haystack)}">
+      <div class="trait-main">
+        <strong>${escapeHtml(item.trait)}</strong>
+        ${item.sources.length > 1 ? `<span class="trait-count">${item.sources.length} lugares</span>` : ""}
+        <div class="trait-sources">
+          ${visible.map(inheritedSourceChip).join("")}
+          ${rest.length ? `<details class="trait-more"><summary>+${rest.length} máis</summary><div class="trait-sources">${rest.map(inheritedSourceChip).join("")}</div></details>` : ""}
+        </div>
+        ${notes.map(source => `<p class="trait-note">${item.sources.length > 1 ? `<b>${escapeHtml(shortTerritoryName(source.nome))}:</b> ` : ""}${escapeHtml(source.notes)}</p>`).join("")}
+      </div>
+    </li>`;
 }
 
 function territorySummaryCard(territory, ctx) {
-  const ownTraits = territoryOwnTraits(territory);
-  const inherited = territoryInheritedTraits(territory);
-  const grouped = new Map();
-  inherited.forEach(({ territory: source, trait }) => {
-    if (!grouped.has(source.id)) grouped.set(source.id, { territory: source, traits: [] });
-    grouped.get(source.id).traits.push(trait);
-  });
+  const own = classifyOwnTraits(territory);
+  const inherited = classifyInheritedTraits(territory, state.territorios);
+  const inheritedCount = countTraitItems(inherited);
+  const keepOpen = Boolean(state.traitFormKeepOpen);
+  const lastCategory = state.traitFormKeepOpen ? (state.traitLastCategory || "") : "";
+  state.traitFormKeepOpen = false;
+  const name = territory ? territory.nome : "Galiza";
+  const categories = knownTraitCategories(state.territorios);
   return `
-    <section class="panel territory-identity-card">
+    <section class="panel territory-identity-card" id="territoryIdentity">
       <div class="section-title">
         <h2>Identidade e trazos</h2>
         ${territory ? `<button class="btn" type="button" id="addTerritoryTrait">+ Engadir trazo</button>` : ""}
       </div>
+      <p class="muted identity-intro">${territory
+        ? `Notas sobre ${escapeHtml(name)}: que se toca, que se baila, como se fala... Os territorios superiores herdan e clasifican o que se anota aquí.`
+        : "Os trazos de todos os territorios de Galiza, clasificados por categoría."}</p>
       ${territory ? `
-        <div id="territoryTraitForm" class="territory-trait-form" hidden>
-          <input id="territoryTraitInput" type="text" placeholder="Trazo (ex.: tócase lata, báilase maneo, gheada...)">
-          <input id="territoryTraitCategory" type="text" placeholder="Categoría opcional (instrumento, baile, fala...)">
+        <form id="territoryTraitForm" class="territory-trait-form" ${keepOpen ? "" : "hidden"} novalidate>
+          <h3 id="territoryTraitFormTitle">Novo trazo</h3>
+          <input type="hidden" id="territoryTraitId" value="">
+          <label class="field"><span>Trazo</span>
+            <input id="territoryTraitInput" type="text" maxlength="${TRAIT_LIMITS.trait}" autocomplete="off" placeholder="Ex.: tócase a pandeireta de man, báilase a muiñeira de catro...">
+          </label>
+          <label class="field"><span>Categoría <small class="muted">(opcional)</small></span>
+            <input id="territoryTraitCategory" type="text" maxlength="${TRAIT_LIMITS.category}" autocomplete="off" value="${escapeHtml(lastCategory)}" placeholder="Elixe unha ou escribe outra">
+          </label>
+          <div class="trait-cat-picks" role="group" aria-label="Categorías suxeridas">
+            ${categories.map(label => `<button type="button" class="chip" data-trait-cat="${escapeHtml(label)}">${escapeHtml(label)}</button>`).join("")}
+          </div>
+          <label class="field"><span>Nota <small class="muted">(opcional)</small></span>
+            <textarea id="territoryTraitNotes" rows="3" maxlength="${TRAIT_LIMITS.notes}" placeholder="Detalles, fontes, matices..."></textarea>
+          </label>
           <div class="form-actions">
-            <button class="btn primary" type="button" id="saveTerritoryTrait">Gardar trazo</button>
+            <button class="btn primary" type="submit" id="saveTerritoryTrait">Gardar trazo</button>
             <button class="btn" type="button" id="cancelTerritoryTrait">Cancelar</button>
           </div>
-          <p id="territoryTraitFeedback" class="muted"></p>
+          <p id="territoryTraitFeedback" class="muted" role="status" aria-live="polite"></p>
+        </form>
+      ` : ""}
+      ${territory ? `
+        <div class="territory-trait-own">
+          <h3>${escapeHtml(name)} <span class="muted">\\ ${traitPlural(countTraitItems(own), "trazo", "trazos")}</span></h3>
+          ${own.length
+            ? own.map(group => `
+                <div class="trait-group" data-trait-group="${escapeHtml(group.key)}">
+                  <h4>${escapeHtml(group.label)}</h4>
+                  <ul class="trait-list">${group.items.map(ownTraitRowMarkup).join("")}</ul>
+                </div>`).join("")
+            : `<p class="muted">Aínda non hai trazos documentados directamente para este territorio.</p>`}
         </div>
       ` : ""}
-      <div class="territory-trait-own">
-        ${ownTraits.length
-          ? `<div class="trait-chips">${ownTraits.map(trait => traitChipMarkup(trait, `<button type="button" data-remove-trait="${trait.id}" aria-label="Eliminar trazo">×</button>`)).join("")}</div>`
-          : `<p class="muted">${territory ? "Aínda non hai trazos documentados directamente para este territorio." : "Aínda non hai trazos documentados para Galiza no seu conxunto."}</p>`}
+      <div class="territory-trait-inherited">
+        <div class="trait-inherited-head">
+          ${inheritedCount || !territory ? `<h3>${territory ? "Herdado dos territorios de dentro" : "Trazos de Galiza"} <span class="muted">\\ ${traitPlural(inheritedCount, "trazo", "trazos")}</span></h3>` : ""}
+          ${inheritedCount > 12 ? `<div class="searchbox"><span>⌕</span><input id="territoryTraitFilter" type="search" placeholder="Filtrar trazos ou lugares..." aria-label="Filtrar trazos herdados"></div>` : ""}
+        </div>
+        ${inherited.length
+          ? inherited.map(group => `
+              <details class="trait-cat" data-trait-cat-group="${escapeHtml(group.key)}" ${inheritedCount <= 30 ? "open" : ""}>
+                <summary><span>${escapeHtml(group.label)}</span><span class="trait-cat-count">${group.items.length}</span></summary>
+                <ul class="trait-list">${group.items.map(inheritedTraitRowMarkup).join("")}</ul>
+              </details>`).join("")
+          : `<p class="muted">${territory ? "Os territorios de dentro aínda non teñen trazos." : "Aínda non hai trazos documentados."}</p>`}
+        <p class="muted trait-filter-empty" hidden>Ningún trazo coincide.</p>
       </div>
-      ${grouped.size ? `
-        <div class="territory-trait-inherited">
-          <h3>Herdado dos subterritorios</h3>
-          <div class="trait-inherited-list">
-            ${Array.from(grouped.values()).map(group => `
-              <div class="trait-inherited-group">
-                <strong>${escapeHtml(group.territory.nome)}</strong>
-                <div class="trait-chips">${group.traits.map(trait => traitChipMarkup(trait)).join("")}</div>
-              </div>
-            `).join("")}
-          </div>
-        </div>
-      ` : ""}
     </section>
   `;
 }
 
 function bindTerritorySummaryCard(root = $("#view-territory")) {
-  const form = $("#territoryTraitForm", root);
-  $("#addTerritoryTrait", root)?.addEventListener("click", () => { if (form) form.hidden = !form.hidden; });
-  $("#cancelTerritoryTrait", root)?.addEventListener("click", () => { if (form) form.hidden = true; });
-  $("#saveTerritoryTrait", root)?.addEventListener("click", () => saveTerritoryTrait(root));
-  all("[data-remove-trait]", root).forEach(button => button.addEventListener("click", () => removeTerritoryTrait(Number(button.dataset.removeTrait), root)));
+  const card = $("#territoryIdentity", root);
+  if (!card) return;
+  const form = $("#territoryTraitForm", card);
+  const showForm = (trait = null) => {
+    if (!form) return;
+    form.hidden = false;
+    $("#territoryTraitFormTitle", form).textContent = trait ? "Editar trazo" : "Novo trazo";
+    $("#territoryTraitId", form).value = trait ? String(trait.id) : "";
+    $("#territoryTraitInput", form).value = trait ? trait.trait : "";
+    $("#territoryTraitCategory", form).value = trait ? (trait.category || "") : ($("#territoryTraitCategory", form).value || "");
+    $("#territoryTraitNotes", form).value = trait ? (trait.notes || "") : "";
+    $("#territoryTraitFeedback", form).textContent = "";
+    syncTraitCategoryPicks(form);
+    $("#territoryTraitInput", form).focus();
+  };
+  $("#addTerritoryTrait", card)?.addEventListener("click", () => {
+    if (form && !form.hidden && !$("#territoryTraitId", form).value) { form.hidden = true; return; }
+    showForm();
+  });
+  $("#cancelTerritoryTrait", card)?.addEventListener("click", () => { if (form) form.hidden = true; });
+  form?.addEventListener("submit", event => { event.preventDefault(); saveTerritoryTrait(); });
+  $("#territoryTraitCategory", card)?.addEventListener("input", () => syncTraitCategoryPicks(form));
+  all("[data-trait-cat]", card).forEach(button => button.addEventListener("click", () => {
+    const input = $("#territoryTraitCategory", form);
+    input.value = input.value.trim() === button.dataset.traitCat ? "" : button.dataset.traitCat;
+    syncTraitCategoryPicks(form);
+  }));
+  all("[data-edit-trait]", card).forEach(button => button.addEventListener("click", () => {
+    const trait = (state.selectedTerritory?.traits || []).find(item => item.id === Number(button.dataset.editTrait));
+    if (trait) showForm(trait);
+  }));
+  all("[data-remove-trait]", card).forEach(button => button.addEventListener("click", () => removeTerritoryTrait(Number(button.dataset.removeTrait))));
+  const filter = $("#territoryTraitFilter", card);
+  filter?.addEventListener("input", () => {
+    const query = normalizeText(filter.value);
+    let shown = 0;
+    all(".territory-trait-inherited details.trait-cat", card).forEach(group => {
+      let groupShown = 0;
+      all("[data-trait-text]", group).forEach(row => {
+        const match = !query || row.dataset.traitText.includes(query);
+        row.hidden = !match;
+        if (match) groupShown += 1;
+      });
+      group.hidden = groupShown === 0;
+      if (query && groupShown) group.open = true;
+      shown += groupShown;
+    });
+    $(".trait-filter-empty", card).hidden = shown > 0;
+  });
+}
+
+function syncTraitCategoryPicks(form) {
+  if (!form) return;
+  const current = normalizeText($("#territoryTraitCategory", form)?.value || "");
+  all("[data-trait-cat]", form).forEach(button => {
+    const active = Boolean(current) && normalizeText(button.dataset.traitCat) === current;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+async function postTerritoryTraits(traits, fallbackMessage) {
+  const response = await fetch("../api/territory-traits", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ traits }),
+  });
+  return readApiJson(response, fallbackMessage);
+}
+
+async function refreshTerritoriesAfterTraits(root) {
+  clearApiCache();
+  state.territorios = await getTerritorios();
+  if (state.selectedTerritory) state.selectedTerritory = state.territorios.find(item => item.id === state.selectedTerritory.id) || state.selectedTerritory;
+  updateTerritoryTabPanel(root);
 }
 
 async function saveTerritoryTrait(root = $("#view-territory")) {
   const territory = state.selectedTerritory;
+  const form = $("#territoryTraitForm", root);
   const feedback = $("#territoryTraitFeedback", root);
-  const input = $("#territoryTraitInput", root);
-  const categoryInput = $("#territoryTraitCategory", root);
-  if (!territory) return;
-  const traitText = input?.value.trim();
+  if (!territory || !form) return;
+  const traitText = $("#territoryTraitInput", form).value.trim();
+  const category = $("#territoryTraitCategory", form).value.trim();
+  const notes = $("#territoryTraitNotes", form).value.trim();
+  const editingId = Number($("#territoryTraitId", form).value) || null;
   if (!traitText) {
-    if (feedback) feedback.textContent = "Escribe o trazo antes de gardar.";
+    feedback.textContent = "Escribe o trazo antes de gardar.";
+    $("#territoryTraitInput", form).focus();
     return;
   }
+  const duplicate = (territory.traits || []).some(item => item.id !== editingId && normalizeText(item.trait) === normalizeText(traitText));
+  if (duplicate) {
+    feedback.textContent = "Ese trazo xa está neste territorio.";
+    return;
+  }
+  const button = $("#saveTerritoryTrait", form);
+  button.disabled = true;
   setLoading(feedback, "Gardando");
   try {
-    const response = await fetch("../api/territory-traits", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ traits: [{ territory_id: territory.id, trait: traitText, category: categoryInput?.value.trim() || null }] }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Non se puido gardar o trazo.");
-    clearApiCache();
-    state.territorios = await getTerritorios();
-    state.selectedTerritory = state.territorios.find(item => item.id === territory.id) || state.selectedTerritory;
-    updateTerritoryTabPanel(root);
+    await postTerritoryTraits([{ ...(editingId ? { id: editingId } : {}), territory_id: territory.id, trait: traitText, category: category || null, notes: notes || null }], "Non se puido gardar o trazo.");
+    // Ao engadir deixase o formulario aberto (e a categoría posta) para anotar varios seguidos.
+    state.traitFormKeepOpen = !editingId;
+    state.traitLastCategory = category;
+    await refreshTerritoriesAfterTraits(root);
+    $("#territoryTraitInput", root)?.focus();
   } catch (error) {
-    if (feedback) feedback.textContent = error.message;
+    feedback.textContent = error.message;
+    button.disabled = false;
   }
 }
 
 async function removeTerritoryTrait(traitId, root = $("#view-territory")) {
+  const trait = (state.selectedTerritory?.traits || []).find(item => item.id === traitId);
+  if (!window.confirm(`Vas eliminar o trazo «${trait?.trait || ""}». ¿Continuar?`)) return;
   try {
-    const response = await fetch("../api/territory-traits", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ traits: [{ id: traitId, _delete: true }] }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Non se puido eliminar o trazo.");
-    clearApiCache();
-    state.territorios = await getTerritorios();
-    if (state.selectedTerritory) state.selectedTerritory = state.territorios.find(item => item.id === state.selectedTerritory.id) || null;
-    updateTerritoryTabPanel(root);
+    await postTerritoryTraits([{ id: traitId, _delete: true }], "Non se puido eliminar o trazo.");
+    await refreshTerritoriesAfterTraits(root);
   } catch (error) {
-    console.error(error);
+    const feedback = $("#territoryTraitFeedback", root);
+    if (feedback) { $("#territoryTraitForm", root).hidden = false; feedback.textContent = error.message; }
+    else window.alert(error.message);
   }
 }
 
@@ -5219,6 +5340,43 @@ function territoryMediaItems(territory, ctx) {
   const scopeMelodies = new Set(ctx.melodias.map(melody => String(melody.id)));
   return ctx.media.filter(item => ["documental", "mixed"].includes(mediaRole(item))
     || (item.links || []).some(link => link.entity_type === "melody" && scopeMelodies.has(String(link.entity_id))));
+}
+
+// Persoas: quen indicou no seu perfil público unha zona dentro deste territorio (ou nos seus subterritorios).
+function territoryPeopleMarkup(territory) {
+  return `
+    <div class="section-title"><h2>${territory ? `Persoas de ${escapeHtml(shortTerritoryName(territory.nome))}` : "Persoas de Galiza"}</h2><span class="muted" id="territoryPeopleCount"></span></div>
+    <div id="territoryPeopleList" class="people-cards"><p class="muted">Cargando...</p></div>
+  `;
+}
+
+async function hydrateTerritoryPeople(box, territory) {
+  const token = (state.territoryPeopleToken = (state.territoryPeopleToken || 0) + 1);
+  const people = await getPeople();
+  if (token !== state.territoryPeopleToken || !box.isConnected) return;
+  const scope = territory ? new Set(getDescendantIds(territory, state.territorios)) : null;
+  const shown = people.filter(person => person.territory_id && (!scope || scope.has(person.territory_id)));
+  const count = $("#territoryPeopleCount");
+  if (count) count.textContent = shown.length ? `${shown.length} ${shown.length === 1 ? "persoa" : "persoas"}` : "";
+  if (!shown.length) {
+    box.innerHTML = `<p class="muted">${territory ? "Ninguén con perfil público indicou aínda unha zona aquí." : "Ninguén con perfil público indicou aínda a súa zona."} Podes poñer a túa en «O meu espazo».</p>`;
+    return;
+  }
+  const exact = territory ? territory.id : "";
+  box.innerHTML = shown.map(person => {
+    const home = state.territorios.find(item => item.id === person.territory_id);
+    const place = home ? shortTerritoryName(home.nome) : "";
+    return `
+      <a class="person-card" href="#/persoa/${escapeHtml(person.handle)}">
+        ${avatarMarkup(person.display_name, person.handle, { large: true })}
+        <span class="person-card-body">
+          <strong>${escapeHtml(person.display_name)}</strong>
+          <span class="person-handle">@${escapeHtml(person.handle)}</span>
+          ${place ? `<span class="person-place">${escapeHtml(place)}${home && home.id !== exact && territory ? ` \\ ${escapeHtml(territoryTypeLabel(home.tipo))}` : ""}</span>` : ""}
+          ${person.bio ? `<span class="person-bio">${escapeHtml(person.bio)}</span>` : ""}
+        </span>
+      </a>`;
+  }).join("");
 }
 
 function renderTerritoryTab(territory, ctx) {
@@ -5244,8 +5402,10 @@ function renderTerritoryTab(territory, ctx) {
         <div id="territoryMediaList" class="media-grid"></div>
       `;
     }
+    if (state.territoryTab === "people") return territoryPeopleMarkup(null);
     return territorySummaryCard(null, ctx);
   }
+  if (state.territoryTab === "people") return territoryPeopleMarkup(territory);
   if (state.territoryTab === "coplas") {
     const tq = normalizeText(state.territoryCoplaQuery || "");
     const filteredTerritoryCoplas = ctx.coplas.filter(copla => !tq || normalizeText(coplaHaystack(copla)).includes(tq));
@@ -6487,11 +6647,16 @@ function startEditCopla(coplaId) {
   // Unha copla-variante edítase desde a súa principal (a variante é un dos seus textos)
   if (copla?.variant_of) copla = state.coplas.find(item => Number(item.id) === Number(copla.variant_of)) || copla;
   if (!copla) return;
+  const drawer = $("#coplaDrawer");
   state.submitReturnView = {
     view: state.view,
     selectedTerritory: state.selectedTerritory,
     coplaQuery: state.coplaQuery,
     coplaStateFilter: state.coplaStateFilter,
+    territoryTab: state.territoryTab,
+    // Se a edición vén da ficha lateral dunha copla, ao cancelar volve abrirse (coa mesma navegación).
+    drawerCoplaId: drawer && !drawer.hidden ? Number(coplaId) : null,
+    drawerIds: coplaNav ? [...coplaNav.ids] : null,
   };
   state.submitEditingId = copla.id;
   state.submitEditingSnapshot = copla;
@@ -6503,14 +6668,26 @@ function startEditCopla(coplaId) {
   setView("submit");
 }
 
+// Cancelar unha edición devolve a onde estabamos (a mesma vista, o mesmo territorio e, se
+// había unha ficha aberta, a ficha), non ao formulario de «Nova copla».
 function cancelEditCopla() {
+  const returnView = state.submitReturnView;
   state.submitEditingId = null;
   state.submitEditingSnapshot = null;
   state.submitReturnView = null;
   state.submitTerritoryIds = [];
   state.submitTerritoryId = "";
   state.submitGeneral = false;
-  renderSubmitView();
+  if (!returnView) {
+    setView("coplas");
+    return;
+  }
+  state.selectedTerritory = returnView.selectedTerritory;
+  state.coplaQuery = returnView.coplaQuery;
+  state.coplaStateFilter = returnView.coplaStateFilter;
+  if (returnView.territoryTab) state.territoryTab = returnView.territoryTab;
+  setView(returnView.view);
+  if (returnView.drawerCoplaId) openCoplaDrawer(returnView.drawerCoplaId, returnView.drawerIds ? { ids: returnView.drawerIds } : { keepNav: true });
 }
 
 async function fetchMediaMetadata(options = {}) {

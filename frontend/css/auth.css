@@ -23,7 +23,8 @@ body:not([data-can-edit="true"]) :is(
   #toggleCoplaSelect,
   #coplaBatchBar,
   #addTerritoryTrait,
-  [data-remove-trait]
+  #territoryTraitForm,
+  .trait-actions
 ) {
   display: none !important;
 }
@@ -231,24 +232,117 @@ body:not([data-can-edit="true"]) :is(
   margin: 2px 0 0;
 }
 
+.roles-panel {
+  width: min(760px, 100%);
+  padding-top: 20px;
+}
+
+.roles-intro {
+  margin: 8px 0 14px;
+  font-size: 13px;
+}
+
+/* Buscador e filtros fixos arriba mentres se despraza a lista */
+.roles-tools {
+  position: sticky;
+  top: -24px;
+  z-index: 3;
+  display: grid;
+  gap: 10px;
+  padding: 10px 0 12px;
+  margin: 0 0 4px;
+  background: var(--float-bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.roles-tools input[type="search"] {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 16px;
+  background: var(--tint);
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.roles-tools input[type="search"]:focus {
+  background: var(--float-bg);
+  border-color: var(--accent);
+  outline: 0;
+}
+
+.roles-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.roles-filter {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.roles-filter span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.roles-filter:hover {
+  background: var(--tint);
+}
+
+.roles-filter.active {
+  color: var(--panel);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.roles-filter.active span {
+  color: inherit;
+  opacity: 0.75;
+}
+
 .people-list {
   display: grid;
-  gap: 4px;
-  margin-top: 8px;
+  gap: 0;
+  margin-top: 4px;
 }
 
 .people-row {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
-  padding: 10px 0;
+  padding: 12px 0;
   border-top: 1px solid var(--line);
+}
+
+.people-row:first-child {
+  border-top: 0;
+}
+
+.people-row .account-avatar {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
 }
 
 .people-who {
   display: grid;
   flex: 1;
   min-width: 0;
+  line-height: 1.35;
 }
 
 .people-who strong,
@@ -263,7 +357,136 @@ body:not([data-can-edit="true"]) :is(
   color: var(--muted);
 }
 
-.people-row select {
-  width: auto;
-  min-width: 110px;
+.people-who .people-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: normal;
+}
+
+.roles-new {
+  display: inline-block;
+  padding: 1px 7px;
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  vertical-align: 1px;
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+/* Selector de rol: tres opcións nunha pílula, a activa chea */
+.role-seg {
+  display: inline-flex;
+  flex: none;
+  padding: 3px;
+  background: var(--tint);
+  border-radius: 999px;
+}
+
+.role-seg.is-saving {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.role-opt {
+  min-height: 32px;
+  padding: 0 13px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.role-opt:hover:not(:disabled):not(.active) {
+  color: var(--ink);
+  background: var(--tint-strong);
+}
+
+.role-opt.active {
+  font-weight: 500;
+  color: var(--panel);
+  background: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.role-opt.active.is-guia {
+  background: var(--level-con);
+}
+
+.role-opt.active.is-admin {
+  background: var(--accent);
+}
+
+.role-opt:disabled:not(.active) {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.role-opt:focus-visible,
+.roles-filter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.roles-empty {
+  padding: 24px 0;
+  text-align: center;
+}
+
+.roles-feedback {
+  min-height: 1.4em;
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+@media (max-width: 620px) {
+  .roles-panel {
+    padding: 18px 16px;
+  }
+
+  .roles-tools {
+    top: -18px;
+  }
+
+  .people-row {
+    flex-wrap: wrap;
+    gap: 10px 12px;
+  }
+
+  .people-who {
+    flex: 1 1 calc(100% - 60px);
+  }
+
+  .role-seg {
+    width: 100%;
+  }
+
+  .role-opt {
+    flex: 1;
+    min-height: 40px;
+  }
+
+  .roles-filter {
+    min-height: 40px;
+  }
+}
+
+/* Avatar «mapa»: a letra é o contorno dun territorio sobre unha cor da marca */
+.account-avatar.is-map {
+  background: transparent;
+}
+
+.account-avatar.is-map svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }

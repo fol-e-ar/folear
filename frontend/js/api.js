@@ -154,7 +154,37 @@ export async function getMelodias() {
   }
 }
 
+// Persoas con perfil público (directorio). Sen contas ou sen migración, lista baleira.
+let peoplePromise = null;
+export function getPeople() {
+  if (!peoplePromise) {
+    peoplePromise = getJsonOrNull("../api/people").then(data => data?.people || []);
+  }
+  return peoplePromise;
+}
+
+// Le a resposta dunha escritura sen petar se o corpo vén baleiro ou non é JSON
+// (un 502 de Cloudflare, un 404 sen corpo...): devolve sempre un obxecto.
+export async function readApiJson(response, fallbackMessage = "Non se puido completar a acción.") {
+  let data = {};
+  try {
+    const text = await response.text();
+    if (text.trim()) data = JSON.parse(text);
+  } catch {
+    data = {};
+  }
+  if (!data || typeof data !== "object") data = {};
+  if (!response.ok) {
+    const detail = data.error || (response.status === 404 ? "O servidor non coñece esta acción (¿está desplegada a última versión?)." : response.status >= 500 ? "O servidor non respondeu como debía; téntao de novo." : fallbackMessage);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
 export function clearApiCache() {
+  peoplePromise = null;
   cache.clear();
   cacheVersion += 1;
 }

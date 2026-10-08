@@ -54,7 +54,16 @@ function buttonFor(input) {
   return button;
 }
 
+// O botón é `position: absolute`: o pai do campo ten que ser o seu bloque contedor. Se non, o botón
+// colócase respecto do documento e, ao desprazar a páxina (ou un panel con scroll), queda parado
+// no medio doutra cousa (por exemplo, enriba da lista de resultados) en vez de seguir o campo.
+function ensureHost(input) {
+  const host = input.parentElement;
+  if (host && getComputedStyle(host).position === "static") host.style.position = "relative";
+}
+
 function place(input, button) {
+  ensureHost(input);
   const height = Math.min(HIT, input.offsetHeight); // nunca máis alto ca o campo
   const left = input.offsetLeft + input.offsetWidth - HIT - EDGE;
   const top = input.offsetTop + (input.offsetHeight - height) / 2;

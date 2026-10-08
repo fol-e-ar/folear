@@ -361,6 +361,11 @@ def sync_variant_coplas(conn: sqlite3.Connection, parent_id: int) -> None:
             conn.execute("INSERT OR IGNORE INTO copla_tags (copla_id, tag_id) VALUES (?, ?)", (child_id, tag_id))
 
 
+TRAIT_MAX = 120
+TRAIT_CATEGORY_MAX = 40
+TRAIT_NOTES_MAX = 600
+
+
 def validate_territory_traits_payload(payload, known_territories: set[str]) -> list[str]:
     errors: list[str] = []
     if not isinstance(payload, dict) or not isinstance(payload.get("traits"), list):
@@ -383,12 +388,18 @@ def validate_territory_traits_payload(payload, known_territories: set[str]) -> l
         trait_name = trait.get("trait")
         if not isinstance(trait_name, str) or not trait_name.strip():
             errors.append(f"Trazo #{index}: falta 'trait' ou está baleiro.")
+        elif len(trait_name.strip()) > TRAIT_MAX:
+            errors.append(f"Trazo #{index}: o trazo pasa de {TRAIT_MAX} caracteres.")
         category = trait.get("category")
         if category is not None and not isinstance(category, str):
             errors.append(f"Trazo #{index}: 'category' debe ser string.")
+        elif category and len(category.strip()) > TRAIT_CATEGORY_MAX:
+            errors.append(f"Trazo #{index}: a categoría pasa de {TRAIT_CATEGORY_MAX} caracteres.")
         notes = trait.get("notes")
         if notes is not None and not isinstance(notes, str):
             errors.append(f"Trazo #{index}: 'notes' debe ser string.")
+        elif notes and len(notes.strip()) > TRAIT_NOTES_MAX:
+            errors.append(f"Trazo #{index}: a nota pasa de {TRAIT_NOTES_MAX} caracteres.")
     return errors
 
 
@@ -411,6 +422,13 @@ def import_territory_traits(conn: sqlite3.Connection, payload) -> list[int]:
         trait_name = trait["trait"].strip()
         category = (trait.get("category") or "").strip() or None
         notes = (trait.get("notes") or "").strip() or None
+
+        clash = conn.execute(
+            "SELECT id FROM territory_traits WHERE territory_id = ? AND lower(trait) = lower(?) AND id IS NOT ?",
+            (territory_id, trait_name, trait_id if isinstance(trait_id, int) else None),
+        ).fetchone()
+        if clash:
+            raise ValueError(f"«{trait_name}» xa está nese territorio.")
 
         if isinstance(trait_id, int):
             conn.execute(

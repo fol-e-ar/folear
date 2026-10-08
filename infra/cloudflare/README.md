@@ -21,7 +21,7 @@ infra/cloudflare/
 ## Rutas principais do Worker
 
 - Lectura pública: `GET /data/exports/{territorios,coplas,media,melodias,pezas}/*.json` (caché por versión con ETag), `GET /api/territories`, `GET /api/coplas`, `GET /api/people`, `GET /api/link-preview`, `GET /api/pdf-proxy` (só para PDFs rexistrados na media).
-- Escritura do arquivo (guía/admin): `POST|DELETE /api/coplas`, `/api/media`, `/api/melodies`, `POST /api/territory-traits`.
+- Escritura do arquivo (guía/admin): `POST|DELETE /api/coplas`, `/api/media`, `/api/melodies`, `POST /api/territory-traits` (corpo `{"traits":[{id?, territory_id, trait, category?, notes?} | {id, _delete:true}]}`; máx. 50 por petición, trazo ≤120, categoría ≤40, nota ≤600; 409 se o trazo xa está no territorio). Non precisa migración nova: usa `territory_traits` (0001).
 - Conta (calquera rol): `/api/auth/*`, `/api/me/*` (perfil, favoritos, seguimentos), `/api/pieces*` (pezas persoais).
 - PDF (con sesión): `GET /api/pieces/:id/pdf`, `POST /api/pdf/piece-draft`, `GET /api/territories/:id/pdf`.
 - Todo o demais cae no binding `ASSETS` (`frontend/`).
