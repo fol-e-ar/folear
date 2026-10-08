@@ -1898,6 +1898,7 @@ function updateMapCard() {
   const ctx = placeContext(territory);
   const clearButton = $("#clearTerritory");
   if (clearButton) clearButton.hidden = !territory;
+  $(".map-card")?.classList.toggle("has-territory", Boolean(territory));
   const title = $("#mapCardTitle");
   const label = $("#mapCardLabel");
   const coplaCount = $("#mapCoplaCount");
@@ -7122,7 +7123,6 @@ function bindGlobalEvents() {
   all("[data-map-action]").forEach(button => button.addEventListener("click", () => {
     setView(button.dataset.mapAction === "territory" ? "territory" : "coplas");
   }));
-  if (window.matchMedia?.("(max-width: 920px)").matches) setMapCardCollapsed(true);
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") {
       if (state.melodyModal) {

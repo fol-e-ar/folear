@@ -6532,3 +6532,61 @@ input[type="search"][list].has-clear::-webkit-calendar-picker-indicator {
 .btn.save-piece[disabled] {
   box-shadow: inset 0 0 0 1.5px var(--line-strong);
 }
+
+/* Mapa en móbil: ao tocar un territorio aparece unha folla compacta enriba da barra inferior,
+   co nome e os botóns para abrilo. Sen territorio escollido non se ve nada. */
+@media (max-width: 920px) {
+  .map-card {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 76px);
+    left: max(12px, env(safe-area-inset-left));
+    display: none;
+    width: auto;
+    max-width: 520px;
+    padding: 14px 16px 16px;
+    margin: 0 auto;
+    border-radius: 22px;
+  }
+
+  .map-card.has-territory {
+    display: block;
+  }
+
+  .map-card .map-card-toggle,
+  .map-card .map-card-sil,
+  .map-card .stats {
+    display: none;
+  }
+
+  .map-card h2,
+  .map-card.is-collapsed h2 {
+    padding-right: 36px;
+    margin: 2px 0 10px;
+    font-size: 19px;
+  }
+
+  .map-card.is-collapsed .eyebrow,
+  .map-card.is-collapsed .map-actions {
+    display: flex;
+  }
+
+  .map-card.is-collapsed .eyebrow {
+    display: block;
+  }
+
+  .map-card .map-actions {
+    margin-top: 0;
+  }
+
+  .map-card .map-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+}
+
+/* En táctil o nome xa sae na tarxeta: o tooltip de Leaflet quedaría preso sobre o mapa. */
+@media (hover: none) {
+  .leaflet-tooltip {
+    display: none;
+  }
+}
