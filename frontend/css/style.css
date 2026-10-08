@@ -6574,6 +6574,39 @@ input[type="search"][list].has-clear::-webkit-calendar-picker-indicator {
     display: block;
   }
 
+  .map-card h2,
+  .map-card.is-collapsed h2 {
+    padding-right: 100px;
+  }
+
+  /* Gardar (estrela) en círculo, ao lado do ×: mesmo tamaño e aliñación que el. */
+  .map-card .fav-row {
+    position: absolute;
+    top: 10px;
+    right: 56px;
+    margin: 0;
+  }
+
+  .map-card .fav-row .fav-btn.has-label {
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    padding: 0;
+    background: var(--tint);
+    border: 0;
+    border-radius: 50%;
+  }
+
+  .map-card .fav-row .fav-btn .fav-label {
+    display: none;
+  }
+
+  .map-card .fav-row .fav-btn > span:first-child {
+    font-size: 22px;
+    line-height: 1;
+  }
+
   .map-card .map-actions {
     margin-top: 0;
   }

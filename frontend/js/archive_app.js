@@ -1785,7 +1785,8 @@ function setView(viewName, { push = true } = {}) {
   }
 }
 
-function clearTerritory() {
+// recenter=false: só pecha a tarxeta e deixa o mapa onde a persoa estaba explorando.
+function clearTerritory({ recenter = true } = {}) {
   state.selectedTerritory = null;
   state.selectedCoplaId = null;
   state.territoryTab = "coplas";
@@ -1797,7 +1798,7 @@ function clearTerritory() {
     const found = findTerritoryByFeature(layer.feature, state.layerType, state.territorios);
     layer.setStyle(styleFeature(false, Boolean(layer.feature?.properties?.part), territoryHasCoplas(found)));
   });
-  if (state.layer) {
+  if (recenter && state.layer) {
     try {
       state.map.fitBounds(state.layer.getBounds(), { padding: [24, 24] });
     } catch {}
@@ -7101,8 +7102,9 @@ function bindGlobalEvents() {
     if (label) label.textContent = sidebar.classList.contains("collapsed") ? "Abrir" : "Contraer";
     window.setTimeout(() => state.map?.invalidateSize(), 250);
   });
-  $("#clearTerritory")?.addEventListener("click", clearTerritory);
-  $("#resetMapViewBtn")?.addEventListener("click", clearTerritory);
+  // O × da tarxeta en móbil só a pecha: o mapa queda onde estaba. En escritorio e co botón da diana, recentra.
+  $("#clearTerritory")?.addEventListener("click", () => clearTerritory({ recenter: !window.matchMedia?.("(max-width: 920px)").matches }));
+  $("#resetMapViewBtn")?.addEventListener("click", () => clearTerritory());
   $("#mapCardToggle")?.addEventListener("click", () => {
     setMapCardCollapsed(!$(".map-card")?.classList.contains("is-collapsed"));
   });
